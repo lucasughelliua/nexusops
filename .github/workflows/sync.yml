@@ -1,27 +1,11 @@
-# ============================================================
-# NexusOps — GitHub Actions: Sync de todas las fuentes
-# Archivo: .github/workflows/sync.yml
-# 
-# SETUP:
-# 1. Ir a tu repo → Settings → Secrets → Actions
-# 2. Agregar cada variable listada en "env:" como Secret
-# ============================================================
-
-name: NexusOps Data Sync
+name: NexusOps Sync VTEX y MeLi
 
 on:
   schedule:
-    # VTEX: cada 15 minutos
     - cron: '*/15 * * * *'
-  workflow_dispatch:  # Permite ejecución manual
-
-env:
-  NODE_VERSION: '20'
+  workflow_dispatch:
 
 jobs:
-  # ----------------------------------------------------------
-  # VTEX
-  # ----------------------------------------------------------
   sync-vtex:
     name: Sync VTEX
     runs-on: ubuntu-latest
@@ -30,35 +14,30 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: ${{ env.NODE_VERSION }}
+          node-version: '20'
           cache: 'npm'
           cache-dependency-path: jobs/package.json
-      - run: cd jobs && npm ci --prefer-offline
-      - name: Run VTEX sync
-        run: cd jobs && node sync.js vtex
+      - run: cd jobs && npm install
+      - run: cd jobs && node sync.js vtex
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           VTEX_ACCOUNT: ${{ secrets.VTEX_ACCOUNT }}
           VTEX_APP_KEY: ${{ secrets.VTEX_APP_KEY }}
           VTEX_APP_TOKEN: ${{ secrets.VTEX_APP_TOKEN }}
 
-  # ----------------------------------------------------------
-  # MERCADO LIBRE cuenta 1
-  # ----------------------------------------------------------
   sync-meli-1:
-    name: Sync MeLi #1
+    name: Sync MeLi 1
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: ${{ env.NODE_VERSION }}
+          node-version: '20'
           cache: 'npm'
           cache-dependency-path: jobs/package.json
-      - run: cd jobs && npm ci --prefer-offline
-      - name: Run MeLi #1 sync
-        run: cd jobs && node sync.js meli_1
+      - run: cd jobs && npm install
+      - run: cd jobs && node sync.js meli_1
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           ML1_ACCESS_TOKEN: ${{ secrets.ML1_ACCESS_TOKEN }}
@@ -67,23 +46,19 @@ jobs:
           ML1_CLIENT_SECRET: ${{ secrets.ML1_CLIENT_SECRET }}
           ML1_SELLER_ID: ${{ secrets.ML1_SELLER_ID }}
 
-  # ----------------------------------------------------------
-  # MERCADO LIBRE cuenta 2
-  # ----------------------------------------------------------
   sync-meli-2:
-    name: Sync MeLi #2
+    name: Sync MeLi 2
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: ${{ env.NODE_VERSION }}
+          node-version: '20'
           cache: 'npm'
           cache-dependency-path: jobs/package.json
-      - run: cd jobs && npm ci --prefer-offline
-      - name: Run MeLi #2 sync
-        run: cd jobs && node sync.js meli_2
+      - run: cd jobs && npm install
+      - run: cd jobs && node sync.js meli_2
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           ML2_ACCESS_TOKEN: ${{ secrets.ML2_ACCESS_TOKEN }}
@@ -91,118 +66,3 @@ jobs:
           ML2_CLIENT_ID: ${{ secrets.ML2_CLIENT_ID }}
           ML2_CLIENT_SECRET: ${{ secrets.ML2_CLIENT_SECRET }}
           ML2_SELLER_ID: ${{ secrets.ML2_SELLER_ID }}
-
----
-# ============================================================
-# Jobs de menor frecuencia
-# Archivo: .github/workflows/sync-slow.yml
-# ============================================================
-
-name: NexusOps Slow Sync
-
-on:
-  schedule:
-    # Kommo: cada 30 minutos
-    - cron: '*/30 * * * *'
-  workflow_dispatch:
-
-jobs:
-  sync-kommo:
-    name: Sync Kommo CRM
-    runs-on: ubuntu-latest
-    timeout-minutes: 8
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with: { node-version: '20', cache: 'npm', cache-dependency-path: 'jobs/package.json' }
-      - run: cd jobs && npm ci --prefer-offline
-      - run: cd jobs && node sync.js kommo
-        env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          KOMMO_SUBDOMAIN: ${{ secrets.KOMMO_SUBDOMAIN }}
-          KOMMO_ACCESS_TOKEN: ${{ secrets.KOMMO_ACCESS_TOKEN }}
-
-  sync-logistics:
-    name: Sync Logística
-    runs-on: ubuntu-latest
-    timeout-minutes: 8
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with: { node-version: '20', cache: 'npm', cache-dependency-path: 'jobs/package.json' }
-      - run: cd jobs && npm ci --prefer-offline
-      - run: cd jobs && node sync.js logistics
-        env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          LOGISTICS_API_URL: ${{ secrets.LOGISTICS_API_URL }}
-          LOGISTICS_API_KEY: ${{ secrets.LOGISTICS_API_KEY }}
-
----
-# ============================================================
-# Métricas y alertas
-# Archivo: .github/workflows/metrics.yml
-# ============================================================
-
-name: NexusOps Metrics & Alerts
-
-on:
-  schedule:
-    # Cada hora en punto
-    - cron: '0 * * * *'
-  workflow_dispatch:
-
-jobs:
-  calculate-metrics:
-    name: Calcular métricas horarias
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with: { node-version: '20', cache: 'npm', cache-dependency-path: 'jobs/package.json' }
-      - run: cd jobs && npm ci --prefer-offline
-      - run: cd jobs && node sync.js metrics
-        env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
-
-  evaluate-alerts:
-    name: Evaluar alertas
-    needs: calculate-metrics
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with: { node-version: '20', cache: 'npm', cache-dependency-path: 'jobs/package.json' }
-      - run: cd jobs && npm ci --prefer-offline
-      - run: cd jobs && node sync.js alerts
-        env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
-
----
-# ============================================================
-# Importación de Google Sheets (manual o semanal)
-# Archivo: .github/workflows/import-sheets.yml
-# ============================================================
-
-name: NexusOps Import Sheets
-
-on:
-  workflow_dispatch:  # Solo manual o descomentar schedule
-  # schedule:
-  #   - cron: '0 2 * * 0'  # Domingos a las 2am
-
-jobs:
-  import-sheets:
-    name: Importar histórico Sheets
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with: { node-version: '20', cache: 'npm', cache-dependency-path: 'jobs/package.json' }
-      - run: cd jobs && npm ci --prefer-offline
-      - name: Import Google Sheets historical data
-        run: cd jobs && node sync.js sheets
-        env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          SHEETS_SPREADSHEET_ID: ${{ secrets.SHEETS_SPREADSHEET_ID }}
-          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
