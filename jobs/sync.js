@@ -110,9 +110,10 @@ export async function syncVTEX() {
   const { rows: [channel] } = await db.query(`SELECT id FROM channels WHERE type='vtex' LIMIT 1`);
   if (!channel) throw new Error('Canal VTEX no configurado');
 
-  const fromDate = last.last_date_synced
+  const daysBack = parseInt(process.env.VTEX_DAYS_BACK || '1');
+const fromDate = last.last_date_synced
     ? new Date(last.last_date_synced).toISOString()
-    : new Date(Date.now() - 86400000).toISOString(); // Default: último día
+    : new Date(Date.now() - 86400000 * daysBack).toISOString();
 
   let page = 1;
   let totalProcessed = 0, totalCreated = 0, totalUpdated = 0;
