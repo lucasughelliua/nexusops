@@ -136,6 +136,7 @@ const fromDate = last.last_date_synced
 
     for (const o of orders) {
       // Detalle completo de la orden
+      await new Promise(r => setTimeout(r, 400));
       const detailRes = await fetch(
         `https://${account}.vtexcommercestable.com.br/api/oms/pvt/orders/${o.orderId}`,
         { headers }
@@ -185,7 +186,7 @@ const fromDate = last.last_date_synced
     console.log(`[VTEX] Página ${page}: ${orders.length} órdenes`);
     if (orders.length < 50 || page >= data.paging?.pages) break;
     page++;
-    await new Promise(r => setTimeout(r, 300)); // Rate limiting
+    await new Promise(r => setTimeout(r, 800)); // Rate limiting
   }
 
   await endSyncLog(logId, { status: 'success', records: totalProcessed, created: totalCreated, updated: totalUpdated, lastDate });
