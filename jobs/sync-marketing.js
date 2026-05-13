@@ -304,10 +304,10 @@ export async function syncPerfit() {
     : new Date(Date.now() - 86400000 * daysBack).toISOString().split('T')[0];
 
   const headers = {
-    'X-Auth-Token': apiKey,
+    'Authorization': `Bearer ${apiKey}`,
     'Content-Type': 'application/json',
   };
-  const baseUrl = `https://api.perfit.com.ar`;
+  const baseUrl = `https://api.myperfit.com/v2/${account}`;
 
   console.log(`[Perfit] Sincronizando desde ${dateFrom}`);
 
@@ -323,7 +323,7 @@ export async function syncPerfit() {
   // 1. Obtener campañas (mailings)
   let page = 1;
   while (true) {
-    const res = await fetch(`${baseUrl}/mailings?page=${page}&limit=50`, { headers });
+    const res = await fetch(`${baseUrl}/mailings?offset=${(page-1)*50}&limit=50`, { headers });
     if (!res.ok) throw new Error(`Perfit API error: ${res.status} ${await res.text()}`);
     const data = await res.json();
     const mailings = data.data || data.mailings || data || [];
