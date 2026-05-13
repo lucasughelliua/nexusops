@@ -597,6 +597,8 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);min-height:1
 // ============================================================
 const fmt = n => '$' + n.toLocaleString('es-AR');
 const pct = n => (n >= 0 ? '+' : '') + n.toFixed(1) + '%';
+const API_BASE = 'https://nexusops-api.lucasughelli.workers.dev/api/v1';
+const API_KEY = 'UA-KPI-ECOMMERCE';
 
 let state = {
   revenue: 2847500,
