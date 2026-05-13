@@ -841,7 +841,7 @@ export async function syncPerfit() {
   let page = 1;
 
   while (true) {
-    const url = `${baseUrl}/mailings?offset=${(page - 1) * 50}&limit=50`;
+    const url = `${baseUrl}/campaigns?offset=${(page - 1) * 50}&limit=50`;
     console.log('[Perfit] Fetch:', url);
 
     const data = await fetchJson(url, { method: 'GET', headers }, 3);
@@ -877,7 +877,7 @@ export async function syncPerfit() {
 
       totalCampaigns++;
 
-      const statsUrl = `${baseUrl}/mailings/${m.id}/stats`;
+      const statsUrl = `${baseUrl}/campaigns/${m.id}/stats`;
       let stats = {};
       try {
         stats = await fetchJson(statsUrl, { method: 'GET', headers }, 2);
