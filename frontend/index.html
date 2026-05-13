@@ -592,13 +592,29 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);min-height:1
 
 <script>
 // ============================================================
-// DATA LAYER — simula respuestas de tu API
-// En producción: reemplazar fetchData() con fetch('/api/v1/...')
+// API — conexión real a Cloudflare Worker
 // ============================================================
-const fmt = n => '$' + n.toLocaleString('es-AR');
-const pct = n => (n >= 0 ? '+' : '') + n.toFixed(1) + '%';
 const API_BASE = 'https://nexusops-api.lucasughelli.workers.dev/api/v1';
 const API_KEY = 'UA-KPI-ECOMMERCE';
+
+async function fetchAPI(path) {
+  try {
+    const res = await fetch(API_BASE + path, {
+      headers: { 'x-api-key': API_KEY }
+    });
+    if (!res.ok) return null;
+    return res.json();
+  } catch(e) {
+    console.warn('API error:', path, e.message);
+    return null;
+  }
+}
+
+// ============================================================
+// DATA LAYER — datos reales + fallback a demo si la API falla
+// ============================================================
+const fmt = n => '$' + Math.round(n).toLocaleString('es-AR');
+const pct = n => (n >= 0 ? '+' : '') + n.toFixed(1) + '%';
 
 let state = {
   revenue: 2847500,
@@ -775,14 +791,39 @@ function initCharts() {
 // ============================================================
 // RENDER FUNCTIONS
 // ============================================================
-function renderKPIs() {
+async function renderKPIs() {
+  // Cargar datos reales de la API
+  const [exec, compare] = await Promise.all([
+    fetchAPI('/metrics/executive'),
+    fetchAPI('/metrics/executive/compare'),
+  ]);
+
+  // Actualizar state con datos reales si llegaron
+  if (exec) {
+    state.revenue     = parseFloat(exec.total_revenue)  || state.revenue;
+    state.orders      = parseInt(exec.orders_count)     || state.orders;
+    state.ticket      = parseFloat(exec.avg_ticket)     || state.ticket;
+    state.units       = parseInt(exec.units_sold)       || state.units;
+    state.cancellations = parseInt(exec.cancellations)  || state.cancellations;
+  }
+
+  // Calcular deltas reales si hay comparativa
+  let revDelta = '+—', ordDelta = '+—', tickDelta = '+—';
+  let revUp = true, ordUp = true, tickUp = true;
+  if (compare) {
+    const rd = parseFloat(compare.revenue_delta_pct);
+    const od = parseFloat(compare.orders_delta_pct);
+    if (!isNaN(rd)) { revDelta = (rd>=0?'+':'')+rd.toFixed(1)+'%'; revUp = rd>=0; }
+    if (!isNaN(od)) { ordDelta = (od>=0?'+':'')+od.toFixed(1)+'%'; ordUp = od>=0; }
+  }
+
   const kpis = [
-    { label: 'Revenue del día', value: fmt(state.revenue), delta: '+18.4%', up: true, color: '#3b82f6' },
-    { label: 'Órdenes', value: state.orders, delta: '+22 vs ayer', up: true, color: '#10b981' },
-    { label: 'Ticket promedio', value: fmt(state.ticket), delta: '-2.1%', up: false, color: '#f59e0b' },
-    { label: 'Unidades', value: state.units, delta: '+41 vs ayer', up: true, color: '#14b8a6' },
-    { label: 'Conversión', value: state.conversionRate + '%', delta: '+0.3pp', up: true, color: '#8b5cf6' },
-    { label: 'Cancelaciones', value: state.cancellations, delta: '+3 vs ayer', up: false, color: '#ef4444' },
+    { label: 'Revenue del día',  value: fmt(state.revenue),            delta: revDelta,  up: revUp,  color: '#3b82f6' },
+    { label: 'Órdenes',          value: state.orders,                  delta: ordDelta,  up: ordUp,  color: '#10b981' },
+    { label: 'Ticket promedio',  value: fmt(state.ticket),             delta: tickDelta, up: tickUp, color: '#f59e0b' },
+    { label: 'Unidades',         value: state.units || '—',            delta: 'hoy',     up: true,   color: '#14b8a6' },
+    { label: 'Conversión',       value: state.conversionRate + '%',    delta: 'estimado',up: true,   color: '#8b5cf6' },
+    { label: 'Cancelaciones',    value: state.cancellations,           delta: 'hoy',     up: false,  color: '#ef4444' },
   ];
   document.getElementById('kpiGrid').innerHTML = kpis.map(k => `
     <div class="metric-card" style="--accent-color:${k.color}">
@@ -808,22 +849,35 @@ function renderKPIs() {
   }, 200);
 }
 
-function renderTopProducts() {
+async function renderTopProducts() {
+  const data = await fetchAPI('/products/top?period=1d');
   const tbody = document.querySelector('#topProdsTable tbody');
-  tbody.innerHTML = products.map((p,i) => `
-    <tr>
+  const list = (data && data.length) ? data : products;
+  tbody.innerHTML = list.slice(0,6).map((p,i) => {
+    const name    = p.product_name || p.name;
+    const channel = p.source ? (p.source==='vtex'?'VTEX':p.source==='meli_1'?'MeLi #1':'MeLi #2') : p.channel;
+    const rev     = p.revenue || p.total_price || 0;
+    const cls     = channel==='VTEX'?'ch-vtex':channel.includes('1')?'ch-ml1':'ch-ml2';
+    return `<tr>
       <td><span class="rank-num">${i+1}</span></td>
-      <td>${p.name}</td>
-      <td><span class="channel-pill ${p.channel==='VTEX'?'ch-vtex':p.channel.includes('1')?'ch-ml1':'ch-ml2'}">${p.channel}</span></td>
-      <td>${fmt(p.revenue)}</td>
-    </tr>`).join('');
+      <td>${name}</td>
+      <td><span class="channel-pill ${cls}">${channel}</span></td>
+      <td>${fmt(rev)}</td>
+    </tr>`;
+  }).join('');
 }
 
-function renderCompareStats() {
+async function renderCompareStats() {
+  const compare = await fetchAPI('/metrics/executive/compare');
+  const rd = compare ? parseFloat(compare.revenue_delta_pct) : null;
+  const od = compare ? parseFloat(compare.orders_delta_pct)  : null;
+  const todayRev  = compare ? parseFloat(compare.today_revenue)  : state.revenue;
+  const todayOrd  = compare ? parseInt(compare.today_orders)     : state.orders;
+  const todayTick = compare ? parseFloat(compare.today_ticket)   : state.ticket;
   const items = [
-    { label: 'Revenue', today: fmt(state.revenue), delta: '+18.4%', up: true },
-    { label: 'Órdenes', today: state.orders, delta: '+13.6%', up: true },
-    { label: 'Ticket prom.', today: fmt(state.ticket), delta: '-2.1%', up: false },
+    { label: 'Revenue',    today: fmt(todayRev),  delta: rd!=null?(rd>=0?'+':'')+rd.toFixed(1)+'%':'—', up: rd==null||rd>=0 },
+    { label: 'Órdenes',   today: todayOrd,        delta: od!=null?(od>=0?'+':'')+od.toFixed(1)+'%':'—', up: od==null||od>=0 },
+    { label: 'Ticket prom.', today: fmt(todayTick), delta: '—', up: true },
   ];
   document.getElementById('compareStats').innerHTML = items.map(i => `
     <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border)">
@@ -845,56 +899,82 @@ function genOrder() {
   return { name, ch, amount, prov, sc, sl, time: now.toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit'}) };
 }
 
-function renderLivePage() {
+async function renderLivePage() {
+  const exec = await fetchAPI('/metrics/executive');
+  if (exec) {
+    state.revenue = parseFloat(exec.total_revenue) || state.revenue;
+    state.orders  = parseInt(exec.orders_count)    || state.orders;
+    state.ticket  = parseFloat(exec.avg_ticket)    || state.ticket;
+  }
   const kpis = [
-    { label: 'Revenue del día', value: fmt(state.revenue), delta: '+18.4%', up: true, color: '#3b82f6' },
-    { label: 'Órdenes hoy', value: state.orders, delta: '+22', up: true, color: '#10b981' },
-    { label: 'Última orden', value: '$' + Math.floor(Math.random()*40000+8000).toLocaleString('es-AR'), delta: 'hace 2 min', up: true, color: '#8b5cf6' },
-    { label: 'Revenue / hora', value: '$' + Math.floor(state.revenue/14).toLocaleString('es-AR'), delta: 'estimado', up: true, color: '#f59e0b' },
+    { label: 'Revenue del día',  value: fmt(state.revenue), delta: 'hoy', up: true, color: '#3b82f6' },
+    { label: 'Órdenes hoy',      value: state.orders,       delta: 'total', up: true, color: '#10b981' },
+    { label: 'Ticket promedio',  value: fmt(state.ticket),  delta: 'prom.', up: true, color: '#8b5cf6' },
+    { label: 'Revenue / hora',   value: '$' + Math.floor(state.revenue / Math.max(new Date().getHours(),1)).toLocaleString('es-AR'), delta: 'estimado', up: true, color: '#f59e0b' },
   ];
   document.getElementById('liveKpis').innerHTML = kpis.map(k => `
     <div class="metric-card" style="--accent-color:${k.color}">
       <div class="metric-label">${k.label}</div>
       <div class="metric-value">${k.value}</div>
-      <div class="metric-delta ${k.up?'delta-up':'delta-neutral'}">${k.delta}</div>
+      <div class="metric-delta delta-neutral">${k.delta}</div>
     </div>`).join('');
 
-  // Initial orders
-  for(let i=0;i<8;i++) liveOrders.push(genOrder());
-  renderOrdersList();
+  // Órdenes reales
+  await renderOrdersList();
 
-  // Live ranking
-  document.getElementById('liveRanking').innerHTML = products.slice(0,4).map((p,i) => `
-    <div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid var(--border)">
+  // Top productos reales
+  const topProds = await fetchAPI('/products/top?period=1d');
+  const prodList = (topProds && topProds.length) ? topProds : products;
+  document.getElementById('liveRanking').innerHTML = prodList.slice(0,4).map((p,i) => {
+    const name = p.product_name || p.name;
+    const rev  = parseFloat(p.revenue || p.total_price || 0);
+    return `<div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid var(--border)">
       <span style="font-size:11px;color:var(--text3);font-family:var(--mono);width:16px">${i+1}</span>
-      <span style="font-size:12px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${p.name}</span>
-      <span style="font-size:12px;font-family:var(--mono);font-weight:500">${fmt(p.revenue)}</span>
-    </div>`).join('');
+      <span style="font-size:12px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${name}</span>
+      <span style="font-size:12px;font-family:var(--mono);font-weight:500">${fmt(rev)}</span>
+    </div>`;
+  }).join('');
 
-  // Province list
+  // Provincias — demo por ahora (no hay endpoint específico aún)
   document.getElementById('provinceList').innerHTML = provinces.map(p => {
     const maxO = provinces[0].orders;
     const w = (p.orders/maxO*100).toFixed(0);
-    return `
-      <div style="margin-bottom:8px">
-        <div class="progress-label"><span>${p.name}</span><span>${p.orders}</span></div>
-        <div class="progress-track"><div class="progress-fill" style="width:${w}%;background:var(--accent)"></div></div>
-      </div>`;
+    return `<div style="margin-bottom:8px">
+      <div class="progress-label"><span>${p.name}</span><span>${p.orders}</span></div>
+      <div class="progress-track"><div class="progress-fill" style="width:${w}%;background:var(--accent)"></div></div>
+    </div>`;
   }).join('');
 }
 
-function renderOrdersList() {
+async function renderOrdersList() {
+  const data = await fetchAPI('/orders/live?limit=15');
   document.getElementById('orderTicker').textContent = state.orders + ' hoy';
-  document.getElementById('ordersList').innerHTML = liveOrders.slice(-10).reverse().map(o => `
-    <div class="order-row">
+
+  // Usar datos reales si llegaron, sino usar liveOrders (demo)
+  const ordersToShow = (data && data.length) ? data : liveOrders.slice(-10).reverse();
+
+  document.getElementById('ordersList').innerHTML = ordersToShow.map(o => {
+    // Normalizar formato API real vs demo
+    const name   = o.products ? o.products[0] : o.name;
+    const prov   = o.customer_province || o.prov || '—';
+    const amount = parseFloat(o.total_amount || o.amount || 0);
+    const ch     = o.channel_name || o.ch || o.source || 'VTEX';
+    const chKey  = ch.toLowerCase().includes('vtex')?'VTEX':ch.includes('1')?'MeLi #1':'MeLi #2';
+    const cls    = chKey==='VTEX'?'ch-vtex':chKey.includes('1')?'ch-ml1':'ch-ml2';
+    const status = o.payment_status || o.status || 'invoiced';
+    const sCls   = status==='approved'||status==='invoiced'?'s-paid':status==='pending'?'s-pending':'s-ship';
+    const sLabel = status==='approved'||status==='invoiced'?'Pagado':status==='pending'?'Pendiente':'En envío';
+    const time   = o.created_at ? new Date(o.created_at).toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit'}) : o.time || '';
+    return `<div class="order-row">
       <div>
-        <div class="order-product">${o.name}</div>
-        <div class="order-meta">${o.prov} · ${o.time}</div>
+        <div class="order-product">${name || 'Orden'}</div>
+        <div class="order-meta">${prov} · ${time}</div>
       </div>
-      <span class="channel-pill ${o.ch==='VTEX'?'ch-vtex':o.ch.includes('1')?'ch-ml1':'ch-ml2'}">${o.ch}</span>
-      <span class="status-badge ${o.sc}">${o.sl}</span>
-      <span class="order-amount">${fmt(o.amount)}</span>
-    </div>`).join('');
+      <span class="channel-pill ${cls}">${chKey}</span>
+      <span class="status-badge ${sCls}">${sLabel}</span>
+      <span class="order-amount">${fmt(amount)}</span>
+    </div>`;
+  }).join('');
 }
 
 function addLiveOrder() {
@@ -1079,13 +1159,19 @@ function triggerSync() {
 // ============================================================
 // INIT
 // ============================================================
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
   const d = new Date();
   document.getElementById('execDate').textContent = d.toLocaleDateString('es-AR',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
-  renderKPIs();
-  renderTopProducts();
-  renderCompareStats();
-  renderLivePage();
+
+  // Cargar datos reales en paralelo
+  await Promise.all([
+    renderKPIs(),
+    renderTopProducts(),
+    renderCompareStats(),
+    renderLivePage(),
+  ]);
+
+  // Estos usan datos demo por ahora (hasta conectar sus APIs)
   renderChannels();
   renderMarketing();
   renderLogistics();
@@ -1100,11 +1186,15 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   });
 
-  // Auto-refresh: new order every ~20s
-  setInterval(() => {
-    addLiveOrder();
-    if(document.getElementById('page-executive').classList.contains('active')) renderKPIs();
-  }, 20000);
+  // Auto-refresh real cada 60 segundos
+  setInterval(async () => {
+    await renderKPIs();
+    if(document.getElementById('page-live').classList.contains('active')) {
+      await renderOrdersList();
+    }
+    document.getElementById('lastUpdate').textContent = new Date().toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit'});
+    updateTV();
+  }, 60000);
 });
 </script>
 </body>
