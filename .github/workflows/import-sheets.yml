@@ -1,0 +1,23 @@
+name: NexusOps Import Sheets
+
+on:
+  workflow_dispatch:
+
+jobs:
+  import-sheets:
+    name: Importar Sheets
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: jobs/package.json
+      - run: cd jobs && npm install
+      - run: cd jobs && node sync.js sheets
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SHEETS_SPREADSHEET_ID: ${{ secrets.SHEETS_SPREADSHEET_ID }}
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
