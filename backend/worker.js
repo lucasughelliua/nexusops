@@ -1,343 +1,401 @@
 /**
- * NexusOps — Cloudflare Worker (Thin API Layer)
- * 
- * NO llama APIs externas. Solo sirve datos de la DB/KV.
- * Instalar: npm create cloudflare@latest nexusops-api
- * Deploy: wrangler deploy
- * 
- * wrangler.toml mínimo:
- * name = "nexusops-api"
- * main = "src/worker.js"
- * compatibility_date = "2024-01-01"
- * [[kv_namespaces]]
- * binding = "CACHE"
- * id = "TU_KV_ID"
+ * NexusOps Marketing Intelligence — Worker endpoints
+ *
+ * Agregar estas rutas dentro de tu worker.js existente.
+ * Si tu worker ya tiene router, copiá las funciones SQL y los bloques de rutas.
+ *
+ * Requiere:
+ * DATABASE_URL
+ * API_KEY
  */
 
-import { Pool } from '@neondatabase/serverless';
+import { neon } from '@neondatabase/serverless';
 
-const CORS = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-};
-
-function json(data, status = 200, extra = {}) {
-  return new Response(JSON.stringify(data), {
+function json(data, status = 200) {
+  return new Response(JSON.stringify(data, null, 2), {
     status,
-    headers: { 'Content-Type': 'application/json', ...CORS, ...extra },
+    headers: {
+      'Content-Type': 'application/json',
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Headers': 'Content-Type, x-api-key, x-session-token',
+      'Access-Control-Allow-Methods': 'GET,POST,PATCH,DELETE,OPTIONS',
+    },
   });
 }
 
-function error(msg, status = 400) {
-  return json({ error: msg }, status);
+function bad(message, status = 400) {
+  return json({ ok: false, error: message }, status);
 }
 
-// ---- Router simple ----
+function requireApiKey(req, env) {
+  const key = req.headers.get('x-api-key');
+  return key && key === env.API_KEY;
+}
+
+async function bodyJson(req) {
+  try { return await req.json(); } catch { return {}; }
+}
+
+function getDateRange(url) {
+  const dateFrom = url.searchParams.get('date_from') || new Date(Date.now() - 86400000 * 30).toISOString().split('T')[0];
+  const dateTo = url.searchParams.get('date_to') || new Date().toISOString().split('T')[0];
+  return { dateFrom, dateTo };
+}
+
+async function sha256(text) {
+  const data = new TextEncoder().encode(text);
+  const hash = await crypto.subtle.digest('SHA-256', data);
+  return [...new Uint8Array(hash)].map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+async function createSession(env, user) {
+  const raw = `${user.id}:${Date.now()}:${crypto.randomUUID()}`;
+  const token = await sha256(raw);
+  const payload = {
+    id: user.id,
+    name: user.name,
+    role: user.role,
+    exp: Date.now() + 1000 * 60 * 60 * 12,
+  };
+  const encoded = btoa(JSON.stringify(payload));
+  return `${encoded}.${token.slice(0, 16)}`;
+}
+
+function parseSession(req) {
+  const token = req.headers.get('x-session-token') || '';
+  const [encoded] = token.split('.');
+  if (!encoded) return null;
+  try {
+    const payload = JSON.parse(atob(encoded));
+    if (!payload.exp || Date.now() > payload.exp) return null;
+    return payload;
+  } catch {
+    return null;
+  }
+}
+
+function requireAdmin(req) {
+  const session = parseSession(req);
+  return session && session.role === 'admin' ? session : null;
+}
+
 export default {
-  async fetch(request, env) {
-    const url = new URL(request.url);
-    const path = url.pathname.replace(/^\/api\/v1/, '');
-    const method = request.method;
+  async fetch(req, env) {
+    if (req.method === 'OPTIONS') return json({ ok: true });
 
-    if (method === 'OPTIONS') return new Response(null, { headers: CORS });
-
-    // Auth básica con API key
-    const apiKey = request.headers.get('x-api-key');
-    if (apiKey !== env.API_KEY) return error('Unauthorized', 401);
-
-    const db = new Pool({ connectionString: env.DATABASE_URL });
+    const url = new URL(req.url);
+    const path = url.pathname;
+    const sql = neon(env.DATABASE_URL);
 
     try {
-      // ---- MÉTRICAS EJECUTIVAS ----
-      if (path === '/metrics/executive' && method === 'GET') {
-        // Intentar desde KV cache primero (TTL: 5 min)
-        const cached = await env.CACHE.get('metrics:executive');
-        if (cached) {
-          return json(JSON.parse(cached), 200, { 'X-Cache': 'HIT' });
+      if (!requireApiKey(req, env)) return bad('Unauthorized', 401);
+
+      // --------------------------------------------------------
+      // AUTH
+      // --------------------------------------------------------
+      if (path === '/api/v1/auth/login' && req.method === 'POST') {
+        const body = await bodyJson(req);
+        const pin = String(body.pin || '').trim();
+
+        if (!/^\d{4}$/.test(pin)) return bad('El PIN debe tener 4 números', 400);
+
+        const users = await sql`
+          SELECT id, name, role, active
+          FROM dashboard_users
+          WHERE active = true
+          AND pin_hash = crypt(${pin}, pin_hash)
+          LIMIT 1
+        `;
+
+        if (!users.length) return bad('PIN inválido', 401);
+
+        const token = await createSession(env, users[0]);
+        return json({ ok: true, user: users[0], token });
+      }
+
+      // --------------------------------------------------------
+      // ADMIN USERS
+      // --------------------------------------------------------
+      if (path === '/api/v1/admin/users' && req.method === 'GET') {
+        const admin = requireAdmin(req);
+        if (!admin) return bad('Admin requerido', 403);
+
+        const rows = await sql`
+          SELECT id, name, role, active, created_at, updated_at
+          FROM dashboard_users
+          ORDER BY created_at DESC
+        `;
+        return json({ ok: true, data: rows });
+      }
+
+      if (path === '/api/v1/admin/users' && req.method === 'POST') {
+        const admin = requireAdmin(req);
+        if (!admin) return bad('Admin requerido', 403);
+
+        const body = await bodyJson(req);
+        const name = String(body.name || '').trim();
+        const pin = String(body.pin || '').trim();
+        const role = body.role === 'admin' ? 'admin' : 'viewer';
+
+        if (!name) return bad('Falta name');
+        if (!/^\d{4}$/.test(pin)) return bad('El PIN debe tener 4 números');
+
+        const rows = await sql`
+          INSERT INTO dashboard_users(name, pin_hash, role, active)
+          VALUES (${name}, crypt(${pin}, gen_salt('bf')), ${role}, true)
+          RETURNING id, name, role, active, created_at, updated_at
+        `;
+
+        return json({ ok: true, data: rows[0] });
+      }
+
+      if (path.startsWith('/api/v1/admin/users/') && req.method === 'PATCH') {
+        const admin = requireAdmin(req);
+        if (!admin) return bad('Admin requerido', 403);
+
+        const id = path.split('/').pop();
+        const body = await bodyJson(req);
+
+        const existing = await sql`SELECT id FROM dashboard_users WHERE id=${id} LIMIT 1`;
+        if (!existing.length) return bad('Usuario no encontrado', 404);
+
+        if (body.pin !== undefined) {
+          const pin = String(body.pin || '').trim();
+          if (!/^\d{4}$/.test(pin)) return bad('El PIN debe tener 4 números');
+          await sql`UPDATE dashboard_users SET pin_hash=crypt(${pin}, gen_salt('bf')), updated_at=NOW() WHERE id=${id}`;
         }
 
-        const { rows } = await db.query(`
+        if (body.name !== undefined) {
+          await sql`UPDATE dashboard_users SET name=${String(body.name).trim()}, updated_at=NOW() WHERE id=${id}`;
+        }
+
+        if (body.role !== undefined) {
+          const role = body.role === 'admin' ? 'admin' : 'viewer';
+          await sql`UPDATE dashboard_users SET role=${role}, updated_at=NOW() WHERE id=${id}`;
+        }
+
+        if (body.active !== undefined) {
+          await sql`UPDATE dashboard_users SET active=${!!body.active}, updated_at=NOW() WHERE id=${id}`;
+        }
+
+        const rows = await sql`
+          SELECT id, name, role, active, created_at, updated_at
+          FROM dashboard_users WHERE id=${id}
+        `;
+        return json({ ok: true, data: rows[0] });
+      }
+
+      if (path.startsWith('/api/v1/admin/users/') && req.method === 'DELETE') {
+        const admin = requireAdmin(req);
+        if (!admin) return bad('Admin requerido', 403);
+
+        const id = path.split('/').pop();
+        await sql`UPDATE dashboard_users SET active=false, updated_at=NOW() WHERE id=${id}`;
+        return json({ ok: true });
+      }
+
+      // --------------------------------------------------------
+      // MARKETING OVERVIEW
+      // --------------------------------------------------------
+      if (path === '/api/v1/marketing/overview' && req.method === 'GET') {
+        const { dateFrom, dateTo } = getDateRange(url);
+
+        const rows = await sql`
           SELECT
-            SUM(o.total_amount) AS total_revenue,
-            SUM(o.net_amount) AS net_revenue,
-            COUNT(*) AS orders_count,
-            AVG(o.total_amount) AS avg_ticket,
-            SUM(oi.quantity) AS units_sold,
-            COUNT(*) FILTER (WHERE o.is_canceled) AS cancellations,
-            COUNT(*) FILTER (WHERE o.is_returned) AS returns
-          FROM orders o
-          LEFT JOIN order_items oi ON oi.order_id = o.id
-          WHERE o.created_at >= CURRENT_DATE
-        `);
+            source,
+            SUM(spend) AS spend,
+            SUM(impressions) AS impressions,
+            SUM(reach) AS reach,
+            SUM(clicks) AS clicks,
+            SUM(inline_link_clicks) AS inline_link_clicks,
+            SUM(outbound_clicks) AS outbound_clicks,
+            SUM(landing_page_views) AS landing_page_views,
+            SUM(purchases) AS purchases,
+            SUM(purchase_value) AS purchase_value,
+            SUM(leads) AS leads,
+            SUM(sent) AS sent,
+            SUM(delivered) AS delivered,
+            SUM(opens) AS opens,
+            SUM(unique_opens) AS unique_opens,
+            SUM(clicks_email) AS clicks_email,
+            SUM(unique_clicks_email) AS unique_clicks_email,
+            SUM(unsubscribes) AS unsubscribes,
+            SUM(bounces_soft) AS bounces_soft,
+            SUM(bounces_hard) AS bounces_hard,
+            CASE WHEN SUM(spend) > 0 THEN SUM(purchase_value) / SUM(spend) ELSE 0 END AS roas,
+            CASE WHEN SUM(spend) > 0 THEN (SUM(purchase_value) - SUM(spend)) / SUM(spend) ELSE 0 END AS roi,
+            CASE WHEN SUM(purchases) > 0 THEN SUM(spend) / SUM(purchases) ELSE 0 END AS cpa,
+            CASE WHEN SUM(leads) > 0 THEN SUM(spend) / SUM(leads) ELSE 0 END AS cpl,
+            CASE WHEN SUM(impressions) > 0 THEN SUM(clicks)::NUMERIC / SUM(impressions) * 100 ELSE 0 END AS ctr,
+            CASE WHEN SUM(landing_page_views) > 0 THEN SUM(purchases)::NUMERIC / SUM(landing_page_views) * 100 ELSE 0 END AS conversion_rate,
+            CASE WHEN SUM(purchases) > 0 THEN SUM(purchase_value) / SUM(purchases) ELSE 0 END AS aov,
+            CASE WHEN SUM(delivered) > 0 THEN SUM(unique_opens)::NUMERIC / SUM(delivered) * 100 ELSE 0 END AS open_rate,
+            CASE WHEN SUM(delivered) > 0 THEN SUM(unique_clicks_email)::NUMERIC / SUM(delivered) * 100 ELSE 0 END AS email_click_rate,
+            CASE WHEN SUM(unique_opens) > 0 THEN SUM(unique_clicks_email)::NUMERIC / SUM(unique_opens) * 100 ELSE 0 END AS ctor
+          FROM marketing_metrics
+          WHERE date BETWEEN ${dateFrom} AND ${dateTo}
+          GROUP BY source
+        `;
 
-        const data = rows[0];
-        await env.CACHE.put('metrics:executive', JSON.stringify(data), { expirationTtl: 300 });
-        return json(data, 200, { 'X-Cache': 'MISS' });
-      }
-
-      // ---- MÉTRICAS EJECUTIVAS CON COMPARATIVA ----
-      if (path === '/metrics/executive/compare' && method === 'GET') {
-        const { rows } = await db.query(`
-          WITH today AS (
-            SELECT
-              SUM(total_amount) AS revenue,
-              COUNT(*) AS orders,
-              AVG(total_amount) AS ticket
-            FROM orders
-            WHERE created_at >= CURRENT_DATE
-              AND NOT is_canceled
-          ),
-          yesterday AS (
-            SELECT
-              SUM(total_amount) AS revenue,
-              COUNT(*) AS orders,
-              AVG(total_amount) AS ticket
-            FROM orders
-            WHERE created_at >= CURRENT_DATE - INTERVAL '1 day'
-              AND created_at < CURRENT_DATE
-              AND NOT is_canceled
-          ),
-          last_week_same_hour AS (
-            SELECT
-              SUM(total_amount) AS revenue,
-              COUNT(*) AS orders
-            FROM orders
-            WHERE created_at >= (NOW() - INTERVAL '7 days')::DATE
-              AND created_at < (NOW() - INTERVAL '7 days')
-              AND NOT is_canceled
-          )
+        const organic = await sql`
           SELECT
-            t.revenue AS today_revenue,
-            t.orders AS today_orders,
-            t.ticket AS today_ticket,
-            y.revenue AS yesterday_revenue,
-            y.orders AS yesterday_orders,
-            y.ticket AS yesterday_ticket,
-            lw.revenue AS last_week_revenue,
-            lw.orders AS last_week_orders,
-            ROUND((t.revenue - y.revenue) / NULLIF(y.revenue, 0) * 100, 2) AS revenue_delta_pct,
-            ROUND((t.orders - y.orders) / NULLIF(y.orders::NUMERIC, 0) * 100, 2) AS orders_delta_pct
-          FROM today t, yesterday y, last_week_same_hour lw
-        `);
-        return json(rows[0]);
+            source,
+            MAX(followers) AS followers,
+            MAX(fans) AS fans,
+            SUM(impressions) AS impressions,
+            SUM(reach) AS reach,
+            SUM(profile_views) AS profile_views,
+            SUM(website_clicks) AS website_clicks,
+            SUM(engagement) AS engagement,
+            SUM(interactions) AS interactions,
+            MAX(posts) AS posts
+          FROM meta_organic_daily
+          WHERE date BETWEEN ${dateFrom} AND ${dateTo}
+          GROUP BY source
+        `;
+
+        return json({ ok: true, date_from: dateFrom, date_to: dateTo, data: rows, organic });
       }
 
-      // ---- ÓRDENES EN VIVO ----
-      if (path === '/orders/live' && method === 'GET') {
-        const limit = Math.min(parseInt(url.searchParams.get('limit') || '20'), 50);
-        const { rows } = await db.query(`
+      // --------------------------------------------------------
+      // META
+      // --------------------------------------------------------
+      if (path === '/api/v1/marketing/meta/campaigns' && req.method === 'GET') {
+        const rows = await sql`
           SELECT
-            o.external_id,
-            o.source,
-            o.total_amount,
-            o.status,
-            o.payment_status,
-            o.shipping_status,
-            o.customer_province,
-            o.customer_city,
-            o.created_at,
-            c.name AS channel_name,
-            ARRAY_AGG(oi.product_name ORDER BY oi.total_price DESC) AS products
-          FROM orders o
-          JOIN channels c ON c.id = o.channel_id
-          LEFT JOIN order_items oi ON oi.order_id = o.id
-          WHERE o.created_at >= NOW() - INTERVAL '24 hours'
-          GROUP BY o.id, c.name
-          ORDER BY o.created_at DESC
-          LIMIT $1
-        `, [limit]);
-        return json(rows);
+            mc.*,
+            COALESCE(SUM(mm.spend),0) AS spend,
+            COALESCE(SUM(mm.impressions),0) AS impressions,
+            COALESCE(SUM(mm.clicks),0) AS clicks,
+            COALESCE(SUM(mm.purchases),0) AS purchases,
+            COALESCE(SUM(mm.purchase_value),0) AS purchase_value,
+            COALESCE(SUM(mm.leads),0) AS leads,
+            CASE WHEN COALESCE(SUM(mm.spend),0) > 0 THEN SUM(mm.purchase_value)/SUM(mm.spend) ELSE 0 END AS roas
+          FROM marketing_campaigns mc
+          LEFT JOIN marketing_metrics mm ON mm.campaign_id=mc.id
+          WHERE mc.source='meta'
+          GROUP BY mc.id
+          ORDER BY mc.synced_at DESC
+        `;
+        return json({ ok: true, data: rows });
       }
 
-      // ---- ÓRDENES CON FILTROS ----
-      if (path === '/orders' && method === 'GET') {
-        const channelId = url.searchParams.get('channel');
-        const dateFrom = url.searchParams.get('date_from') || new Date(Date.now() - 86400000 * 7).toISOString();
-        const dateTo = url.searchParams.get('date_to') || new Date().toISOString();
-        const page = parseInt(url.searchParams.get('page') || '1');
-        const pageSize = 50;
-        const offset = (page - 1) * pageSize;
+      if (path === '/api/v1/marketing/meta/insights' && req.method === 'GET') {
+        const { dateFrom, dateTo } = getDateRange(url);
+        const level = url.searchParams.get('level') || 'campaign';
 
-        const params = [dateFrom, dateTo, pageSize, offset];
-        let where = 'WHERE o.created_at >= $1 AND o.created_at <= $2';
-        if (channelId) { params.splice(2, 0, channelId); where += ` AND o.channel_id = $3`; }
-
-        const { rows } = await db.query(`
-          SELECT o.*, c.name AS channel_name
-          FROM orders o JOIN channels c ON c.id = o.channel_id
-          ${where}
-          ORDER BY o.created_at DESC
-          LIMIT $${params.length - 1} OFFSET $${params.length}
-        `, params);
-        return json({ data: rows, page, pageSize });
+        const rows = await sql`
+          SELECT *
+          FROM meta_insights_daily
+          WHERE date BETWEEN ${dateFrom} AND ${dateTo}
+          AND level=${level}
+          ORDER BY date DESC, spend DESC
+          LIMIT 1000
+        `;
+        return json({ ok: true, data: rows });
       }
 
-      // ---- MÉTRICAS POR CANAL ----
-      if (path.match(/^\/channels\/[^/]+\/metrics$/) && method === 'GET') {
-        const channelId = path.split('/')[2];
-        const { rows } = await db.query(`
+      if (path === '/api/v1/marketing/meta/breakdowns' && req.method === 'GET') {
+        const { dateFrom, dateTo } = getDateRange(url);
+        const type = url.searchParams.get('type') || 'age';
+
+        const rows = await sql`
           SELECT
-            SUM(total_amount) AS revenue,
-            COUNT(*) AS orders,
-            AVG(total_amount) AS avg_ticket,
-            COUNT(*) FILTER (WHERE is_canceled) AS cancellations
-          FROM orders
-          WHERE channel_id = $1 AND created_at >= CURRENT_DATE
-        `, [channelId]);
-        return json(rows[0]);
+            breakdown_type,
+            breakdown_value,
+            SUM(impressions) AS impressions,
+            SUM(reach) AS reach,
+            SUM(clicks) AS clicks,
+            SUM(spend) AS spend,
+            SUM(purchases) AS purchases,
+            SUM(purchase_value) AS purchase_value,
+            SUM(leads) AS leads,
+            CASE WHEN SUM(spend) > 0 THEN SUM(purchase_value)/SUM(spend) ELSE 0 END AS roas
+          FROM meta_insights_breakdowns
+          WHERE date BETWEEN ${dateFrom} AND ${dateTo}
+          AND breakdown_type=${type}
+          GROUP BY breakdown_type, breakdown_value
+          ORDER BY spend DESC
+        `;
+        return json({ ok: true, data: rows });
       }
 
-      // ---- CANALES ----
-      if (path === '/channels' && method === 'GET') {
-        const { rows } = await db.query('SELECT id, name, type, active FROM channels WHERE active = true ORDER BY name');
-        return json(rows);
+      if (path === '/api/v1/marketing/meta/adsets' && req.method === 'GET') {
+        const rows = await sql`SELECT * FROM meta_adsets ORDER BY synced_at DESC LIMIT 1000`;
+        return json({ ok: true, data: rows });
       }
 
-      // ---- TOP PRODUCTOS ----
-      if (path === '/products/top' && method === 'GET') {
-        const period = url.searchParams.get('period') || '1d';
-        const interval = period === '7d' ? '7 days' : period === '30d' ? '30 days' : '1 day';
-        const channelFilter = url.searchParams.get('channel');
+      if (path === '/api/v1/marketing/meta/ads' && req.method === 'GET') {
+        const rows = await sql`
+          SELECT a.*, c.thumbnail_url, c.image_url, c.title, c.body
+          FROM meta_ads a
+          LEFT JOIN meta_ad_creatives c ON c.external_id=a.creative_external_id
+          ORDER BY a.synced_at DESC
+          LIMIT 1000
+        `;
+        return json({ ok: true, data: rows });
+      }
 
-        const params = [interval];
-        let where = '';
-        if (channelFilter) { params.push(channelFilter); where = 'AND o.channel_id = $2'; }
+      if (path === '/api/v1/marketing/meta/organic' && req.method === 'GET') {
+        const { dateFrom, dateTo } = getDateRange(url);
+        const rows = await sql`
+          SELECT *
+          FROM meta_organic_daily
+          WHERE date BETWEEN ${dateFrom} AND ${dateTo}
+          ORDER BY date DESC
+        `;
+        return json({ ok: true, data: rows });
+      }
 
-        const { rows } = await db.query(`
+      // --------------------------------------------------------
+      // PERFIT
+      // --------------------------------------------------------
+      if (path === '/api/v1/marketing/perfit/campaigns' && req.method === 'GET') {
+        const rows = await sql`
           SELECT
-            oi.sku,
-            oi.product_name,
-            oi.category,
-            SUM(oi.quantity) AS units_sold,
-            SUM(oi.total_price) AS revenue,
-            COUNT(DISTINCT o.id) AS order_count
-          FROM order_items oi
-          JOIN orders o ON o.id = oi.order_id
-          WHERE o.created_at >= NOW() - $1::INTERVAL
-            AND NOT o.is_canceled ${where}
-          GROUP BY oi.sku, oi.product_name, oi.category
-          ORDER BY revenue DESC
-          LIMIT 20
-        `, params);
-        return json(rows);
+            mc.*,
+            COALESCE(SUM(mm.sent),0) AS sent,
+            COALESCE(SUM(mm.delivered),0) AS delivered,
+            COALESCE(SUM(mm.unique_opens),0) AS unique_opens,
+            COALESCE(SUM(mm.unique_clicks_email),0) AS unique_clicks,
+            COALESCE(SUM(mm.unsubscribes),0) AS unsubscribes,
+            COALESCE(SUM(mm.bounces_soft),0) AS bounces_soft,
+            COALESCE(SUM(mm.bounces_hard),0) AS bounces_hard,
+            CASE WHEN COALESCE(SUM(mm.delivered),0) > 0 THEN SUM(mm.unique_opens)::NUMERIC / SUM(mm.delivered) * 100 ELSE 0 END AS open_rate,
+            CASE WHEN COALESCE(SUM(mm.delivered),0) > 0 THEN SUM(mm.unique_clicks_email)::NUMERIC / SUM(mm.delivered) * 100 ELSE 0 END AS click_rate,
+            CASE WHEN COALESCE(SUM(mm.unique_opens),0) > 0 THEN SUM(mm.unique_clicks_email)::NUMERIC / SUM(mm.unique_opens) * 100 ELSE 0 END AS ctor
+          FROM marketing_campaigns mc
+          LEFT JOIN marketing_metrics mm ON mm.campaign_id=mc.id
+          WHERE mc.source='perfit'
+          GROUP BY mc.id
+          ORDER BY mc.created_at DESC
+        `;
+        return json({ ok: true, data: rows });
       }
 
-      // ---- EMBUDO KOMMO ----
-      if (path === '/marketing/funnel' && method === 'GET') {
-        const { rows } = await db.query(`
+      if (path === '/api/v1/marketing/perfit/metrics' && req.method === 'GET') {
+        const { dateFrom, dateTo } = getDateRange(url);
+        const rows = await sql`
           SELECT
-            pipeline_stage,
-            stage_order,
-            COUNT(*) AS count,
-            SUM(estimated_value) AS total_value,
-            AVG(estimated_value) AS avg_value
-          FROM leads
-          WHERE created_at >= CURRENT_DATE - INTERVAL '30 days'
-          GROUP BY pipeline_stage, stage_order
-          ORDER BY stage_order
-        `);
-        return json(rows);
+            mm.*,
+            mc.name AS campaign_name,
+            CASE WHEN delivered > 0 THEN unique_opens::NUMERIC/delivered*100 ELSE 0 END AS open_rate,
+            CASE WHEN delivered > 0 THEN unique_clicks_email::NUMERIC/delivered*100 ELSE 0 END AS click_rate,
+            CASE WHEN unique_opens > 0 THEN unique_clicks_email::NUMERIC/unique_opens*100 ELSE 0 END AS ctor,
+            CASE WHEN sent > 0 THEN (bounces_soft + bounces_hard)::NUMERIC/sent*100 ELSE 0 END AS bounce_rate,
+            CASE WHEN delivered > 0 THEN unsubscribes::NUMERIC/delivered*100 ELSE 0 END AS unsubscribe_rate
+          FROM marketing_metrics mm
+          JOIN marketing_campaigns mc ON mc.id=mm.campaign_id
+          WHERE mm.source='perfit'
+          AND mm.date BETWEEN ${dateFrom} AND ${dateTo}
+          ORDER BY mm.date DESC
+        `;
+        return json({ ok: true, data: rows });
       }
 
-      // ---- LEADS ----
-      if (path === '/marketing/leads' && method === 'GET') {
-        const status = url.searchParams.get('status');
-        const params = [];
-        let where = 'WHERE created_at >= CURRENT_DATE - INTERVAL \'30 days\'';
-        if (status) { params.push(status); where += ` AND status = $${params.length}`; }
-
-        const { rows } = await db.query(`
-          SELECT id, name, status, pipeline_stage, estimated_value, campaign_source, created_at, converted_at
-          FROM leads ${where}
-          ORDER BY created_at DESC LIMIT 50
-        `, params);
-        return json(rows);
-      }
-
-      // ---- RESUMEN LOGÍSTICO ----
-      if (path === '/logistics/summary' && method === 'GET') {
-        const { rows } = await db.query(`
-          SELECT
-            COUNT(*) AS total_shipments,
-            COUNT(*) FILTER (WHERE status = 'delivered') AS delivered,
-            COUNT(*) FILTER (WHERE status = 'in_transit') AS in_transit,
-            COUNT(*) FILTER (WHERE status = 'pending') AS pending_dispatch,
-            COUNT(*) FILTER (WHERE is_delayed) AS delayed,
-            ROUND(AVG(
-              CASE WHEN actual_delivery IS NOT NULL AND shipped_at IS NOT NULL
-              THEN EXTRACT(EPOCH FROM (actual_delivery::TIMESTAMPTZ - shipped_at)) / 86400
-              END
-            ), 1) AS avg_delivery_days,
-            ROUND(
-              COUNT(*) FILTER (WHERE status = 'delivered' AND NOT is_delayed)::NUMERIC /
-              NULLIF(COUNT(*) FILTER (WHERE status = 'delivered'), 0) * 100, 1
-            ) AS on_time_pct
-          FROM shipments
-          WHERE shipped_at >= CURRENT_DATE - INTERVAL '30 days'
-        `);
-        return json(rows[0]);
-      }
-
-      // ---- ENVÍOS DEMORADOS ----
-      if (path === '/logistics/delayed' && method === 'GET') {
-        const { rows } = await db.query(`
-          SELECT
-            s.*, o.external_id AS order_external_id, o.customer_province
-          FROM shipments s
-          JOIN orders o ON o.id = s.order_id
-          WHERE s.is_delayed = true AND s.status != 'delivered'
-          ORDER BY s.delay_days DESC
-          LIMIT 50
-        `);
-        return json(rows);
-      }
-
-      // ---- ALERTAS ACTIVAS ----
-      if (path === '/alerts/active' && method === 'GET') {
-        const { rows } = await db.query(`
-          SELECT * FROM alerts
-          WHERE resolved = false
-          ORDER BY
-            CASE severity WHEN 'critical' THEN 1 WHEN 'high' THEN 2 WHEN 'medium' THEN 3 ELSE 4 END,
-            created_at DESC
-        `);
-        return json(rows);
-      }
-
-      // ---- RESOLVER ALERTA ----
-      if (path.match(/^\/alerts\/[^/]+\/resolve$/) && method === 'POST') {
-        const alertId = path.split('/')[2];
-        const { rows } = await db.query(`
-          UPDATE alerts SET resolved = true, resolved_at = NOW()
-          WHERE id = $1 RETURNING *
-        `, [alertId]);
-        return json(rows[0] || { error: 'Not found' });
-      }
-
-      // ---- ESTADO SYNC ----
-      if (path === '/sync/status' && method === 'GET') {
-        const { rows } = await db.query(`
-          SELECT * FROM last_sync ORDER BY source
-        `);
-        return json(rows);
-      }
-
-      // ---- TRIGGER IMPORTACIÓN SHEETS (protegido) ----
-      if (path === '/sync/sheets' && method === 'POST') {
-        // Solo desde IP de confianza o header especial
-        const secret = request.headers.get('x-sync-secret');
-        if (secret !== env.SYNC_SECRET) return error('Forbidden', 403);
-        // En producción: publicar mensaje a una cola o llamar al job directamente
-        return json({ message: 'Importación de Sheets encolada', timestamp: new Date().toISOString() });
-      }
-
-      return error('Not found', 404);
-    } catch (err) {
-      console.error(err);
-      return error('Internal server error', 500);
-    } finally {
-      await db.end();
+      return bad('Not found', 404);
+    } catch (e) {
+      return bad(e.message, 500);
     }
   },
 };
