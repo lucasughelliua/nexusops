@@ -294,20 +294,21 @@ export async function syncPerfit() {
   const source = 'perfit';
   const logId = await startSyncLog(source);
 
-  const apiKey = process.env.PERFIT_API_KEY;
-  const account = process.env.PERFIT_ACCOUNT;
-  const lastSync = await getLastSync(source);
+  const apiKey = process.env.PERFIT_API_KEY?.trim();
 
-  const daysBack = parseInt(process.env.PERFIT_DAYS_BACK || '30');
-  const dateFrom = lastSync
-    ? new Date(new Date(lastSync) - 86400000).toISOString().split('T')[0] // Retroceder 1 día para re-sync del último
-    : new Date(Date.now() - 86400000 * daysBack).toISOString().split('T')[0];
+if (!apiKey) {
+  throw new Error('Falta PERFIT_API_KEY en GitHub Secrets');
+}
 
-  const headers = {
-    'Authorization': `Bearer ${apiKey}`,
-    'Content-Type': 'application/json',
-  };
-  const baseUrl = `https://api.myperfit.com/v2/${account}`;
+const headers = {
+  Authorization: `Bearer ${apiKey}`,
+  'Content-Type': 'application/json',
+};
+
+const baseUrl = 'https://api.myperfit.com/v2';
+
+console.log('[Perfit] API key cargada:', !!apiKey);
+console.log('[Perfit] Base URL:', baseUrl);
 
   console.log(`[Perfit] Sincronizando desde ${dateFrom}`);
 
@@ -323,7 +324,10 @@ export async function syncPerfit() {
   // 1. Obtener campañas (mailings)
   let page = 1;
   while (true) {
-    const res = await fetch(`${baseUrl}/mailings?offset=${(page-1)*50}&limit=50`, { headers });
+    const res = await fetch(
+  `${baseUrl}/mailings?offset=${(page - 1) * 50}&limit=50`,
+  { headers }
+);
     if (!res.ok) throw new Error(`Perfit API error: ${res.status} ${await res.text()}`);
     const data = await res.json();
     const mailings = data.data || data.mailings || data || [];
