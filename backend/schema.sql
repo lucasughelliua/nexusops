@@ -309,3 +309,69 @@ CREATE TABLE IF NOT EXISTS marketing_metrics (
 
 CREATE INDEX IF NOT EXISTS idx_marketing_metrics_date ON marketing_metrics(date DESC);
 CREATE INDEX IF NOT EXISTS idx_marketing_metrics_source_date ON marketing_metrics(source, date DESC);
+
+-- ============================================================
+-- DASHBOARD USERS (auth real en DB)
+-- ============================================================
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
+CREATE TABLE IF NOT EXISTS dashboard_users (
+  id         UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  username   VARCHAR(100) NOT NULL UNIQUE,
+  name       VARCHAR(255) NOT NULL,
+  role       VARCHAR(50) DEFAULT 'viewer' CHECK (role IN ('admin','gerente','marketing','ops','viewer')),
+  pin_hash   TEXT NOT NULL,
+  active     BOOLEAN DEFAULT true,
+  perms      TEXT[] DEFAULT '{}',
+  color      VARCHAR(20) DEFAULT '#3b82f6',
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Usuario admin inicial (lucasughelli / PIN: 1785)
+INSERT INTO dashboard_users (username, name, role, pin_hash, active, perms, color)
+VALUES (
+  'lucasughelli',
+  'Lucas U.',
+  'admin',
+  crypt('1785', gen_salt('bf')),
+  true,
+  ARRAY['executive','live','channels','marketing','logistics','alerts'],
+  '#1d4ed8'
+) ON CONFLICT (username) DO NOTHING;
+
+-- ============================================================
+-- GOOGLE ADS (tablas adicionales para métricas extendidas)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS google_ads_campaigns (
+  id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  external_id     VARCHAR(255) NOT NULL UNIQUE,
+  customer_id     VARCHAR(50),
+  name            VARCHAR(500),
+  status          VARCHAR(50),
+  channel_type    VARCHAR(100),
+  bidding_strategy VARCHAR(100),
+  daily_budget    NUMERIC(14,2),
+  synced_at       TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- ============================================================
+-- KOMMO PIPELINES (para análisis de embudo)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS kommo_pipelines (
+  id           UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  external_id  VARCHAR(255) NOT NULL UNIQUE,
+  name         VARCHAR(255),
+  is_main      BOOLEAN DEFAULT false,
+  synced_at    TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS kommo_stages (
+  id           UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  pipeline_id  UUID REFERENCES kommo_pipelines(id),
+  external_id  VARCHAR(255) NOT NULL UNIQUE,
+  name         VARCHAR(255),
+  sort_order   INTEGER DEFAULT 0,
+  is_won       BOOLEAN DEFAULT false,
+  is_lost      BOOLEAN DEFAULT false
+);
