@@ -605,15 +605,35 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);min-height:1
           <div class="section-title">Resumen del negocio</div>
           <div class="section-sub" id="execDate">Hoy, cargando…</div>
         </div>
-        <div class="period-tabs">
-          <div class="period-tab active">Hoy</div>
-          <div class="period-tab">MTD</div>
-          <div class="period-tab">YTD</div>
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+          <div class="period-tabs" id="execPresets">
+            <div class="period-tab active" onclick="execSetPeriod('today',this)">Hoy</div>
+            <div class="period-tab" onclick="execSetPeriod('mtd',this)">MTD</div>
+            <div class="period-tab" onclick="execSetPeriod('ytd',this)">YTD</div>
+          </div>
+          <div class="period-tabs" id="execCompareTabs">
+            <div class="period-tab" onclick="execSetCompare('previous',this)">Comparar período</div>
+          </div>
         </div>
       </div>
 
       <!-- KPI Grid -->
       <div class="metrics-grid" id="kpiGrid"></div>
+
+      <div id="execCompareBanner" style="display:none;align-items:center;gap:8px;padding:9px 14px;background:rgba(59,130,246,.07);border:1px solid rgba(59,130,246,.2);border-radius:var(--radius2);margin-bottom:14px;font-size:12px;color:var(--text2)">
+        ⇄ Comparando contra <strong id="execCompareLabel" style="color:var(--text)">período anterior</strong>
+        <button onclick="execClearCompare()" style="margin-left:auto;background:transparent;border:none;cursor:pointer;color:var(--text3);font-size:12px;padding:0">✕ Quitar</button>
+      </div>
+
+      <div style="display:flex;align-items:center;gap:6px;margin-bottom:16px;flex-wrap:wrap">
+        <span style="font-size:11px;color:var(--text3);font-weight:500">Canal de venta:</span>
+        <button class="channel-btn active-all" onclick="execSetChannel('all',this)">Todos</button>
+        <button class="channel-btn" onclick="execSetChannel('vtex',this)">VTEX</button>
+        <button class="channel-btn" onclick="execSetChannel('meli_1',this)">MeLi #1</button>
+        <button class="channel-btn" onclick="execSetChannel('meli_2',this)">MeLi #2</button>
+      </div>
+
+      <div class="channel-grid" id="execChannelCards" style="margin-bottom:16px"></div>
 
       <!-- Revenue + Orders -->
       <div class="cards-grid">
@@ -659,22 +679,29 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);min-height:1
       <div class="cards-grid">
         <div class="card">
           <div class="card-header">
-            <span class="card-title">Top productos del día</span>
+            <span class="card-title">Top productos por cantidad</span>
             <span class="card-action">Ver todos →</span>
           </div>
           <table class="rank-table" id="topProdsTable">
-            <thead><tr><th>#</th><th>Producto</th><th>Canal</th><th>Ingresos</th></tr></thead>
+            <thead><tr><th>#</th><th>Producto</th><th>Canal</th><th>Cant.</th></tr></thead>
             <tbody></tbody>
           </table>
         </div>
         <div class="card">
           <div class="card-header">
-            <span class="card-title">Hoy vs. ayer (misma hora)</span>
+            <span class="card-title" id="execCompareTitle">Período actual vs. anterior</span>
           </div>
           <div class="chart-wrap-sm"><canvas id="compareChart"></canvas></div>
           <div style="margin-top:14px;display:flex;flex-direction:column;gap:10px" id="compareStats"></div>
         </div>
       </div>
+
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;margin-top:16px">
+        <div style="width:3px;height:18px;border-radius:2px;background:#14b8a6"></div>
+        <span style="font-size:13px;font-weight:600">Top 10 productos por canal</span>
+        <span style="font-size:10px;padding:2px 8px;border-radius:4px;background:rgba(20,184,166,.12);color:#5eead4;border:1px solid rgba(20,184,166,.25);font-weight:700;letter-spacing:.5px;text-transform:uppercase">Cantidad vendida</span>
+      </div>
+      <div class="cards-grid-3" id="topProductsByChannel"></div>
     </div>
 
     <!-- ======== LIVE PAGE ======== -->
@@ -1509,14 +1536,200 @@ function initCharts() {
   });
 }
 
+
+// ============================================================
+// EXECUTIVE — filtros, comparación y canales
+// ============================================================
+const execState = {
+  period: 'today',
+  compare: false,
+  compareMode: 'previous',
+  channel: 'all'
+};
+
+function execPeriodLabel(period = execState.period) {
+  if (period === 'mtd') return 'MTD';
+  if (period === 'ytd') return 'YTD';
+  return 'Hoy';
+}
+
+function execPeriodParam() {
+  if (execState.period === 'mtd') return 'mtd';
+  if (execState.period === 'ytd') return 'ytd';
+  return '1d';
+}
+
+function execQuery(extra = {}) {
+  const params = new URLSearchParams({ period: execPeriodParam() });
+  if (execState.channel !== 'all') params.set('channel', execState.channel);
+  if (execState.compare) params.set('compare', execState.compareMode);
+  Object.entries(extra).forEach(([k,v]) => params.set(k, v));
+  return params.toString();
+}
+
+async function execSetPeriod(period, el) {
+  execState.period = period;
+  document.querySelectorAll('#execPresets .period-tab').forEach(t => t.classList.remove('active'));
+  if (el) el.classList.add('active');
+  document.getElementById('execDate').textContent = execPeriodLabel(period) + ' · ' + new Date().toLocaleDateString('es-AR',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
+  await execRefresh();
+}
+
+async function execSetCompare(mode, el) {
+  execState.compare = true;
+  execState.compareMode = mode || 'previous';
+  document.querySelectorAll('#execCompareTabs .period-tab').forEach(t => t.classList.remove('active'));
+  if (el) el.classList.add('active');
+  document.getElementById('execCompareBanner').style.display = 'flex';
+  document.getElementById('execCompareLabel').textContent = 'período anterior';
+  document.getElementById('execCompareTitle').textContent = execPeriodLabel() + ' vs. período anterior';
+  await execRefresh();
+}
+
+async function execClearCompare() {
+  execState.compare = false;
+  document.getElementById('execCompareBanner').style.display = 'none';
+  document.getElementById('execCompareTitle').textContent = 'Período actual vs. anterior';
+  document.querySelectorAll('#execCompareTabs .period-tab').forEach(t => t.classList.remove('active'));
+  await execRefresh();
+}
+
+async function execSetChannel(channel, el) {
+  execState.channel = channel;
+  const parent = el?.parentElement;
+  if (parent) parent.querySelectorAll('.channel-btn').forEach(b => b.classList.remove('active-all'));
+  if (el) el.classList.add('active-all');
+  await execRefresh();
+}
+
+async function execRefresh() {
+  await Promise.all([
+    renderKPIs(),
+    renderExecutiveChannels(),
+    renderTopProducts(),
+    renderTopProductsByChannel(),
+    renderCompareStats()
+  ]);
+}
+
+function normalizeChannelLabel(source) {
+  const s = String(source || '').toLowerCase();
+  if (s.includes('vtex')) return 'VTEX';
+  if (s.includes('meli_1') || s.includes('ml_1') || s.includes('meli #1') || s.includes('mercado libre 1')) return 'MeLi #1';
+  if (s.includes('meli_2') || s.includes('ml_2') || s.includes('meli #2') || s.includes('mercado libre 2')) return 'MeLi #2';
+  return source || '—';
+}
+
+function channelClass(channel) {
+  const ch = normalizeChannelLabel(channel);
+  return ch === 'VTEX' ? 'ch-vtex' : ch.includes('1') ? 'ch-ml1' : ch.includes('2') ? 'ch-ml2' : 'ch-vtex';
+}
+
+function productQty(p) {
+  return Number(p.quantity || p.qty || p.units || p.units_sold || p.total_quantity || p.items_count || p.sold_qty || 0);
+}
+
+function productRevenue(p) {
+  return Number(p.revenue || p.total_price || p.total_amount || p.amount || 0);
+}
+
+function productChannel(p) {
+  return normalizeChannelLabel(p.source || p.channel || p.channel_name || p.sales_channel);
+}
+
+async function renderExecutiveChannels() {
+  let data = await fetchAPI('/metrics/channels?' + execQuery());
+  let rows = Array.isArray(data) ? data : (data?.data || data?.channels || []);
+
+  if (!rows.length) {
+    rows = [
+      { channel:'VTEX', revenue:state.channels.vtex.revenue, orders:state.channels.vtex.orders, ticket:state.channels.vtex.ticket, pct:state.channels.vtex.pct },
+      { channel:'MeLi #1', revenue:state.channels.ml1.revenue, orders:state.channels.ml1.orders, ticket:state.channels.ml1.ticket, pct:state.channels.ml1.pct },
+      { channel:'MeLi #2', revenue:state.channels.ml2.revenue, orders:state.channels.ml2.orders, ticket:state.channels.ml2.ticket, pct:state.channels.ml2.pct },
+    ];
+  }
+
+  if (execState.channel !== 'all') {
+    const wanted = normalizeChannelLabel(execState.channel);
+    rows = rows.filter(r => normalizeChannelLabel(r.channel || r.source || r.name) === wanted || String(r.source || '').toLowerCase() === execState.channel);
+  }
+
+  const colors = { 'VTEX':'#ef4444', 'MeLi #1':'#f59e0b', 'MeLi #2':'#14b8a6' };
+  const totalRevenue = rows.reduce((a,r)=>a+Number(r.revenue || r.total_revenue || 0),0) || 1;
+
+  document.getElementById('execChannelCards').innerHTML = rows.map(r => {
+    const name = normalizeChannelLabel(r.channel || r.source || r.name);
+    const revenue = Number(r.revenue || r.total_revenue || 0);
+    const orders = Number(r.orders || r.orders_count || 0);
+    const ticket = Number(r.ticket || r.avg_ticket || (orders ? revenue / orders : 0));
+    const share = Number(r.pct || r.share || (revenue / totalRevenue * 100));
+    const color = colors[name] || '#3b82f6';
+    return `<div class="channel-card" style="border-top:2px solid ${color}">
+      <div class="channel-name"><div class="channel-dot" style="background:${color}"></div>${name}</div>
+      <div class="channel-rev">${fmt(revenue)}</div>
+      <div class="channel-delta" style="color:var(--text3)">${execPeriodLabel()} · ${share.toFixed(0)}% del total</div>
+      <div style="margin-top:12px;display:flex;gap:16px">
+        <div><div style="font-size:10px;color:var(--text3);margin-bottom:3px">Órdenes</div><div style="font-size:16px;font-weight:600;font-family:var(--mono)">${orders}</div></div>
+        <div><div style="font-size:10px;color:var(--text3);margin-bottom:3px">Ticket</div><div style="font-size:16px;font-weight:600;font-family:var(--mono)">${fmt(ticket)}</div></div>
+        <div><div style="font-size:10px;color:var(--text3);margin-bottom:3px">Share</div><div style="font-size:16px;font-weight:600;font-family:var(--mono)">${share.toFixed(0)}%</div></div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+async function getTopProductsForExecutive() {
+  const candidates = [
+    '/products/top-by-channel?' + execQuery({ metric:'quantity', limit:'30' }),
+    '/products/top?' + execQuery({ metric:'quantity', limit:'30' }),
+    '/products/top?period=' + execPeriodParam()
+  ];
+
+  for (const path of candidates) {
+    const data = await fetchAPI(path);
+    const rows = Array.isArray(data) ? data : (data?.data || data?.products || []);
+    if (rows.length) return rows;
+  }
+  return products.map(p => ({ ...p, quantity: p.quantity || Math.max(1, Math.round((p.revenue || 0) / 15000)) }));
+}
+
+async function renderTopProductsByChannel() {
+  const rows = await getTopProductsForExecutive();
+  const channels = ['VTEX','MeLi #1','MeLi #2'];
+  const filteredChannels = execState.channel === 'all' ? channels : channels.filter(c => normalizeChannelLabel(execState.channel) === c);
+
+  const html = filteredChannels.map(ch => {
+    const list = rows
+      .filter(p => productChannel(p) === ch)
+      .sort((a,b) => productQty(b) - productQty(a))
+      .slice(0,10);
+
+    const body = list.length ? list.map((p,i) => {
+      const name = p.product_name || p.name || p.sku_name || 'Producto';
+      const qty = productQty(p);
+      return `<tr>
+        <td><span class="rank-num">${i+1}</span></td>
+        <td>${name}</td>
+        <td>${qty.toLocaleString('es-AR')}</td>
+      </tr>`;
+    }).join('') : `<tr><td colspan="3" style="color:var(--text3);padding:14px">Sin datos para este período.</td></tr>`;
+
+    return `<div class="card">
+      <div class="card-header"><span class="card-title">${ch}</span><span class="card-action">Top 10</span></div>
+      <table class="rank-table"><thead><tr><th>#</th><th>Producto</th><th>Cant.</th></tr></thead><tbody>${body}</tbody></table>
+    </div>`;
+  }).join('');
+
+  document.getElementById('topProductsByChannel').innerHTML = html;
+}
+
 // ============================================================
 // RENDER FUNCTIONS
 // ============================================================
 async function renderKPIs() {
   // Cargar datos reales de la API
   const [exec, compare] = await Promise.all([
-    fetchAPI('/metrics/executive'),
-    fetchAPI('/metrics/executive/compare'),
+    fetchAPI('/metrics/executive?' + execQuery()),
+    fetchAPI('/metrics/executive/compare?' + execQuery()),
   ]);
 
   // Actualizar state con datos reales si llegaron
@@ -1571,25 +1784,31 @@ async function renderKPIs() {
 }
 
 async function renderTopProducts() {
-  const data = await fetchAPI('/products/top?period=1d');
   const tbody = document.querySelector('#topProdsTable tbody');
-  const list = (data && data.length) ? data : products;
-  tbody.innerHTML = list.slice(0,6).map((p,i) => {
-    const name    = p.product_name || p.name;
-    const channel = p.source ? (p.source==='vtex'?'VTEX':p.source==='meli_1'?'MeLi #1':'MeLi #2') : p.channel;
-    const rev     = p.revenue || p.total_price || 0;
-    const cls     = channel==='VTEX'?'ch-vtex':channel.includes('1')?'ch-ml1':'ch-ml2';
-    return `<tr>
-      <td><span class="rank-num">${i+1}</span></td>
-      <td>${name}</td>
-      <td><span class="channel-pill ${cls}">${channel}</span></td>
-      <td>${fmt(rev)}</td>
-    </tr>`;
-  }).join('');
+  const list = await getTopProductsForExecutive();
+  const filtered = execState.channel === 'all'
+    ? list
+    : list.filter(p => productChannel(p) === normalizeChannelLabel(execState.channel));
+
+  tbody.innerHTML = filtered
+    .sort((a,b) => productQty(b) - productQty(a))
+    .slice(0,10)
+    .map((p,i) => {
+      const name    = p.product_name || p.name || p.sku_name || 'Producto';
+      const channel = productChannel(p);
+      const qty     = productQty(p);
+      const cls     = channelClass(channel);
+      return `<tr>
+        <td><span class="rank-num">${i+1}</span></td>
+        <td>${name}</td>
+        <td><span class="channel-pill ${cls}">${channel}</span></td>
+        <td>${qty.toLocaleString('es-AR')}</td>
+      </tr>`;
+    }).join('');
 }
 
 async function renderCompareStats() {
-  const compare = await fetchAPI('/metrics/executive/compare');
+  const compare = await fetchAPI('/metrics/executive/compare?' + execQuery());
   const rd = compare ? parseFloat(compare.revenue_delta_pct) : null;
   const od = compare ? parseFloat(compare.orders_delta_pct)  : null;
   const todayRev  = compare ? parseFloat(compare.today_revenue)  : state.revenue;
@@ -2334,7 +2553,9 @@ async function bootDashboard() {
 
   await Promise.all([
     renderKPIs(),
+    renderExecutiveChannels(),
     renderTopProducts(),
+    renderTopProductsByChannel(),
     renderCompareStats(),
     renderLivePage(),
   ]);
@@ -2354,6 +2575,11 @@ async function bootDashboard() {
 
   setInterval(async () => {
     await renderKPIs();
+    await renderExecutiveChannels();
+    if(document.getElementById('page-executive').classList.contains('active')) {
+      await renderTopProducts();
+      await renderTopProductsByChannel();
+    }
     if(document.getElementById('page-live').classList.contains('active')) {
       await renderOrdersList();
     }
