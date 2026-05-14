@@ -435,6 +435,9 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);min-height:1
   .cards-grid{grid-template-columns:1fr}
   .cards-grid-3{grid-template-columns:1fr}
 }
+@media(min-width:769px){
+  .main{margin-left:var(--sidebar);min-width:0;overflow-x:hidden}
+}
 @media(max-width:768px){
   :root{--sidebar:240px}
   .sidebar{transform:translateX(-100%)}
@@ -470,21 +473,17 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);min-height:1
       <div><div class="login-logo-name">NexusOps</div><div class="login-logo-tag">eCommerce Hub</div></div>
     </div>
     <div class="login-title">Bienvenido</div>
-    <div class="login-sub">Ingresá con tu email y PIN para continuar</div>
+    <div class="login-sub">Ingresá con tu usuario y PIN para continuar</div>
     <div class="login-field">
-      <label class="login-label">Email</label>
-      <input class="login-input" type="email" id="loginEmail" placeholder="tu@empresa.com" onkeydown="if(event.key==='Enter')loginSubmit()">
+      <label class="login-label">Usuario</label>
+      <input class="login-input" type="text" id="loginEmail" placeholder="tu usuario" autocomplete="username" onkeydown="if(event.key==='Enter')document.getElementById('loginPin').focus()">
     </div>
     <div class="login-field">
       <label class="login-label">PIN</label>
-      <input class="login-input" type="password" id="loginPin" placeholder="••••" maxlength="6" onkeydown="if(event.key==='Enter')loginSubmit()">
+      <input class="login-input" type="password" id="loginPin" placeholder="••••" maxlength="6" autocomplete="current-password" onkeydown="if(event.key==='Enter')loginSubmit()">
     </div>
     <button class="login-btn" onclick="loginSubmit()">Ingresar al dashboard</button>
     <div class="login-error" id="loginError"></div>
-    <div class="login-users">
-      <div class="login-users-label">Acceso rápido (demo)</div>
-      <div id="loginUsersList"></div>
-    </div>
   </div>
 </div>
 
@@ -565,7 +564,7 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);min-height:1
       </div>
     </div>
 
-    <div class="user-pill" onclick="toggleUserDropdown()" id="userPill">
+    <div class="user-pill" onclick="toggleUserDropdown(event)" id="userPill">
       <div class="user-avatar" id="sidebarAvatar">MA</div>
       <div>
         <div class="user-name" id="sidebarUserName">Martín A.</div>
@@ -1001,7 +1000,7 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);min-height:1
 
       <!-- INVITE FORM -->
       <div class="admin-section" id="admin-invite">
-        <div style="font-size:13px;color:var(--text2);margin-bottom:18px">Completá los datos para invitar a un nuevo usuario al dashboard.</div>
+        <div style="font-size:13px;color:var(--text2);margin-bottom:18px">Creá un nuevo usuario. El PIN se genera automáticamente si no lo especificás.</div>
         <div class="form-grid">
           <div class="form-row">
             <label class="form-label">Nombre</label>
@@ -1078,63 +1077,53 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);min-height:1
 // USER SYSTEM
 // ============================================================
 const USERS = [
-  { id:1, name:'Martín A.', lastName:'Acosta', email:'martin@empresa.com', role:'admin', color:'#1d4ed8', initials:'MA', active:true,
+  { id:1, username:'lucasughelli', name:'Lucas U.', lastName:'Ughelli', email:'lucasughelli', role:'admin',
+    color:'#1d4ed8', initials:'LU', active:true,
     perms:['executive','live','channels','marketing','logistics','alerts'] },
-  { id:2, name:'Laura G.', lastName:'García', email:'laura@empresa.com', role:'gerente', color:'#059669', initials:'LG', active:true,
-    perms:['executive','live','channels','marketing'] },
-  { id:3, name:'Diego R.', lastName:'Rodríguez', email:'diego@empresa.com', role:'marketing', color:'#7c3aed', initials:'DR', active:true,
-    perms:['marketing'] },
-  { id:4, name:'Sofía M.', lastName:'Martínez', email:'sofia@empresa.com', role:'ops', color:'#0891b2', initials:'SM', active:true,
-    perms:['live','logistics'] },
-  { id:5, name:'Carlos B.', lastName:'Bello', email:'carlos@empresa.com', role:'viewer', color:'#374151', initials:'CB', active:false,
-    perms:['executive'] },
 ];
-let currentUser = USERS[0];
+const USER_PINS = { 'lucasughelli': '1785' };
+
+let currentUser = null;
 
 function initUserSession() {
+  if(!currentUser) return;
   document.getElementById('sidebarAvatar').textContent = currentUser.initials;
   document.getElementById('sidebarAvatar').style.background = currentUser.color;
   document.getElementById('sidebarUserName').textContent = currentUser.name;
   document.getElementById('sidebarUserRole').textContent = roleLabel(currentUser.role);
   document.getElementById('ddUserName').textContent = currentUser.name + ' ' + currentUser.lastName;
   document.getElementById('ddUserEmail').textContent = currentUser.email;
-  if(currentUser.role === 'admin') document.getElementById('adminBadge').style.display = 'inline-flex';
-  else document.getElementById('adminBadge').style.display = 'none';
+  const badge = document.getElementById('adminBadge');
+  if(badge) badge.style.display = currentUser.role === 'admin' ? 'inline-flex' : 'none';
 }
-function roleLabel(r){return {admin:'Administrador',gerente:'Gerente',marketing:'Marketing',ops:'Operaciones',viewer:'Solo lectura'}[r]||r}
-function roleClass(r){return {admin:'role-admin',gerente:'role-gerente',marketing:'role-marketing',ops:'role-ops',viewer:'role-viewer'}[r]||'role-viewer'}
+
+function roleLabel(r){ return {admin:'Administrador',gerente:'Gerente',marketing:'Marketing',ops:'Operaciones',viewer:'Solo lectura'}[r]||r; }
+function roleClass(r){ return {admin:'role-admin',gerente:'role-gerente',marketing:'role-marketing',ops:'role-ops',viewer:'role-viewer'}[r]||'role-viewer'; }
+
+// ---- DROPDOWN ----
+function toggleUserDropdown(e) {
+  if(e) e.stopPropagation();
+  const dd = document.getElementById('userDropdown');
+  if(dd) dd.classList.toggle('open');
+}
+function closeUserDropdown() {
+  const dd = document.getElementById('userDropdown');
+  if(dd) dd.classList.remove('open');
+}
 
 // ---- LOGIN ----
-const USER_PINS = { 'martin@empresa.com':'1234', 'laura@empresa.com':'2345', 'diego@empresa.com':'3456', 'sofia@empresa.com':'4567', 'carlos@empresa.com':'5678' };
-
-function renderLoginUsers() {
-  document.getElementById('loginUsersList').innerHTML = USERS.filter(u=>u.active).map(u=>`
-    <div class="login-user-pill" onclick="quickLogin('${u.email}')">
-      <div class="login-user-av" style="background:${u.color}">${u.initials}</div>
-      <div>
-        <div class="login-user-name">${u.name} ${u.lastName}</div>
-        <div class="login-user-role">${roleLabel(u.role)} · PIN: ${USER_PINS[u.email]||'1234'}</div>
-      </div>
-    </div>`).join('');
-}
-
-function quickLogin(email) {
-  document.getElementById('loginEmail').value = email;
-  document.getElementById('loginPin').value = USER_PINS[email] || '1234';
-  loginSubmit();
-}
-
 function loginSubmit() {
-  const email = document.getElementById('loginEmail').value.trim().toLowerCase();
-  const pin   = document.getElementById('loginPin').value.trim();
-  const errEl = document.getElementById('loginError');
+  const usernameRaw = document.getElementById('loginEmail').value.trim().toLowerCase();
+  const pin         = document.getElementById('loginPin').value.trim();
+  const errEl       = document.getElementById('loginError');
   errEl.textContent = '';
 
-  const user = USERS.find(u => u.email.toLowerCase() === email && u.active);
-  if (!user) { errEl.textContent = 'Email no encontrado o usuario inactivo.'; return; }
-  if (USER_PINS[user.email] !== pin) { errEl.textContent = 'PIN incorrecto.'; return; }
+  const user = USERS.find(u => u.username.toLowerCase() === usernameRaw && u.active);
+  if (!user) { errEl.textContent = 'Usuario no encontrado.'; return; }
+  if (USER_PINS[user.username] !== pin) { errEl.textContent = 'PIN incorrecto.'; return; }
 
   currentUser = user;
+  sessionStorage.setItem('nexusops_user', user.username);
   document.getElementById('loginScreen').classList.remove('active');
   document.getElementById('dashboardApp').style.display = '';
   initUserSession();
@@ -1150,11 +1139,13 @@ function logoutUser() {
   document.getElementById('loginEmail').value = '';
   document.getElementById('loginPin').value = '';
   document.getElementById('loginError').textContent = '';
-  renderLoginUsers();
 }
-document.addEventListener('click',e=>{
-  const pill=document.getElementById('userPill'), dd=document.getElementById('userDropdown');
-  if(dd&&!pill?.contains(e.target)&&!dd?.contains(e.target)) dd.classList.remove('open');
+
+// Close dropdown on outside click
+document.addEventListener('click', e => {
+  const pill = document.getElementById('userPill');
+  const dd   = document.getElementById('userDropdown');
+  if(dd && !pill?.contains(e.target) && !dd?.contains(e.target)) dd.classList.remove('open');
 });
 
 // ============================================================
@@ -1180,19 +1171,25 @@ function adminTab(tab,el){
 }
 
 function renderUsersGrid(){
-  document.getElementById('userCountLabel').textContent=USERS.filter(u=>u.active).length;
-  document.getElementById('usersGrid').innerHTML=USERS.map(u=>`
+  const activeCount = USERS.filter(u=>u.active).length;
+  document.getElementById('userCountLabel').textContent = activeCount;
+  document.getElementById('usersGrid').innerHTML = USERS.map(u=>`
     <div class="user-row" style="opacity:${u.active?1:.5}">
       <div class="user-row-av" style="background:${u.color}">${u.initials}</div>
       <div style="flex:1;min-width:0">
         <div class="user-row-name">${u.name} ${u.lastName}</div>
-        <div class="user-row-email">${u.email}</div>
+        <div class="user-row-email" style="font-size:11px;color:var(--text3)">${u.email}</div>
+        <div style="display:flex;flex-wrap:wrap;gap:3px;margin-top:4px">
+          ${PAGES_LABELS ? Object.entries(PAGES_LABELS).map(([k,v])=>`
+            <span style="font-size:9.5px;padding:1px 6px;border-radius:3px;${u.perms.includes(k)?'background:rgba(59,130,246,.12);color:#60a5fa':'background:var(--bg);color:var(--text3);opacity:.5'}">${v}</span>
+          `).join('') : ''}
+        </div>
       </div>
       <span class="user-row-role ${roleClass(u.role)}">${roleLabel(u.role)}</span>
       <div class="user-row-actions">
         <button class="btn-action" onclick="editUser(${u.id})">Editar</button>
         <button class="btn-action" onclick="toggleUserActive(${u.id})">${u.active?'Desactivar':'Activar'}</button>
-        ${u.id!==currentUser.id?`<button class="btn-action danger" onclick="deleteUser(${u.id})">Eliminar</button>`:''}
+        ${u.id!==currentUser?.id?`<button class="btn-action danger" onclick="deleteUser(${u.id})">Eliminar</button>`:''}
       </div>
     </div>`).join('');
 }
@@ -1220,12 +1217,48 @@ function renderNotifSettings(){
 }
 
 function editUser(id){
-  const u=USERS.find(x=>x.id===id); if(!u) return;
+  const u = USERS.find(x => x.id === id);
+  if(!u) return;
   document.querySelectorAll('.admin-tab')[1].click();
-  document.getElementById('inviteName').value=u.name;
-  document.getElementById('inviteEmail').value=u.email;
-  document.getElementById('inviteRole').value=u.role;
-  document.getElementById('adminSaveBtn').textContent='Actualizar usuario';
+  document.getElementById('inviteName').value  = u.name;
+  document.getElementById('inviteEmail').value = u.username || u.email;
+  document.getElementById('inviteRole').value  = u.role;
+  document.getElementById('invitePin').value   = '';
+
+  // Pre-check the permissions this user has
+  setTimeout(() => {
+    document.querySelectorAll('input[name="perm"]').forEach(cb => {
+      cb.checked = u.perms.includes(cb.value);
+    });
+  }, 50);
+
+  document.getElementById('adminSaveBtn').textContent = 'Actualizar usuario';
+  // Override save to update instead of create
+  document.getElementById('adminSaveBtn').onclick = () => updateUser(id);
+}
+
+function updateUser(id) {
+  const u        = USERS.find(x => x.id === id);
+  if(!u) return;
+  const name     = document.getElementById('inviteName').value.trim();
+  const role     = document.getElementById('inviteRole').value;
+  const pin      = document.getElementById('invitePin').value.trim();
+  const perms    = Array.from(document.querySelectorAll('input[name="perm"]:checked')).map(i=>i.value);
+
+  if(!name){ alert('El nombre no puede estar vacío.'); return; }
+  if(pin && (pin.length < 4 || isNaN(pin))){ alert('PIN debe tener 4-6 dígitos.'); return; }
+
+  u.name    = name;
+  u.role    = role;
+  u.perms   = perms;
+  u.initials= name.split(' ').map(w=>w[0]).join('').substring(0,2).toUpperCase();
+  if(pin) USER_PINS[u.username] = pin;
+
+  document.querySelectorAll('.admin-tab')[0].click();
+  renderUsersGrid();
+  document.getElementById('adminSaveBtn').onclick = adminSave;
+  document.getElementById('adminSaveBtn').textContent = 'Guardar cambios';
+  alert(`✓ Usuario "${name}" actualizado.`);
 }
 
 function toggleUserActive(id){
@@ -1241,31 +1274,41 @@ function deleteUser(id){
 }
 
 function adminSave(){
-  const activeTab=document.querySelector('.admin-section.active')?.id;
-  if(activeTab==='admin-invite'){
-    const name=document.getElementById('inviteName').value.trim();
-    const email=document.getElementById('inviteEmail').value.trim();
-    const role=document.getElementById('inviteRole').value;
-    const pin=document.getElementById('invitePin').value.trim();
-    if(!name||!email){alert('Completá nombre y email.');return;}
-    if(!email.includes('@')){alert('Email inválido.');return;}
-    if(pin&&(pin.length<4||isNaN(pin))){alert('El PIN debe tener 4-6 dígitos.');return;}
-    const initials=name.split(' ').map(w=>w[0]).join('').substring(0,2).toUpperCase();
-    const colors=['#1d4ed8','#059669','#7c3aed','#0891b2','#dc2626','#d97706'];
-    const perms=Array.from(document.querySelectorAll('input[name="perm"]:checked')).map(i=>i.value);
-    USERS.push({id:Date.now(),name,lastName:'',email,role,color:colors[USERS.length%colors.length],initials,active:true,perms});
+  const activeTab = document.querySelector('.admin-section.active')?.id;
+
+  if(activeTab === 'admin-invite'){
+    const name     = document.getElementById('inviteName').value.trim();
+    const username = document.getElementById('inviteEmail').value.trim().toLowerCase().replace(/\s/g,'');
+    const role     = document.getElementById('inviteRole').value;
+    const pin      = document.getElementById('invitePin').value.trim();
+
+    if(!name || !username){ alert('Completá nombre y usuario.'); return; }
+    if(pin && (pin.length < 4 || isNaN(pin))){ alert('El PIN debe tener 4-6 dígitos.'); return; }
+    if(USERS.find(u => u.username === username)){ alert('Ese usuario ya existe.'); return; }
+
+    const perms    = Array.from(document.querySelectorAll('input[name="perm"]:checked')).map(i=>i.value);
+    const initials = name.split(' ').map(w=>w[0]).join('').substring(0,2).toUpperCase();
+    const colors   = ['#1d4ed8','#059669','#7c3aed','#0891b2','#dc2626','#d97706','#ea580c','#7c3aed'];
+    const newPin   = pin || Math.floor(1000 + Math.random()*9000).toString();
+
+    USERS.push({ id:Date.now(), username, name, lastName:'', email:username, role,
+      color: colors[USERS.length % colors.length], initials, active:true, perms });
+    USER_PINS[username] = newPin;
+
     document.querySelectorAll('.admin-tab')[0].click();
     renderUsersGrid();
-    document.getElementById('inviteName').value='';
-    document.getElementById('inviteEmail').value='';
-    document.getElementById('invitePin').value='';
-    document.getElementById('adminSaveBtn').textContent='Guardar cambios';
-    alert(`✓ Usuario ${name} agregado.`);
+    document.getElementById('inviteName').value = '';
+    document.getElementById('inviteEmail').value = '';
+    document.getElementById('invitePin').value = '';
+    document.getElementById('adminSaveBtn').textContent = 'Guardar cambios';
+    alert(`✓ Usuario "${name}" creado.\nUsuario: ${username}\nPIN: ${newPin}`);
   }
-  if(activeTab==='admin-settings'){
-    const goal=parseInt(document.getElementById('settingGoal').value);
-    if(goal>0){state.revenueGoal=goal;renderKPIs();}
-    alert('✓ Configuración guardada.');closeAdmin();
+
+  if(activeTab === 'admin-settings'){
+    const goal = parseInt(document.getElementById('settingGoal').value);
+    if(goal > 0){ state.revenueGoal = goal; renderKPIs(); }
+    alert('✓ Configuración guardada.');
+    closeAdmin();
   }
 }
 
@@ -2266,26 +2309,20 @@ function triggerSync() {
 // INIT
 // ============================================================
 document.addEventListener('DOMContentLoaded', async () => {
-  // Show login screen first
-  renderLoginUsers();
-
-  // Check if already logged in (session storage)
-  const savedUser = sessionStorage.getItem('nexusops_user');
-  if(savedUser) {
-    try {
-      const u = USERS.find(x => x.email === savedUser);
-      if(u && u.active) {
-        currentUser = u;
-        document.getElementById('loginScreen').classList.remove('active');
-        document.getElementById('dashboardApp').style.display = '';
-        initUserSession();
-        await bootDashboard();
-        return;
-      }
-    } catch(e) {}
+  // Check session storage for auto-login
+  const savedUsername = sessionStorage.getItem('nexusops_user');
+  if(savedUsername) {
+    const u = USERS.find(x => x.username === savedUsername && x.active);
+    if(u) {
+      currentUser = u;
+      document.getElementById('loginScreen').classList.remove('active');
+      document.getElementById('dashboardApp').style.display = '';
+      initUserSession();
+      bootDashboard();
+      return;
+    }
   }
-
-  // Wait for login — bootDashboard called after successful login
+  // Show login screen (already active by default)
 });
 
 async function bootDashboard() {
