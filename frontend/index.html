@@ -1504,6 +1504,39 @@ async function fetchAPI(path) {
   }
 }
 
+
+function unwrapPayload(payload) {
+  if (!payload) return null;
+  if (Array.isArray(payload)) return payload;
+  if (payload.data !== undefined) return payload.data;
+  return payload;
+}
+
+function hasRows(payload) {
+  const data = unwrapPayload(payload);
+  return Array.isArray(data) ? data.length > 0 : !!data;
+}
+
+function summaryHasValue(payload) {
+  const d = payload?.data || payload || {};
+  return Number(d.total_revenue || d.revenue || d.net_revenue || 0) > 0 ||
+         Number(d.orders_count || d.orders || 0) > 0 ||
+         Number(d.units_sold || d.units || 0) > 0;
+}
+
+async function fetchAPIWithFallback(primaryPath, fallbackPath, validator = hasRows) {
+  const primary = await fetchAPI(primaryPath);
+  if (validator(primary)) return primary;
+  if (!fallbackPath) return primary;
+  const fallback = await fetchAPI(fallbackPath);
+  return validator(fallback) ? fallback : (primary || fallback);
+}
+
+function legacyQueryFromExec(qs) {
+  // Los endpoints legacy entienden date_from/date_to, y ahora el Worker también acepta ambos formatos.
+  return qs;
+}
+
 // ============================================================
 // DATA LAYER — datos reales solamente. Sin fallback demo en producción
 // ============================================================
@@ -1885,7 +1918,7 @@ function productChannel(p) {
 
 async function renderExecutiveChannels() {
   // channels endpoint also uses date_from/date_to via execQuery()
-  let data = await fetchAPI('/dashboard/channels?' + execQuery());
+  let data = await fetchAPIWithFallback('/dashboard/channels?' + execQuery(), '/metrics/channels?' + legacyQueryFromExec(execQuery()), hasRows);
   let rows = Array.isArray(data) ? data : (data?.data || data?.channels || []);
 
   if (!rows.length) {
@@ -1938,7 +1971,7 @@ async function getTopProductsForExecutive() {
   if (execState.channel && execState.channel !== 'all') {
     params.set('channel', execState.channel);
   }
-  const data = await fetchAPI('/dashboard/top-products?' + params.toString());
+  const data = await fetchAPIWithFallback('/dashboard/top-products?' + params.toString(), '/products/top?' + params.toString(), hasRows);
   return Array.isArray(data) ? data : (data?.data || []);
 }
 
@@ -1978,12 +2011,12 @@ async function renderTopProductsByChannel() {
 async function renderKPIs() {
   // Cargar datos reales de la API — current period
   const { dateFrom, dateTo } = execPeriodDates();
-  const exec = await fetchAPI('/dashboard/summary?' + execQuery());
+  const exec = await fetchAPIWithFallback('/dashboard/summary?' + execQuery(), '/metrics/executive?' + legacyQueryFromExec(execQuery()), summaryHasValue);
 
   // Compare period: only fetch if compare is ON
   let compare = null;
   if (execState.compare) {
-    compare = await fetchAPI('/dashboard/summary?' + execQueryCompare());
+    compare = await fetchAPIWithFallback('/dashboard/summary?' + execQueryCompare(), '/metrics/executive?' + legacyQueryFromExec(execQueryCompare()), summaryHasValue);
   }
 
   // Actualizar state con datos reales si llegaron
@@ -2091,8 +2124,8 @@ async function renderTopProducts() {
 
 async function renderCompareStats() {
   const [curr, prev] = await Promise.all([
-    fetchAPI('/dashboard/summary?' + execQuery()),
-    execState.compare ? fetchAPI('/dashboard/summary?' + execQueryCompare()) : Promise.resolve(null),
+    fetchAPIWithFallback('/dashboard/summary?' + execQuery(), '/metrics/executive?' + legacyQueryFromExec(execQuery()), summaryHasValue),
+    execState.compare ? fetchAPIWithFallback('/dashboard/summary?' + execQueryCompare(), '/metrics/executive?' + legacyQueryFromExec(execQueryCompare()), summaryHasValue) : Promise.resolve(null),
   ]);
 
   const currData = curr?.data || curr || {};
@@ -2134,7 +2167,7 @@ function genOrder() { return null; }
 
 async function renderLivePage() {
   const today = new Date().toISOString().slice(0,10);
-  const exec = await fetchAPI('/dashboard/summary?date_from=' + today + '&date_to=' + today);
+  const exec = await fetchAPIWithFallback('/dashboard/summary?date_from=' + today + '&date_to=' + today, '/metrics/executive?date_from=' + today + '&date_to=' + today, summaryHasValue);
   const execLive = exec?.data || exec || {};
   if (execLive) {
     state.revenue = Number(execLive.total_revenue || 0);
@@ -2159,7 +2192,7 @@ async function renderLivePage() {
   await renderOrdersList();
 
   // Top productos reales
-  const topProds = await fetchAPI('/dashboard/top-products?date_from=' + today + '&date_to=' + today + '&limit=10');
+  const topProds = await fetchAPIWithFallback('/dashboard/top-products?date_from=' + today + '&date_to=' + today + '&limit=10', '/products/top?date_from=' + today + '&date_to=' + today + '&limit=10', hasRows);
   const prodList = Array.isArray(topProds) ? topProds : (topProds?.data || []);
   if (!prodList.length) {
     document.getElementById('liveRanking').innerHTML = emptyHTML();
@@ -2177,7 +2210,7 @@ async function renderLivePage() {
 }
 
 async function renderOrdersList() {
-  const data = await fetchAPI('/dashboard/tv?date_from=' + new Date().toISOString().slice(0,10) + '&date_to=' + new Date().toISOString().slice(0,10));
+  const data = await fetchAPIWithFallback('/dashboard/tv?date_from=' + new Date().toISOString().slice(0,10) + '&date_to=' + new Date().toISOString().slice(0,10), '/orders/live?limit=15', hasRows);
   document.getElementById('orderTicker').textContent = state.orders + ' hoy';
 
   const ordersToShow = Array.isArray(data) ? data : (data?.recent_orders || []);
@@ -2628,7 +2661,7 @@ function renderGoogleAds(g){
 function getKommoData(){
   const n=mktState.days||30;
   const days=Array.from({length:n},(_,i)=>{const d=new Date(mktState.dateFrom+'T12:00'); d.setDate(d.getDate()+i);return d.toLocaleDateString('es-AR',{day:'2-digit',month:'2-digit'});});
-  return {days,newLeads:days.map(()=>0),wonLeads:days.map(()=>0),totals:{newLeads:0,wonLeads:0,openLeads:0,lostLeads:0,revenue:0,pipeline:0},funnel:[{l:'Nuevos leads',n:0,pct:100,c:'#e8622a'},{l:'Abiertos',n:0,pct:0,c:'#f59e0b'},{l:'Ganados',n:0,pct:0,c:'#10b981'},{l:'Perdidos',n:0,pct:0,c:'#ef4444'}]};
+  return {days,newLeads:days.map(()=>0),wonLeads:days.map(()=>0),totals:{newLeads:0,wonLeads:0,openLeads:0,lostLeads:0,revenue:0,pipeline:0},funnel:[{l:'Nuevos leads',n:0,pct:100,c:'#e8622a'},{l:'Contactados',n:0,pct:78,c:'#f59e0b'},{l:'Calificados',n:0,pct:54,c:'#3b82f6'},{l:'Oportunidades',n:0,pct:32,c:'#8b5cf6'},{l:'Negociación',n:0,pct:20,c:'#14b8a6'},{l:'Ganados',n:0,pct:0,c:'#10b981'}]};
 }
 
 
