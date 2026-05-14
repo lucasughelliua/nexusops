@@ -37,9 +37,33 @@ async function bodyJson(req) {
 }
 
 function getDateRange(url) {
-  const dateFrom = url.searchParams.get('date_from') || new Date(Date.now() - 86400000 * 30).toISOString().split('T')[0];
-  const dateTo = url.searchParams.get('date_to') || new Date().toISOString().split('T')[0];
+  const dateFrom = url.searchParams.get('date_from') || url.searchParams.get('dateFrom') || new Date(Date.now() - 86400000 * 30).toISOString().split('T')[0];
+  const dateTo = url.searchParams.get('date_to') || url.searchParams.get('dateTo') || new Date().toISOString().split('T')[0];
   return { dateFrom, dateTo };
+}
+
+function getDashboardFilters(url) {
+  return {
+    channel: url.searchParams.get('channel') || 'all',
+    source: url.searchParams.get('source') || 'all',
+    campaign: url.searchParams.get('campaign') || '',
+    brand: url.searchParams.get('brand') || '',
+    category: url.searchParams.get('category') || '',
+    product: url.searchParams.get('product') || '',
+    sku: url.searchParams.get('sku') || '',
+    province: url.searchParams.get('province') || '',
+    status: url.searchParams.get('status') || '',
+    paymentStatus: url.searchParams.get('payment_status') || url.searchParams.get('paymentStatus') || '',
+  };
+}
+
+function sourceMatch(source, channel) {
+  const s = String(source || '').toLowerCase();
+  const c = String(channel || '').toLowerCase();
+  if (!c || c === 'all') return true;
+  if (c === 'ml1') return s === 'meli_1' || s === 'ml_1' || s.includes('meli_1');
+  if (c === 'ml2') return s === 'meli_2' || s === 'ml_2' || s.includes('meli_2');
+  return s === c || s.includes(c);
 }
 
 async function sha256(text) {
@@ -638,6 +662,134 @@ export default {
           return json({ ok: true, summary: summary[0], by_day: byDay });
         } catch(e) {
           return json({ ok: false, error: e.message });
+        }
+      }
+
+
+      // --------------------------------------------------------
+      // DASHBOARD V1 — Analytics unificado con filtros reales
+      // --------------------------------------------------------
+      if ((path === '/api/v1/dashboard/summary' || path === '/api/v1/dashboard/channels' || path === '/api/v1/dashboard/timeseries' || path === '/api/v1/dashboard/top-products' || path === '/api/v1/dashboard/filters' || path === '/api/v1/dashboard/tv') && req.method === 'GET') {
+        const { dateFrom, dateTo } = getDateRange(url);
+        const f = getDashboardFilters(url);
+        const limit = Math.min(parseInt(url.searchParams.get('limit') || '50'), 200);
+
+        if (path === '/api/v1/dashboard/summary') {
+          const rows = await sql`
+            SELECT
+              COALESCE(SUM(o.total_amount), 0) AS total_revenue,
+              COALESCE(SUM(o.net_amount), 0) AS net_revenue,
+              COUNT(DISTINCT o.id)::int AS orders_count,
+              COALESCE(AVG(o.total_amount), 0) AS avg_ticket,
+              COALESCE(SUM(oi.quantity), 0)::int AS units_sold,
+              COUNT(DISTINCT o.id) FILTER (WHERE o.is_canceled)::int AS cancellations,
+              COUNT(DISTINCT o.id) FILTER (WHERE o.is_returned)::int AS returns
+            FROM orders o
+            LEFT JOIN order_items oi ON oi.order_id = o.id
+            WHERE o.created_at::DATE BETWEEN ${dateFrom} AND ${dateTo}
+              AND (${f.channel} = 'all' OR o.source = ${f.channel} OR (${f.channel}='ml1' AND o.source IN ('meli_1','ml_1')) OR (${f.channel}='ml2' AND o.source IN ('meli_2','ml_2')))
+              AND (${f.province} = '' OR o.customer_province ILIKE '%' || ${f.province} || '%')
+              AND (${f.status} = '' OR o.status = ${f.status})
+              AND (${f.paymentStatus} = '' OR o.payment_status = ${f.paymentStatus})
+              AND (${f.brand} = '' OR oi.brand ILIKE '%' || ${f.brand} || '%')
+              AND (${f.category} = '' OR oi.category ILIKE '%' || ${f.category} || '%')
+              AND (${f.product} = '' OR oi.product_name ILIKE '%' || ${f.product} || '%')
+              AND (${f.sku} = '' OR oi.sku ILIKE '%' || ${f.sku} || '%')
+          `;
+          return json({ ok: true, date_from: dateFrom, date_to: dateTo, data: rows[0] || {} });
+        }
+
+        if (path === '/api/v1/dashboard/channels') {
+          const rows = await sql`
+            SELECT
+              o.source,
+              COALESCE(c.name, o.source) AS channel_name,
+              COALESCE(SUM(o.total_amount),0) AS revenue,
+              COUNT(DISTINCT o.id)::int AS orders_count,
+              COALESCE(AVG(o.total_amount),0) AS avg_ticket,
+              COALESCE(SUM(oi.quantity),0)::int AS units_sold
+            FROM orders o
+            LEFT JOIN channels c ON c.id = o.channel_id
+            LEFT JOIN order_items oi ON oi.order_id = o.id
+            WHERE o.created_at::DATE BETWEEN ${dateFrom} AND ${dateTo}
+              AND NOT o.is_canceled
+              AND (${f.channel} = 'all' OR o.source = ${f.channel} OR (${f.channel}='ml1' AND o.source IN ('meli_1','ml_1')) OR (${f.channel}='ml2' AND o.source IN ('meli_2','ml_2')))
+            GROUP BY o.source, c.name
+            ORDER BY revenue DESC
+          `;
+          return json({ ok: true, data: rows });
+        }
+
+        if (path === '/api/v1/dashboard/timeseries') {
+          const rows = await sql`
+            SELECT
+              o.created_at::DATE AS date,
+              o.source,
+              COALESCE(SUM(o.total_amount),0) AS revenue,
+              COUNT(DISTINCT o.id)::int AS orders_count,
+              COALESCE(SUM(oi.quantity),0)::int AS units_sold
+            FROM orders o
+            LEFT JOIN order_items oi ON oi.order_id = o.id
+            WHERE o.created_at::DATE BETWEEN ${dateFrom} AND ${dateTo}
+              AND NOT o.is_canceled
+              AND (${f.channel} = 'all' OR o.source = ${f.channel} OR (${f.channel}='ml1' AND o.source IN ('meli_1','ml_1')) OR (${f.channel}='ml2' AND o.source IN ('meli_2','ml_2')))
+            GROUP BY o.created_at::DATE, o.source
+            ORDER BY date ASC, revenue DESC
+          `;
+          return json({ ok: true, data: rows });
+        }
+
+        if (path === '/api/v1/dashboard/top-products') {
+          const rows = await sql`
+            SELECT
+              oi.product_name,
+              oi.sku,
+              oi.brand,
+              oi.category,
+              o.source,
+              SUM(oi.quantity)::int AS quantity,
+              SUM(oi.total_price) AS revenue,
+              COUNT(DISTINCT o.id)::int AS order_count
+            FROM order_items oi
+            JOIN orders o ON o.id = oi.order_id
+            WHERE o.created_at::DATE BETWEEN ${dateFrom} AND ${dateTo}
+              AND NOT o.is_canceled
+              AND (${f.channel} = 'all' OR o.source = ${f.channel} OR (${f.channel}='ml1' AND o.source IN ('meli_1','ml_1')) OR (${f.channel}='ml2' AND o.source IN ('meli_2','ml_2')))
+              AND (${f.brand} = '' OR oi.brand ILIKE '%' || ${f.brand} || '%')
+              AND (${f.category} = '' OR oi.category ILIKE '%' || ${f.category} || '%')
+              AND (${f.product} = '' OR oi.product_name ILIKE '%' || ${f.product} || '%')
+              AND (${f.sku} = '' OR oi.sku ILIKE '%' || ${f.sku} || '%')
+            GROUP BY oi.product_name, oi.sku, oi.brand, oi.category, o.source
+            ORDER BY quantity DESC, revenue DESC
+            LIMIT ${limit}
+          `;
+          return json({ ok: true, data: rows });
+        }
+
+        if (path === '/api/v1/dashboard/filters') {
+          const [channels, provinces, brands, categories, products, skus, campaigns] = await Promise.all([
+            sql`SELECT DISTINCT source AS value, source AS label FROM orders ORDER BY source`,
+            sql`SELECT DISTINCT customer_province AS value, customer_province AS label FROM orders WHERE customer_province IS NOT NULL AND customer_province <> '' ORDER BY customer_province LIMIT 200`,
+            sql`SELECT DISTINCT brand AS value, brand AS label FROM order_items WHERE brand IS NOT NULL AND brand <> '' ORDER BY brand LIMIT 200`,
+            sql`SELECT DISTINCT category AS value, category AS label FROM order_items WHERE category IS NOT NULL AND category <> '' ORDER BY category LIMIT 200`,
+            sql`SELECT DISTINCT product_name AS value, product_name AS label FROM order_items WHERE product_name IS NOT NULL AND product_name <> '' ORDER BY product_name LIMIT 500`,
+            sql`SELECT DISTINCT sku AS value, sku AS label FROM order_items WHERE sku IS NOT NULL AND sku <> '' ORDER BY sku LIMIT 500`,
+            sql`SELECT DISTINCT name AS value, name AS label, source FROM marketing_campaigns WHERE name IS NOT NULL ORDER BY name LIMIT 500`,
+          ]);
+          return json({ ok: true, data: { channels, provinces, brands, categories, products, skus, campaigns } });
+        }
+
+        if (path === '/api/v1/dashboard/tv') {
+          const [summary, channels, top, recent, sync, kommo, marketing] = await Promise.all([
+            sql`SELECT COALESCE(SUM(total_amount),0) AS total_revenue, COUNT(*)::int AS orders_count, COALESCE(AVG(total_amount),0) AS avg_ticket, COALESCE(SUM(items_count),0)::int AS units_sold FROM orders WHERE created_at::DATE BETWEEN ${dateFrom} AND ${dateTo} AND NOT is_canceled`,
+            sql`SELECT source, COALESCE(SUM(total_amount),0) AS revenue, COUNT(*)::int AS orders_count FROM orders WHERE created_at::DATE BETWEEN ${dateFrom} AND ${dateTo} AND NOT is_canceled GROUP BY source ORDER BY revenue DESC`,
+            sql`SELECT oi.product_name, o.source, SUM(oi.quantity)::int AS quantity, SUM(oi.total_price) AS revenue FROM order_items oi JOIN orders o ON o.id=oi.order_id WHERE o.created_at::DATE BETWEEN ${dateFrom} AND ${dateTo} AND NOT o.is_canceled GROUP BY oi.product_name,o.source ORDER BY quantity DESC LIMIT 40`,
+            sql`SELECT o.external_id,o.source,o.total_amount,o.status,o.payment_status,o.customer_province,o.created_at,COALESCE(c.name,o.source) AS channel_name, ARRAY_AGG(oi.product_name ORDER BY oi.total_price DESC NULLS LAST) AS products FROM orders o LEFT JOIN channels c ON c.id=o.channel_id LEFT JOIN order_items oi ON oi.order_id=o.id WHERE o.created_at::DATE BETWEEN ${dateFrom} AND ${dateTo} GROUP BY o.id,c.name ORDER BY o.created_at DESC LIMIT 10`,
+            sql`SELECT DISTINCT ON (source) source, status, records_processed, last_date_synced, error_message, started_at, finished_at FROM sync_log ORDER BY source, started_at DESC`,
+            sql`SELECT COUNT(*)::int AS total_leads, COUNT(*) FILTER (WHERE status='won')::int AS won_leads, COALESCE(SUM(estimated_value) FILTER (WHERE status='won'),0) AS won_revenue, COALESCE(SUM(estimated_value),0) AS pipeline_value FROM leads WHERE created_at::DATE BETWEEN ${dateFrom} AND ${dateTo}`,
+            sql`SELECT source, COALESCE(SUM(spend),0) AS spend, COALESCE(SUM(conv_value),0) AS revenue, COALESCE(SUM(conversions),0) AS conversions, COALESCE(SUM(leads),0) AS leads FROM marketing_metrics WHERE date BETWEEN ${dateFrom} AND ${dateTo} GROUP BY source`,
+          ]);
+          return json({ ok: true, date_from: dateFrom, date_to: dateTo, summary: summary[0], channels, top_products: top, recent_orders: recent, sync, kommo: kommo[0], marketing });
         }
       }
 
