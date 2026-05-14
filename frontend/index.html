@@ -617,8 +617,52 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);min-height:1
             <div class="period-tab" onclick="execSetPeriod('mtd',this)">MTD</div>
             <div class="period-tab" onclick="execSetPeriod('ytd',this)">YTD</div>
           </div>
-          <div class="period-tabs" id="execCompareTabs">
-            <div class="period-tab" onclick="execSetCompare('previous',this)">Comparar período</div>
+          <div style="position:relative">
+            <button class="btn-sm" onclick="execToggleComparePicker()" id="execCompareToggleBtn"
+              style="height:30px;font-size:12px;gap:5px">
+              ⇄ Comparar período
+            </button>
+            <!-- Compare date picker -->
+            <div id="execComparePicker" onclick="event.stopPropagation()"
+              style="display:none;position:absolute;right:0;top:calc(100% + 6px);z-index:200;
+                     background:var(--card2);border:1px solid var(--border2);border-radius:var(--radius);
+                     padding:16px;min-width:290px;box-shadow:0 8px 32px rgba(0,0,0,.5)">
+              <div style="font-size:12px;font-weight:600;color:var(--text2);margin-bottom:10px">Comparar con</div>
+              <div style="display:flex;flex-direction:column;gap:4px;margin-bottom:12px">
+                <div class="exec-compare-preset" data-preset="previous" onclick="execSetComparePeriod('previous')"
+                  style="padding:8px 10px;border-radius:var(--r2);cursor:pointer;font-size:12.5px;color:var(--text2);border:1px solid transparent;transition:all .15s"
+                  onmouseover="this.style.background='var(--bg3)'" onmouseout="this.style.background=''">
+                  Período anterior
+                </div>
+                <div class="exec-compare-preset" data-preset="lastmonth" onclick="execSetComparePeriod('lastmonth')"
+                  style="padding:8px 10px;border-radius:var(--r2);cursor:pointer;font-size:12.5px;color:var(--text2);border:1px solid transparent;transition:all .15s"
+                  onmouseover="this.style.background='var(--bg3)'" onmouseout="this.style.background=''">
+                  Mes anterior
+                </div>
+                <div class="exec-compare-preset" data-preset="lastyear" onclick="execSetComparePeriod('lastyear')"
+                  style="padding:8px 10px;border-radius:var(--r2);cursor:pointer;font-size:12.5px;color:var(--text2);border:1px solid transparent;transition:all .15s"
+                  onmouseover="this.style.background='var(--bg3)'" onmouseout="this.style.background=''">
+                  Mismo período año pasado
+                </div>
+              </div>
+              <div style="height:1px;background:var(--border);margin-bottom:10px"></div>
+              <div style="font-size:11px;color:var(--text3);margin-bottom:6px;font-weight:500">Rango personalizado</div>
+              <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px">
+                <input type="date" id="execCmpFrom" oninput="execUpdateCompareLabel()"
+                  style="flex:1;background:var(--bg3);border:1px solid var(--border2);border-radius:var(--r2);
+                         padding:5px 8px;font-size:11px;color:var(--text);font-family:var(--mono);outline:none">
+                <span style="color:var(--text3);font-size:11px">→</span>
+                <input type="date" id="execCmpTo" oninput="execUpdateCompareLabel()"
+                  style="flex:1;background:var(--bg3);border:1px solid var(--border2);border-radius:var(--r2);
+                         padding:5px 8px;font-size:11px;color:var(--text);font-family:var(--mono);outline:none">
+              </div>
+              <div id="execComparePreviewLabel" style="font-size:10.5px;color:var(--text3);margin-bottom:10px"></div>
+              <button onclick="execApplyCompare()"
+                style="width:100%;padding:8px;background:var(--accent);border:none;border-radius:var(--r2);
+                       color:#fff;font-size:12px;font-weight:600;cursor:pointer;font-family:var(--font)">
+                Aplicar comparación
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -1658,64 +1702,167 @@ function initCharts() {
 // ============================================================
 // EXECUTIVE — filtros, comparación y canales
 // ============================================================
+// ============================================================
+// EXECUTIVE STATE — date-based, matches worker getDateRange()
+// ============================================================
+function isoDate(d) { return d.toISOString().split('T')[0]; }
+function today() { return isoDate(new Date()); }
+function daysAgo(n) { return isoDate(new Date(Date.now() - 86400000 * n)); }
+function firstOfMonth() {
+  const n = new Date();
+  return `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,'0')}-01`;
+}
+function firstOfYear() { return `${new Date().getFullYear()}-01-01`; }
+
 const execState = {
-  period: 'today',
+  period: 'today',     // 'today' | 'mtd' | 'ytd' | 'custom'
+  dateFrom: today(),
+  dateTo: today(),
   compare: false,
-  compareMode: 'previous',
-  channel: 'all'
+  compareDateFrom: daysAgo(1),
+  compareDateTo: daysAgo(1),
+  channel: 'all',
+  // Picker UI state
+  showComparePicker: false,
 };
+
+function execPeriodDates(period = execState.period) {
+  const t = today();
+  switch(period) {
+    case 'today': return { dateFrom: t, dateTo: t };
+    case 'mtd':   return { dateFrom: firstOfMonth(), dateTo: t };
+    case 'ytd':   return { dateFrom: firstOfYear(), dateTo: t };
+    default:      return { dateFrom: execState.dateFrom, dateTo: execState.dateTo };
+  }
+}
+
+function execCompareDates() {
+  const { dateFrom, dateTo } = execPeriodDates();
+  const diffDays = Math.round((new Date(dateTo) - new Date(dateFrom)) / 86400000) + 1;
+  const cTo   = isoDate(new Date(new Date(dateFrom) - 86400000));
+  const cFrom = isoDate(new Date(new Date(cTo) - 86400000 * (diffDays - 1)));
+  return { compareDateFrom: cFrom, compareDateTo: cTo };
+}
 
 function execPeriodLabel(period = execState.period) {
   if (period === 'mtd') return 'MTD';
   if (period === 'ytd') return 'YTD';
+  if (period === 'custom') return 'Personalizado';
   return 'Hoy';
 }
 
-function execPeriodParam() {
-  if (execState.period === 'mtd') return 'mtd';
-  if (execState.period === 'ytd') return 'ytd';
-  return '1d';
+function execQuery(extra = {}) {
+  const { dateFrom, dateTo } = execPeriodDates();
+  const params = new URLSearchParams({ date_from: dateFrom, date_to: dateTo });
+  if (execState.channel !== 'all') params.set('channel', execState.channel);
+  Object.entries(extra).forEach(([k,v]) => params.set(k, v));
+  return params.toString();
 }
 
-function execQuery(extra = {}) {
-  const params = new URLSearchParams({ period: execPeriodParam() });
-  if (execState.channel !== 'all') params.set('channel', execState.channel);
-  if (execState.compare) params.set('compare', execState.compareMode);
+function execQueryCompare(extra = {}) {
+  const { dateFrom, dateTo } = execPeriodDates();
+  const { compareDateFrom, compareDateTo } = execState.compare
+    ? { compareDateFrom: execState.compareDateFrom, compareDateTo: execState.compareDateTo }
+    : execCompareDates();
+  const params = new URLSearchParams({
+    date_from: compareDateFrom,
+    date_to: compareDateTo,
+  });
   Object.entries(extra).forEach(([k,v]) => params.set(k, v));
   return params.toString();
 }
 
 async function execSetPeriod(period, el) {
   execState.period = period;
+  const { dateFrom, dateTo } = execPeriodDates(period);
+  execState.dateFrom = dateFrom;
+  execState.dateTo   = dateTo;
   document.querySelectorAll('#execPresets .period-tab').forEach(t => t.classList.remove('active'));
   if (el) el.classList.add('active');
-  document.getElementById('execDate').textContent = execPeriodLabel(period) + ' · ' + new Date().toLocaleDateString('es-AR',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
+  const fmtDate = d => new Date(d+'T12:00').toLocaleDateString('es-AR',{day:'2-digit',month:'short',year:'numeric'});
+  document.getElementById('execDate').textContent = `${execPeriodLabel(period)} · ${fmtDate(dateFrom)}${dateFrom!==dateTo?' — '+fmtDate(dateTo):''}`;
   await execRefresh();
 }
 
-async function execSetCompare(mode, el) {
-  execState.compare = true;
-  execState.compareMode = mode || 'previous';
-  document.querySelectorAll('#execCompareTabs .period-tab').forEach(t => t.classList.remove('active'));
-  if (el) el.classList.add('active');
+function execToggleComparePicker() {
+  const picker = document.getElementById('execComparePicker');
+  if (!picker) return;
+  const isOpen = picker.style.display !== 'none';
+  picker.style.display = isOpen ? 'none' : 'block';
+  if (!isOpen) {
+    // Pre-fill with auto-computed previous period
+    const { compareDateFrom, compareDateTo } = execCompareDates();
+    document.getElementById('execCmpFrom').value = execState.compareDateFrom || compareDateFrom;
+    document.getElementById('execCmpTo').value   = execState.compareDateTo   || compareDateTo;
+    execUpdateCompareLabel();
+  }
+}
+
+function execUpdateCompareLabel() {
+  const from = document.getElementById('execCmpFrom')?.value;
+  const to   = document.getElementById('execCmpTo')?.value;
+  if (!from || !to) return;
+  const fmtD = d => new Date(d+'T12:00').toLocaleDateString('es-AR',{day:'2-digit',month:'short'});
+  if (document.getElementById('execComparePreviewLabel'))
+    document.getElementById('execComparePreviewLabel').textContent = `${fmtD(from)} → ${fmtD(to)}`;
+}
+
+async function execApplyCompare() {
+  const from = document.getElementById('execCmpFrom')?.value;
+  const to   = document.getElementById('execCmpTo')?.value;
+  if (!from || !to || from > to) { alert('Rango de comparación inválido'); return; }
+  execState.compare         = true;
+  execState.compareDateFrom = from;
+  execState.compareDateTo   = to;
+  document.getElementById('execComparePicker').style.display = 'none';
+  const fmtD = d => new Date(d+'T12:00').toLocaleDateString('es-AR',{day:'2-digit',month:'short'});
   document.getElementById('execCompareBanner').style.display = 'flex';
-  document.getElementById('execCompareLabel').textContent = 'período anterior';
-  document.getElementById('execCompareTitle').textContent = execPeriodLabel() + ' vs. período anterior';
+  document.getElementById('execCompareLabel').textContent    = `${fmtD(from)} — ${fmtD(to)}`;
+  document.getElementById('execCompareTitle').textContent    = `${execPeriodLabel()} vs. ${fmtD(from)}–${fmtD(to)}`;
   await execRefresh();
+}
+
+async function execSetComparePeriod(preset) {
+  const { dateFrom, dateTo } = execPeriodDates();
+  const diffDays = Math.round((new Date(dateTo) - new Date(dateFrom)) / 86400000) + 1;
+  let from, to;
+  if (preset === 'previous') {
+    to   = isoDate(new Date(new Date(dateFrom) - 86400000));
+    from = isoDate(new Date(new Date(to) - 86400000*(diffDays-1)));
+  } else if (preset === 'lastmonth') {
+    const d = new Date();
+    to   = isoDate(new Date(d.getFullYear(), d.getMonth(), 0));
+    from = isoDate(new Date(d.getFullYear(), d.getMonth()-1, 1));
+  } else if (preset === 'lastyear') {
+    const y = new Date().getFullYear() - 1;
+    const { dateFrom: df, dateTo: dt } = execPeriodDates();
+    from = df.replace(/^\d{4}/, y);
+    to   = dt.replace(/^\d{4}/, y);
+  }
+  document.getElementById('execCmpFrom').value = from;
+  document.getElementById('execCmpTo').value   = to;
+  execUpdateCompareLabel();
+  document.querySelectorAll('.exec-compare-preset').forEach(b => b.classList.remove('active'));
+  document.querySelector(`.exec-compare-preset[data-preset="${preset}"]`)?.classList.add('active');
 }
 
 async function execClearCompare() {
   execState.compare = false;
   document.getElementById('execCompareBanner').style.display = 'none';
+  const picker = document.getElementById('execComparePicker');
+  if (picker) picker.style.display = 'none';
   document.getElementById('execCompareTitle').textContent = 'Período actual vs. anterior';
-  document.querySelectorAll('#execCompareTabs .period-tab').forEach(t => t.classList.remove('active'));
   await execRefresh();
 }
 
 async function execSetChannel(channel, el) {
   execState.channel = channel;
   const parent = el?.parentElement;
-  if (parent) parent.querySelectorAll('.channel-btn').forEach(b => b.classList.remove('active-all'));
+  if (parent) {
+    parent.querySelectorAll('.channel-btn').forEach(b => {
+      b.classList.remove('active-all','active-meta','active-perfit');
+    });
+  }
   if (el) el.classList.add('active-all');
   await execRefresh();
 }
@@ -1756,6 +1903,7 @@ function productChannel(p) {
 }
 
 async function renderExecutiveChannels() {
+  // channels endpoint also uses date_from/date_to via execQuery()
   let data = await fetchAPI('/metrics/channels?' + execQuery());
   let rows = Array.isArray(data) ? data : (data?.data || data?.channels || []);
 
@@ -1796,29 +1944,14 @@ async function renderExecutiveChannels() {
 }
 
 async function getTopProductsForExecutive() {
-  // Build date range from current exec period
-  const today = new Date().toISOString().split('T')[0];
-  let dateFrom;
-  if (execState.period === 'today') {
-    dateFrom = today;
-  } else if (execState.period === 'mtd') {
-    const n = new Date();
-    dateFrom = `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,'0')}-01`;
-  } else if (execState.period === 'ytd') {
-    dateFrom = `${new Date().getFullYear()}-01-01`;
-  } else {
-    // Default: last 30 days to ensure historical data shows
-    dateFrom = new Date(Date.now() - 86400000*30).toISOString().split('T')[0];
-  }
-
-  const params = new URLSearchParams({ date_from: dateFrom, date_to: today, limit: '30' });
+  // Use same date range as the current period selection
+  const { dateFrom, dateTo } = execPeriodDates();
+  const params = new URLSearchParams({ date_from: dateFrom, date_to: dateTo, limit: '30' });
   if (execState.channel && execState.channel !== 'all') {
     params.set('channel', execState.channel);
   }
-
   const data = await fetchAPI('/products/top?' + params.toString());
-  const rows = Array.isArray(data) ? data : (data?.data || []);
-  return rows; // Return empty array if no data — no mock fallback
+  return Array.isArray(data) ? data : (data?.data || []);
 }
 
 async function renderTopProductsByChannel() {
@@ -1855,11 +1988,15 @@ async function renderTopProductsByChannel() {
 // RENDER FUNCTIONS
 // ============================================================
 async function renderKPIs() {
-  // Cargar datos reales de la API
-  const [exec, compare] = await Promise.all([
-    fetchAPI('/metrics/executive?' + execQuery()),
-    fetchAPI('/metrics/executive/compare?' + execQuery()),
-  ]);
+  // Cargar datos reales de la API — current period
+  const { dateFrom, dateTo } = execPeriodDates();
+  const exec = await fetchAPI('/metrics/executive?' + execQuery());
+
+  // Compare period: only fetch if compare is ON
+  let compare = null;
+  if (execState.compare) {
+    compare = await fetchAPI('/metrics/executive?' + execQueryCompare());
+  }
 
   // Actualizar state con datos reales si llegaron
   if (exec) {
@@ -1870,14 +2007,24 @@ async function renderKPIs() {
     state.cancellations = parseInt(exec.cancellations)  || state.cancellations;
   }
 
-  // Calcular deltas reales si hay comparativa
-  let revDelta = '+—', ordDelta = '+—', tickDelta = '+—';
+  // Calcular deltas comparando período actual vs período de comparación
+  let revDelta = '—', ordDelta = '—', tickDelta = '—';
   let revUp = true, ordUp = true, tickUp = true;
-  if (compare) {
-    const rd = parseFloat(compare.revenue_delta_pct);
-    const od = parseFloat(compare.orders_delta_pct);
-    if (!isNaN(rd)) { revDelta = (rd>=0?'+':'')+rd.toFixed(1)+'%'; revUp = rd>=0; }
-    if (!isNaN(od)) { ordDelta = (od>=0?'+':'')+od.toFixed(1)+'%'; ordUp = od>=0; }
+  if (compare && exec) {
+    const curRev = parseFloat(exec.total_revenue || 0);
+    const cmpRev = parseFloat(compare.total_revenue || 0);
+    const curOrd = parseInt(exec.orders_count || 0);
+    const cmpOrd = parseInt(compare.orders_count || 0);
+    if (cmpRev > 0) {
+      const rd = (curRev - cmpRev) / cmpRev * 100;
+      revDelta = (rd>=0?'+':'')+rd.toFixed(1)+'%';
+      revUp = rd >= 0;
+    }
+    if (cmpOrd > 0) {
+      const od = (curOrd - cmpOrd) / cmpOrd * 100;
+      ordDelta = (od>=0?'+':'')+od.toFixed(1)+'%';
+      ordUp = od >= 0;
+    }
   }
 
   const kpis = [
@@ -1951,22 +2098,38 @@ async function renderTopProducts() {
 }
 
 async function renderCompareStats() {
-  const compare = await fetchAPI('/metrics/executive/compare?' + execQuery());
-  const rd = compare ? parseFloat(compare.revenue_delta_pct) : null;
-  const od = compare ? parseFloat(compare.orders_delta_pct)  : null;
-  const todayRev  = compare ? parseFloat(compare.today_revenue)  : state.revenue;
-  const todayOrd  = compare ? parseInt(compare.today_orders)     : state.orders;
-  const todayTick = compare ? parseFloat(compare.today_ticket)   : state.ticket;
+  const [curr, prev] = await Promise.all([
+    fetchAPI('/metrics/executive?' + execQuery()),
+    execState.compare ? fetchAPI('/metrics/executive?' + execQueryCompare()) : Promise.resolve(null),
+  ]);
+
+  const curRev  = parseFloat(curr?.total_revenue || state.revenue);
+  const curOrd  = parseInt(curr?.orders_count || state.orders);
+  const curTick = parseFloat(curr?.avg_ticket || state.ticket);
+  const prevRev  = parseFloat(prev?.total_revenue || 0);
+  const prevOrd  = parseInt(prev?.orders_count || 0);
+  const prevTick = parseFloat(prev?.avg_ticket || 0);
+
+  const delta = (cur, pre) => {
+    if (!execState.compare || pre === 0) return { d: '—', up: true };
+    const pct = (cur - pre) / pre * 100;
+    return { d: (pct>=0?'+':'')+pct.toFixed(1)+'%', up: pct>=0 };
+  };
+
   const items = [
-    { label: 'Revenue',    today: fmt(todayRev),  delta: rd!=null?(rd>=0?'+':'')+rd.toFixed(1)+'%':'—', up: rd==null||rd>=0 },
-    { label: 'Órdenes',   today: todayOrd,        delta: od!=null?(od>=0?'+':'')+od.toFixed(1)+'%':'—', up: od==null||od>=0 },
-    { label: 'Ticket prom.', today: fmt(todayTick), delta: '—', up: true },
+    { label: 'Revenue',      today: fmt(curRev),  ...delta(curRev, prevRev),  prev: prevRev  ? fmt(prevRev)  : null },
+    { label: 'Órdenes',      today: curOrd,        ...delta(curOrd, prevOrd),  prev: prevOrd  ? prevOrd       : null },
+    { label: 'Ticket prom.', today: fmt(curTick),  ...delta(curTick, prevTick), prev: prevTick ? fmt(prevTick) : null },
   ];
+
   document.getElementById('compareStats').innerHTML = items.map(i => `
     <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border)">
-      <span style="font-size:12px;color:var(--text3)">${i.label}</span>
+      <div>
+        <div style="font-size:12px;color:var(--text3)">${i.label}</div>
+        ${i.prev != null && execState.compare ? `<div style="font-size:10.5px;color:var(--text3);margin-top:1px">Ant: ${i.prev}</div>` : ''}
+      </div>
       <span style="font-size:13px;font-weight:500;font-family:var(--mono)">${i.today}</span>
-      <span class="metric-delta ${i.up?'delta-up':'delta-down'}">${i.up?'↑':'↓'} ${i.delta}</span>
+      <span class="metric-delta ${i.up?'delta-up':'delta-down'}">${i.up?'↑':'↓'} ${i.d}</span>
     </div>`).join('');
 }
 
@@ -2248,8 +2411,15 @@ function renderMktKPIsOnly() {
     </div>`).join('');
 }
 
-// Close compare picker on outside click
+// Close all pickers on outside click
 document.addEventListener('click', e => {
+  // Executive compare picker
+  const execPicker = document.getElementById('execComparePicker');
+  const execBtn    = document.getElementById('execCompareToggleBtn');
+  if (execPicker && !execPicker.contains(e.target) && !execBtn?.contains(e.target)) {
+    execPicker.style.display = 'none';
+  }
+  // Marketing compare picker
   const picker = document.getElementById('mktComparePicker');
   const btn    = document.getElementById('mktCompareBtn');
   if(picker && !picker.contains(e.target) && !btn?.contains(e.target)) {
