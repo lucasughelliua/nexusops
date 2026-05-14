@@ -517,7 +517,7 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);min-height:1
   <div class="nav-item" onclick="showPage('live',this)">
     <svg class="nav-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="10" cy="10" r="8"/><circle cx="10" cy="10" r="3"/><line x1="10" y1="2" x2="10" y2="5"/><line x1="10" y1="15" x2="10" y2="18"/><line x1="2" y1="10" x2="5" y2="10"/><line x1="15" y1="10" x2="18" y2="10"/></svg>
     Ventas en Vivo
-    <span class="nav-badge" id="liveCount">3</span>
+    <span class="nav-badge" id="liveCount">0</span>
   </div>
   <div class="nav-item" onclick="showPage('channels',this)">
     <svg class="nav-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 14l5-8 4 5 3-4 4 7"/></svg>
@@ -1101,6 +1101,8 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);min-height:1
       <div id="tvFeed" style="display:flex;flex-direction:column;gap:8px"></div>
     </div>
   </div>
+  <div class="tv-grid" id="tvExtraGrid" style="margin-top:18px;grid-template-columns:1fr 1fr 1fr"></div>
+  <div class="tv-grid" id="tvSoftMetrics" style="margin-top:18px;grid-template-columns:repeat(5,1fr)"></div>
 </div>
 
 <!-- ===== ADMIN MODAL ===== -->
@@ -1499,7 +1501,7 @@ async function fetchAPI(path) {
 }
 
 // ============================================================
-// DATA LAYER — datos reales + fallback a demo si la API falla
+// DATA LAYER — datos reales solamente. Sin fallback demo en producción
 // ============================================================
 const fmt = n => '$' + Math.round(n).toLocaleString('es-AR');
 const pct = n => (n >= 0 ? '+' : '') + n.toFixed(1) + '%';
@@ -1527,56 +1529,31 @@ function savePersistentState() {
 const _savedState = loadPersistentState();
 
 let state = {
-  revenue: 2847500,
+  revenue: 0,
   revenueGoal: _savedState.revenueGoal || 4500000,
-  orders: 184,
-  ticket: 15475,
-  units: 312,
-  cancellations: 9,
-  returns: 4,
-  conversionRate: 3.4,
+  orders: 0,
+  ticket: 0,
+  units: 0,
+  cancellations: 0,
+  returns: 0,
+  conversionRate: 0,
   channels: {
-    vtex: { revenue: 1240000, orders: 78, ticket: 15900, pct: 44 },
-    ml1:  { revenue: 987300,  orders: 62, ticket: 15924, pct: 35 },
-    ml2:  { revenue: 620200,  orders: 44, ticket: 14095, pct: 21 },
+    vtex: { revenue: 0, orders: 0, ticket: 0, pct: 0 },
+    ml1:  { revenue: 0, orders: 0, ticket: 0, pct: 0 },
+    ml2:  { revenue: 0, orders: 0, ticket: 0, pct: 0 },
   },
-  leads: 142,
-  opportunities: 58,
-  convertedLeads: 23,
-  logistic: { dispatched: 171, delayed: 12, avgDays: 2.8, onTime: 85 },
+  leads: 0,
+  opportunities: 0,
+  convertedLeads: 0,
+  logistic: { dispatched: 0, delayed: 0, avgDays: 0, onTime: 0 },
 };
 
-const products = [
-  { name: 'Smart TV 55" 4K', channel: 'VTEX', revenue: 428000, units: 14 },
-  { name: 'Auriculares BT Pro', channel: 'MeLi #1', revenue: 316200, units: 42 },
-  { name: 'Notebook Core i7', channel: 'VTEX', revenue: 295800, units: 6 },
-  { name: 'Air Fryer 5L', channel: 'MeLi #2', revenue: 198400, units: 31 },
-  { name: 'Zapatillas Running', channel: 'MeLi #1', revenue: 187600, units: 28 },
-  { name: 'Silla Gamer Pro', channel: 'VTEX', revenue: 156800, units: 8 },
-];
+const products = [];
+const provinces = [];
+const orderNames = [];
+const alertsData = [];
 
-const provinces = [
-  { name: 'Buenos Aires', orders: 72 },
-  { name: 'Córdoba', orders: 28 },
-  { name: 'Santa Fe', orders: 21 },
-  { name: 'Mendoza', orders: 14 },
-  { name: 'Tucumán', orders: 9 },
-];
-
-const orderNames = [
-  ['Smart TV 55"','VTEX'],['Auriculares BT','MeLi #1'],['Notebook i7','VTEX'],
-  ['Air Fryer 5L','MeLi #2'],['Zapatillas Run','MeLi #1'],['Silla Gamer','VTEX'],
-  ['Monitor 27"','MeLi #2'],['Teclado Mec.','VTEX'],['Mouse Inalámbrico','MeLi #1'],
-];
-
-const alertsData = [
-  { sev:'critical', icon:'⚠', text:'MeLi #1: Token vencido hace 23 min', sub:'Última sincronización: hace 2 hs. Renovar credencial.', time:'hace 23 min' },
-  { sev:'critical', icon:'⚠', text:'Caída anormal de ventas en VTEX', sub:'0 órdenes en las últimas 3 horas (09:00–12:00 hs).', time:'hace 3 hs' },
-  { sev:'high',     icon:'!', text:'12 envíos con demora > 5 días hábiles', sub:'Provincias: Neuquén (4), Chubut (3), Río Negro (5)', time:'hace 1 hs' },
-  { sev:'high',     icon:'!', text:'Cancelaciones: 9 hoy (4.9% del volumen)', sub:'Umbral de alerta: 5%. Próximo al límite.', time:'hace 40 min' },
-  { sev:'medium',   icon:'i', text:'Smart TV 55": stock bajo (3 unidades)', sub:'Ventas hoy: 14 uds. Riesgo de quiebre.', time:'hace 2 hs' },
-  { sev:'medium',   icon:'i', text:'Sync VTEX tardó 48 seg (prom: 12 seg)', sub:'Posible lentitud en API externa. Monitorear.', time:'hace 15 min' },
-];
+const emptyHTML = (msg='Sin datos para este período/canal') => `<div style="color:var(--text3);font-size:12px;padding:14px;text-align:center">${msg}</div>`;
 
 // ============================================================
 // CHARTS
@@ -1600,9 +1577,9 @@ const chartDefaults = {
 };
 
 const hours = ['00','01','02','03','04','05','06','07','08','09','10','11','12','13','14','15','16','17','18','19','20','21','22'];
-const revenueByHour = hours.map((_,i) => i < 8 ? 0 : Math.floor(Math.random()*180000 + 80000));
-const ordersHour = hours.map((_,i) => i < 8 ? 0 : Math.floor(Math.random()*14 + 2));
-const yesterdayRevenue = revenueByHour.map(v => Math.floor(v * (0.8 + Math.random()*.4)));
+const revenueByHour = hours.map(() => 0);
+const ordersHour = hours.map(() => 0);
+const yesterdayRevenue = hours.map(() => 0);
 
 let revenueChartInst, ordersChartInst, compareChartInst, channelChartInst, ticketChartInst, leadRevChartInst, logChartInst;
 
@@ -1652,9 +1629,9 @@ function initCharts() {
     data: {
       labels: days,
       datasets: [
-        { label: 'VTEX',    data: days.map(() => Math.floor(Math.random()*600000+800000)), borderColor: '#ef4444', tension: .4, pointRadius: 0, borderWidth: 2 },
-        { label: 'MeLi #1', data: days.map(() => Math.floor(Math.random()*500000+600000)), borderColor: '#f59e0b', tension: .4, pointRadius: 0, borderWidth: 2 },
-        { label: 'MeLi #2', data: days.map(() => Math.floor(Math.random()*300000+400000)), borderColor: '#14b8a6', tension: .4, pointRadius: 0, borderWidth: 2 },
+        { label: 'VTEX',    data: days.map(() => 0), borderColor: '#ef4444', tension: .4, pointRadius: 0, borderWidth: 2 },
+        { label: 'MeLi #1', data: days.map(() => 0), borderColor: '#f59e0b', tension: .4, pointRadius: 0, borderWidth: 2 },
+        { label: 'MeLi #2', data: days.map(() => 0), borderColor: '#14b8a6', tension: .4, pointRadius: 0, borderWidth: 2 },
       ],
     },
     options: { ...chartDefaults, plugins: { ...chartDefaults.plugins, legend: { display: true, labels: { color: '#8b92a8', font: { size: 11 }, boxWidth: 16, boxHeight: 2 } } },
@@ -1908,11 +1885,8 @@ async function renderExecutiveChannels() {
   let rows = Array.isArray(data) ? data : (data?.data || data?.channels || []);
 
   if (!rows.length) {
-    rows = [
-      { channel:'VTEX', revenue:state.channels.vtex.revenue, orders:state.channels.vtex.orders, ticket:state.channels.vtex.ticket, pct:state.channels.vtex.pct },
-      { channel:'MeLi #1', revenue:state.channels.ml1.revenue, orders:state.channels.ml1.orders, ticket:state.channels.ml1.ticket, pct:state.channels.ml1.pct },
-      { channel:'MeLi #2', revenue:state.channels.ml2.revenue, orders:state.channels.ml2.orders, ticket:state.channels.ml2.ticket, pct:state.channels.ml2.pct },
-    ];
+    document.getElementById('execChannelCards').innerHTML = emptyHTML();
+    return;
   }
 
   if (execState.channel !== 'all') {
@@ -2000,11 +1974,13 @@ async function renderKPIs() {
 
   // Actualizar state con datos reales si llegaron
   if (exec) {
-    state.revenue     = parseFloat(exec.total_revenue)  || state.revenue;
-    state.orders      = parseInt(exec.orders_count)     || state.orders;
-    state.ticket      = parseFloat(exec.avg_ticket)     || state.ticket;
-    state.units       = parseInt(exec.units_sold)       || state.units;
-    state.cancellations = parseInt(exec.cancellations)  || state.cancellations;
+    state.revenue       = Number(exec.total_revenue || 0);
+    state.orders        = Number(exec.orders_count || 0);
+    state.ticket        = Number(exec.avg_ticket || 0);
+    state.units         = Number(exec.units_sold || 0);
+    state.cancellations = Number(exec.cancellations || 0);
+    state.returns       = Number(exec.returns || 0);
+    state.conversionRate = Number(exec.conversion_rate || 0);
   }
 
   // Calcular deltas comparando período actual vs período de comparación
@@ -2135,22 +2111,17 @@ async function renderCompareStats() {
 
 // Live orders
 const liveOrders = [];
-function genOrder() {
-  const [name, ch] = orderNames[Math.floor(Math.random()*orderNames.length)];
-  const amount = Math.floor(Math.random()*45000+5000);
-  const prov = provinces[Math.floor(Math.random()*provinces.length)].name;
-  const statuses = [['s-paid','Pagado'],['s-ship','En envío'],['s-pending','Pendiente']];
-  const [sc, sl] = statuses[Math.floor(Math.random()*statuses.length)];
-  const now = new Date();
-  return { name, ch, amount, prov, sc, sl, time: now.toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit'}) };
-}
+function genOrder() { return null; }
+
 
 async function renderLivePage() {
-  const exec = await fetchAPI('/metrics/executive');
+  const today = new Date().toISOString().slice(0,10);
+  const exec = await fetchAPI('/metrics/executive?date_from=' + today + '&date_to=' + today);
   if (exec) {
-    state.revenue = parseFloat(exec.total_revenue) || state.revenue;
-    state.orders  = parseInt(exec.orders_count)    || state.orders;
-    state.ticket  = parseFloat(exec.avg_ticket)    || state.ticket;
+    state.revenue = Number(exec.total_revenue || 0);
+    state.orders  = Number(exec.orders_count || 0);
+    state.ticket  = Number(exec.avg_ticket || 0);
+    state.units   = Number(exec.units_sold || 0);
   }
   const kpis = [
     { label: 'Revenue del día',  value: fmt(state.revenue), delta: 'hoy', up: true, color: '#3b82f6' },
@@ -2169,9 +2140,11 @@ async function renderLivePage() {
   await renderOrdersList();
 
   // Top productos reales
-  const topProds = await fetchAPI('/products/top?period=1d');
-  const prodList = (topProds && topProds.length) ? topProds : products;
-  document.getElementById('liveRanking').innerHTML = prodList.slice(0,4).map((p,i) => {
+  const topProds = await fetchAPI('/products/top?date_from=' + today + '&date_to=' + today + '&limit=10');
+  const prodList = Array.isArray(topProds) ? topProds : (topProds?.data || []);
+  if (!prodList.length) {
+    document.getElementById('liveRanking').innerHTML = emptyHTML();
+  } else document.getElementById('liveRanking').innerHTML = prodList.slice(0,10).map((p,i) => {
     const name = p.product_name || p.name;
     const rev  = parseFloat(p.revenue || p.total_price || 0);
     return `<div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid var(--border)">
@@ -2181,26 +2154,21 @@ async function renderLivePage() {
     </div>`;
   }).join('');
 
-  // Provincias — demo por ahora (no hay endpoint específico aún)
-  document.getElementById('provinceList').innerHTML = provinces.map(p => {
-    const maxO = provinces[0].orders;
-    const w = (p.orders/maxO*100).toFixed(0);
-    return `<div style="margin-bottom:8px">
-      <div class="progress-label"><span>${p.name}</span><span>${p.orders}</span></div>
-      <div class="progress-track"><div class="progress-fill" style="width:${w}%;background:var(--accent)"></div></div>
-    </div>`;
-  }).join('');
+  document.getElementById('provinceList').innerHTML = emptyHTML('Sin datos de provincias para este período.');
 }
 
 async function renderOrdersList() {
   const data = await fetchAPI('/orders/live?limit=15');
   document.getElementById('orderTicker').textContent = state.orders + ' hoy';
 
-  // Usar datos reales si llegaron, sino usar liveOrders (demo)
-  const ordersToShow = (data && data.length) ? data : liveOrders.slice(-10).reverse();
+  const ordersToShow = (data && data.length) ? data : [];
+  if (!ordersToShow.length) {
+    document.getElementById('ordersList').innerHTML = emptyHTML();
+    return;
+  }
 
   document.getElementById('ordersList').innerHTML = ordersToShow.map(o => {
-    // Normalizar formato API real vs demo
+    // Normalizar formato API real
     const name   = o.products ? o.products[0] : o.name;
     const prov   = o.customer_province || o.prov || '—';
     const amount = parseFloat(o.total_amount || o.amount || 0);
@@ -2224,13 +2192,10 @@ async function renderOrdersList() {
 }
 
 function addLiveOrder() {
-  const o = genOrder();
-  liveOrders.push(o);
-  state.orders += 1;
-  state.revenue += o.amount;
-  document.getElementById('liveCount').textContent = state.orders % 5;
-  if(document.getElementById('page-live').classList.contains('active')) renderOrdersList();
-  updateTV();
+  // Producción: no generar órdenes ficticias. Solo refrescar datos reales.
+  document.getElementById('liveCount').textContent = '0';
+  if(document.getElementById('page-live')?.classList.contains('active')) renderLivePage();
+  if(document.getElementById('tvOverlay')?.classList.contains('active')) updateTV();
 }
 
 function renderChannels() {
@@ -2391,14 +2356,14 @@ function renderMktKPIsOnly() {
   const numM=n=>Math.round(n||0).toLocaleString('es-AR');
   const compare=mktState.compareOn;
   const t=meta.totals;
-  const totalSpend=t.spend, totalRev=t.revenue+287500;
+  const totalSpend=t.spend + (mktGoogleData?.totals?.spend||0), totalRev=t.revenue + (mktGoogleData?.totals?.revenue||0);
   const roas=totalSpend>0?(totalRev/totalSpend).toFixed(1):'—';
   const cpa=t.convs>0?totalSpend/t.convs:0;
   const kpisComb=[
     {l:'Inversión total',v:fmtM(totalSpend),d:'+12.4%',up:true,c:'#1877f2'},
     {l:'Revenue atribuido',v:fmtM(totalRev),d:'+19.2%',up:true,c:'#10b981'},
     {l:'ROAS combinado',v:roas+'x',d:'+0.4x',up:true,c:'#8b5cf6'},
-    {l:'Total leads',v:numM(t.leads+563),d:'+22.1%',up:true,c:'#f59e0b'},
+    {l:'Total leads',v:numM(t.leads + (mktKommoData?.totals?.newLeads||0)),d:'real',up:true,c:'#f59e0b'},
     {l:'CPA Meta',v:fmtM(cpa),d:'-8.3%',up:true,c:'#14b8a6'},
     {l:'Conv. rate',v:(t.convs/(t.clicks||1)*100).toFixed(2)+'%',d:'+0.3pp',up:true,c:'#ec4899'},
   ];
@@ -2490,61 +2455,81 @@ function mktFilterMeta(f,el){
 // ---- Datos de Meta (en producción: fetchear de /api/v1/marketing/meta/summary) ----
 function getMktMetaData(){
   const n=mktState.days||30;
-  const spend=Array.from({length:n},()=>Math.floor(Math.random()*12000+5000));
-  const impr=spend.map(v=>Math.floor(v*18+Math.random()*5000));
-  const clicks=impr.map(v=>Math.floor(v*(0.02+Math.random()*.02)));
-  const convs=clicks.map(v=>Math.floor(v*(0.015+Math.random()*.02)));
-  const revenue=convs.map(v=>v*Math.floor(Math.random()*15000+8000));
-  return {
-    days:Array.from({length:n},(_,i)=>{const d=new Date(mktState.dateFrom+'T12:00');d.setDate(d.getDate()+i);return d.toLocaleDateString('es-AR',{day:'2-digit',month:'2-digit'})}),
-    spend, impr, clicks, convs, revenue,
-    totals:{
-      spend:spend.reduce((a,b)=>a+b,0), impr:impr.reduce((a,b)=>a+b,0),
-      clicks:clicks.reduce((a,b)=>a+b,0), convs:convs.reduce((a,b)=>a+b,0),
-      revenue:revenue.reduce((a,b)=>a+b,0), leads:Math.floor(Math.random()*800+400),
-    },
-    campaigns:[
-      {name:'Juan/Presentación/Tráfico/CBO',status:'ACTIVE',obj:'OUTCOME_SALES',spend:1147453,impr:423252,clicks:24022,ctr:5.68,cpm:2710,cpc:47.8,convs:346,cpa:3316,roas:4.1},
-      {name:'Juan/Evaluación/Conversiones/CBO',status:'ACTIVE',obj:'OUTCOME_SALES',spend:764713,impr:277366,clicks:10338,ctr:3.73,cpm:2757,cpc:74.0,convs:220,cpa:3476,roas:3.8},
-      {name:'Juan/Hot universo/ABO',status:'ACTIVE',obj:'OUTCOME_SALES',spend:356291,impr:130891,clicks:13301,ctr:10.16,cpm:2722,cpc:26.8,convs:196,cpa:1818,roas:6.2},
-      {name:'Juan/Outlet/Conversiones/CBO',status:'ACTIVE',obj:'OUTCOME_SALES',spend:293253,impr:1265632,clicks:4184,ctr:0.33,cpm:231,cpc:70.1,convs:0,cpa:0,roas:0},
-      {name:'Tráfico Hot Week',status:'ACTIVE',obj:'OUTCOME_TRAFFIC',spend:84200,impr:210000,clicks:6300,ctr:3.0,cpm:401,cpc:13.4,convs:18,cpa:4678,roas:1.8},
-      {name:'SD | Rip Curl | Advantage+',status:'PAUSED',obj:'OUTCOME_SALES',spend:124000,impr:180000,clicks:5400,ctr:3.0,cpm:689,cpc:22.96,convs:42,cpa:2952,roas:3.2},
-      {name:'Black Friday | nov 23',status:'PAUSED',obj:'OUTCOME_SALES',spend:0,impr:0,clicks:0,ctr:0,cpm:0,cpc:0,convs:0,cpa:0,roas:0},
-    ],
-  };
+  const days=Array.from({length:n},(_,i)=>{const d=new Date(mktState.dateFrom+'T12:00');d.setDate(d.getDate()+i);return d.toLocaleDateString('es-AR',{day:'2-digit',month:'2-digit'})});
+  return {days,spend:days.map(()=>0),impr:days.map(()=>0),clicks:days.map(()=>0),convs:days.map(()=>0),revenue:days.map(()=>0),totals:{spend:0,impr:0,clicks:0,convs:0,revenue:0,leads:0},campaigns:[]};
 }
 
+
 function getMktPerfitData(){
-  const camps=[
-    {name:'Flash Sale 48hs',status:'sent',sent:31800,delivered:31164,opens:13088,openRate:42.0,clicks:2806,ctr:9.0,unsubs:96},
-    {name:'Promo Día de la Madre',status:'sent',sent:28400,delivered:27648,opens:9793,openRate:35.4,clicks:2150,ctr:7.8,unsubs:42},
-    {name:'Carrito abandonado',status:'active',sent:3400,delivered:3332,opens:1466,openRate:44.0,clicks:544,ctr:16.8,unsubs:14},
-    {name:'Bienvenida nuevos leads',status:'active',sent:1240,delivered:1228,opens:682,openRate:55.6,clicks:198,ctr:16.2,unsubs:8},
-    {name:'Newsletter semanal',status:'sent',sent:31800,delivered:30960,opens:7676,openRate:24.8,clicks:1228,ctr:4.0,unsubs:58},
-    {name:'Reactivación inactivos',status:'sent',sent:8900,delivered:8544,opens:1282,openRate:15.0,clicks:154,ctr:1.8,unsubs:178},
-  ];
-  const t=camps.reduce((a,c)=>({sent:a.sent+c.sent,delivered:a.delivered+c.delivered,opens:a.opens+c.opens,clicks:a.clicks+c.clicks,unsubs:a.unsubs+c.unsubs}),{sent:0,delivered:0,opens:0,clicks:0,unsubs:0});
-  return {camps, t, openRate:(t.opens/t.delivered*100).toFixed(1), ctr:(t.clicks/t.delivered*100).toFixed(1), delivRate:(t.delivered/t.sent*100).toFixed(1)};
+  return {camps:[],t:{sent:0,delivered:0,opens:0,clicks:0,unsubs:0},openRate:'0.0',ctr:'0.0',delivRate:'0.0'};
 }
+
 
 let mktCharts={}, mktMetaData=null, mktPerfitData=null;
 let mktGoogleData=null, mktKommoData=null;
 let mktDataCacheKey = null; // tracks which period data was generated for
 
 // Generate all marketing data for current period ONCE and cache it
-function loadMktData() {
+async function loadMktData() {
   const cacheKey = `${mktState.dateFrom}|${mktState.dateTo}`;
-  if (mktDataCacheKey === cacheKey && mktMetaData && mktPerfitData && mktGoogleData && mktKommoData) {
-    return; // Data already generated for this period — do NOT regenerate
-  }
-  // Generate fresh data for new period
-  mktMetaData   = getMktMetaData();
+  if (mktDataCacheKey === cacheKey && mktMetaData && mktPerfitData && mktGoogleData && mktKommoData) return;
+
+  mktMetaData = getMktMetaData();
   mktPerfitData = getMktPerfitData();
   mktGoogleData = getGoogleData();
-  mktKommoData  = getKommoData();
+  mktKommoData = getKommoData();
+
+  const qs = `date_from=${mktState.dateFrom}&date_to=${mktState.dateTo}`;
+  const [overview, metaCamps, perfitCamps, google, kommo] = await Promise.all([
+    fetchAPI('/marketing/overview?' + qs),
+    fetchAPI('/marketing/meta/campaigns?' + qs),
+    fetchAPI('/marketing/perfit/campaigns?' + qs),
+    fetchAPI('/marketing/google-ads?' + qs),
+    fetchAPI('/marketing/kommo?' + qs),
+  ]);
+
+  const rows = overview?.data || [];
+  const pick = src => rows.find(r => String(r.source||'').toLowerCase() === src) || {};
+  const meta = pick('meta');
+  mktMetaData.totals = {
+    spend:Number(meta.spend||0), impr:Number(meta.impressions||0), clicks:Number(meta.clicks||0),
+    convs:Number(meta.purchases||meta.conversions||0), revenue:Number(meta.purchase_value||meta.conv_value||meta.revenue_attr||0), leads:Number(meta.leads||0)
+  };
+  mktMetaData.campaigns = (metaCamps?.data || []).map(c=>({
+    name:c.name||'Campaña Meta', status:c.status||'ACTIVE', obj:c.objective||'', spend:Number(c.spend||0),
+    impr:Number(c.impressions||0), clicks:Number(c.clicks||0), ctr:Number(c.ctr||0), cpm:Number(c.cpm||0), cpc:Number(c.cpc||0),
+    convs:Number(c.purchases||c.conversions||0), cpa:Number(c.cpa||0), roas:Number(c.roas||0)
+  }));
+
+  const pf = pick('perfit');
+  mktPerfitData.camps = (perfitCamps?.data || []).map(c=>({
+    name:c.name||'Campaña Perfit', status:c.status||'sent', sent:Number(c.sent||0), delivered:Number(c.delivered||0),
+    opens:Number(c.unique_opens||c.opens||0), openRate:Number(c.open_rate||0).toFixed(1), clicks:Number(c.unique_clicks||c.clicks_email||0), ctr:Number(c.click_rate||0).toFixed(1), unsubs:Number(c.unsubscribes||0)
+  }));
+  mktPerfitData.t = mktPerfitData.camps.reduce((a,c)=>({sent:a.sent+c.sent,delivered:a.delivered+c.delivered,opens:a.opens+c.opens,clicks:a.clicks+c.clicks,unsubs:a.unsubs+c.unsubs}),{sent:Number(pf.sent||0),delivered:Number(pf.delivered||0),opens:Number(pf.unique_opens||0),clicks:Number(pf.unique_clicks||pf.clicks_email||0),unsubs:Number(pf.unsubscribes||0)});
+  mktPerfitData.openRate = (mktPerfitData.t.delivered ? mktPerfitData.t.opens / mktPerfitData.t.delivered * 100 : 0).toFixed(1);
+  mktPerfitData.ctr = (mktPerfitData.t.delivered ? mktPerfitData.t.clicks / mktPerfitData.t.delivered * 100 : 0).toFixed(1);
+  mktPerfitData.delivRate = (mktPerfitData.t.sent ? mktPerfitData.t.delivered / mktPerfitData.t.sent * 100 : 0).toFixed(1);
+
+  const gRows = google?.data || [];
+  mktGoogleData.campaigns = gRows.map(c=>({name:c.campaign_name||'Google Ads',spend:Number(c.spend||0),clicks:Number(c.clicks||0),ctr:Number(c.ctr||0),convs:Number(c.conversions||0),cpa:Number(c.cpa||0),roas:Number(c.roas||0)}));
+  mktGoogleData.totals = mktGoogleData.campaigns.reduce((a,c)=>({spend:a.spend+c.spend,clicks:a.clicks+c.clicks,impressions:a.impressions,convs:a.convs+c.convs,revenue:a.revenue+(c.spend*c.roas)}),{spend:0,clicks:0,impressions:0,convs:0,revenue:0});
+
+  const ks = kommo?.summary || {};
+  const kd = kommo?.by_day || [];
+  mktKommoData.totals = {newLeads:Number(ks.total_leads||0), wonLeads:Number(ks.won_leads||0), openLeads:Number(ks.open_leads||0), lostLeads:Number(ks.lost_leads||0), revenue:Number(ks.won_revenue||0), pipeline:Number(ks.pipeline_value||0)};
+  mktKommoData.newLeads = mktKommoData.days.map(label => {
+    const found = kd.find(d => new Date(d.date).toLocaleDateString('es-AR',{day:'2-digit',month:'2-digit'}) === label);
+    return Number(found?.new_leads || 0);
+  });
+  mktKommoData.wonLeads = mktKommoData.days.map(label => {
+    const found = kd.find(d => new Date(d.date).toLocaleDateString('es-AR',{day:'2-digit',month:'2-digit'}) === label);
+    return Number(found?.won_leads || 0);
+  });
+
   mktDataCacheKey = cacheKey;
 }
+
 
 function mktMkChart(id,type,data,opts){
   if(mktCharts[id]) mktCharts[id].destroy();
@@ -2558,33 +2543,11 @@ function mktMkChart(id,type,data,opts){
 // GOOGLE ADS RENDER
 // ============================================================
 function getGoogleData(){
-  const n = mktState.days || 30;
-  const days = Array.from({length:n},(_,i)=>{
-    const d=new Date(mktState.dateFrom+'T12:00'); d.setDate(d.getDate()+i);
-    return d.toLocaleDateString('es-AR',{day:'2-digit',month:'2-digit'});
-  });
-  const spend = Array.from({length:n},()=>Math.floor(Math.random()*8000+2000));
-  const clicks = spend.map(v=>Math.floor(v*0.8+Math.random()*50));
-  const convs  = clicks.map(v=>Math.floor(v*0.04+Math.random()*2));
-  const revenue= convs.map(v=>v*Math.floor(Math.random()*12000+8000));
-  return {
-    days, spend, clicks, convs, revenue,
-    totals:{
-      spend:spend.reduce((a,b)=>a+b,0),
-      clicks:clicks.reduce((a,b)=>a+b,0),
-      impressions:Math.floor(Math.random()*500000+200000),
-      convs:convs.reduce((a,b)=>a+b,0),
-      revenue:revenue.reduce((a,b)=>a+b,0),
-    },
-    campaigns:[
-      {name:'Marca | Exact',spend:142000,clicks:8400,ctr:4.8,convs:210,cpa:676,roas:5.2},
-      {name:'Competencia | Broad',spend:98000,clicks:5200,ctr:2.1,convs:84,cpa:1167,roas:3.1},
-      {name:'Shopping | Calzado',spend:76000,clicks:3800,ctr:1.8,convs:68,cpa:1118,roas:3.8},
-      {name:'Display | Retargeting',spend:54000,clicks:1200,ctr:0.4,convs:32,cpa:1688,roas:2.4},
-      {name:'Performance Max',spend:210000,clicks:9800,ctr:3.2,convs:340,cpa:618,roas:6.1},
-    ],
-  };
+  const n=mktState.days||30;
+  const days=Array.from({length:n},(_,i)=>{const d=new Date(mktState.dateFrom+'T12:00'); d.setDate(d.getDate()+i);return d.toLocaleDateString('es-AR',{day:'2-digit',month:'2-digit'});});
+  return {days,spend:days.map(()=>0),clicks:days.map(()=>0),convs:days.map(()=>0),revenue:days.map(()=>0),totals:{spend:0,clicks:0,impressions:0,convs:0,revenue:0},campaigns:[],sourceMode:'Google Ads conectado por Sheets/GA4'};
 }
+
 
 function renderGoogleAds(g){
   const fmtM=n=>'$'+Math.round(n||0).toLocaleString('es-AR');
@@ -2634,31 +2597,11 @@ function renderGoogleAds(g){
 // KOMMO CRM RENDER
 // ============================================================
 function getKommoData(){
-  const n = mktState.days || 30;
-  const days = Array.from({length:n},(_,i)=>{
-    const d=new Date(mktState.dateFrom+'T12:00'); d.setDate(d.getDate()+i);
-    return d.toLocaleDateString('es-AR',{day:'2-digit',month:'2-digit'});
-  });
-  const newLeads = Array.from({length:n},()=>Math.floor(Math.random()*12+2));
-  const wonLeads = newLeads.map(v=>Math.floor(v*(0.15+Math.random()*0.1)));
-  return {
-    days, newLeads, wonLeads,
-    totals:{
-      newLeads:newLeads.reduce((a,b)=>a+b,0),
-      wonLeads:wonLeads.reduce((a,b)=>a+b,0),
-      openLeads:Math.floor(Math.random()*80+40),
-      revenue:wonLeads.reduce((a,b)=>a+b,0)*Math.floor(Math.random()*15000+8000),
-    },
-    funnel:[
-      {l:'Nuevos leads',n:0,pct:100,c:'#e8622a'},
-      {l:'Contactados',n:0,pct:78,c:'#f59e0b'},
-      {l:'En seguimiento',n:0,pct:54,c:'#3b82f6'},
-      {l:'Propuesta enviada',n:0,pct:32,c:'#8b5cf6'},
-      {l:'Negociación',n:0,pct:20,c:'#14b8a6'},
-      {l:'Ganados',n:0,pct:0,c:'#10b981'},
-    ],
-  };
+  const n=mktState.days||30;
+  const days=Array.from({length:n},(_,i)=>{const d=new Date(mktState.dateFrom+'T12:00'); d.setDate(d.getDate()+i);return d.toLocaleDateString('es-AR',{day:'2-digit',month:'2-digit'});});
+  return {days,newLeads:days.map(()=>0),wonLeads:days.map(()=>0),totals:{newLeads:0,wonLeads:0,openLeads:0,lostLeads:0,revenue:0,pipeline:0},funnel:[{l:'Nuevos leads',n:0,pct:100,c:'#e8622a'},{l:'Abiertos',n:0,pct:0,c:'#f59e0b'},{l:'Ganados',n:0,pct:0,c:'#10b981'},{l:'Perdidos',n:0,pct:0,c:'#ef4444'}]};
 }
+
 
 function renderKommo(k){
   const fmtM=n=>'$'+Math.round(n||0).toLocaleString('es-AR');
@@ -2722,8 +2665,8 @@ function renderKommo(k){
 }
 
 
-function renderMarketing() {
-  loadMktData(); // Load data once per period — uses cache if period unchanged
+async function renderMarketing() {
+  await loadMktData(); // Load data once per period — uses cache if period unchanged
   const meta=mktMetaData, perfit=mktPerfitData;
   const show=mktState.channel;
   const fmtM=n=>'$'+Math.round(n||0).toLocaleString('es-AR');
@@ -2731,14 +2674,14 @@ function renderMarketing() {
   const compare=mktState.compareOn;
 
   // ---- KPIs combinados ----
-  const totalSpend=meta.totals.spend, totalRev=meta.totals.revenue+287500;
+  const totalSpend=meta.totals.spend + (mktGoogleData?.totals?.spend||0), totalRev=meta.totals.revenue + (mktGoogleData?.totals?.revenue||0);
   const roas=totalSpend>0?(totalRev/totalSpend).toFixed(1):'—';
   const cpa=meta.totals.convs>0?totalSpend/meta.totals.convs:0;
   const kpisComb=[
     {l:'Inversión total',v:fmtM(totalSpend),d:'+12.4%',up:true,c:'#1877f2'},
     {l:'Revenue atribuido',v:fmtM(totalRev),d:'+19.2%',up:true,c:'#10b981'},
     {l:'ROAS combinado',v:roas+'x',d:'+0.4x',up:true,c:'#8b5cf6'},
-    {l:'Total leads',v:numM(meta.totals.leads+563),d:'+22.1%',up:true,c:'#f59e0b'},
+    {l:'Total leads',v:numM(meta.totals.leads + (mktKommoData?.totals?.newLeads||0)),d:'real',up:true,c:'#f59e0b'},
     {l:'CPA Meta',v:fmtM(cpa),d:'-8.3%',up:true,c:'#14b8a6'},
     {l:'Conv. rate',v:(meta.totals.convs/(meta.totals.clicks||1)*100).toFixed(2)+'%',d:'+0.3pp',up:true,c:'#ec4899'},
   ];
@@ -2855,7 +2798,7 @@ function renderMarketing() {
   const metaRoas=(meta.totals.spend>0?meta.totals.revenue/meta.totals.spend:0).toFixed(1);
   document.getElementById('mktChanEff').innerHTML=[
     {name:'Meta Ads',c:'#1877f2',spend:fmtM(meta.totals.spend),rev:fmtM(meta.totals.revenue),roas:metaRoas+'x',leads:numM(meta.totals.leads)},
-    {name:'Perfit Email',c:'#00b4d8',spend:fmtM(88000),rev:fmtM(387500),roas:'4.4x',leads:'563'},
+    {name:'Perfit Email',c:'#00b4d8',spend:fmtM(0),rev:fmtM(0),roas:'—',leads:numM(perfit.t.sent)},
     {name:'Google Ads',c:'#4285f4',spend:fmtM(googleTotals.spend),rev:fmtM(googleTotals.revenue),roas:(googleTotals.spend>0?googleTotals.revenue/googleTotals.spend:0).toFixed(1)+'x',leads:numM(googleTotals.convs)},
     {name:'Kommo CRM',c:'#e8622a',spend:'$0',rev:fmtM(kommoTotals.revenue),roas:'—',leads:numM(kommoTotals.wonLeads)},
   ].map(ch=>`
@@ -2920,14 +2863,14 @@ function renderMktCharts(meta, perfit, show){
   },{...MKT_CD,plugins:{...MKT_CD.plugins,legend:{display:true,labels:{color:'#8b92a8',font:{size:11},boxWidth:12,boxHeight:4}}}});
 
   // Distribution donut
-  const ms=meta.totals.spend, ps=88000;
+  const ms=meta.totals.spend, ps=0;
   mktMkChart('mktDistChart','doughnut',{
     labels:['Meta Ads','Perfit Email'],
     datasets:[{data:[ms,ps],backgroundColor:['rgba(24,119,242,.75)','rgba(0,180,216,.75)'],borderColor:'transparent'}]
   },MKT_CL);
   document.getElementById('mktDistStats').innerHTML=[
-    {l:'Meta Ads',v:'$'+Math.round(ms).toLocaleString('es-AR'),pct:Math.round(ms/(ms+ps)*100),c:'#1877f2'},
-    {l:'Perfit',v:'$'+Math.round(ps).toLocaleString('es-AR'),pct:Math.round(ps/(ms+ps)*100),c:'#00b4d8'},
+    {l:'Meta Ads',v:'$'+Math.round(ms).toLocaleString('es-AR'),pct:(ms+ps)>0?Math.round(ms/(ms+ps)*100):0,c:'#1877f2'},
+    {l:'Perfit',v:'$'+Math.round(ps).toLocaleString('es-AR'),pct:(ms+ps)>0?Math.round(ps/(ms+ps)*100):0,c:'#00b4d8'},
   ].map(d=>`<div style="margin-bottom:7px">
     <div style="display:flex;justify-content:space-between;font-size:11.5px;margin-bottom:3px;color:var(--text2)"><span>${d.l}</span><span>${d.v} (${d.pct}%)</span></div>
     <div style="height:4px;background:var(--bg3);border-radius:2px;overflow:hidden"><div style="height:100%;width:${d.pct}%;background:${d.c};border-radius:2px;transition:width 1s"></div></div>
@@ -3077,22 +3020,66 @@ function closeTV() {
   document.getElementById('tvOverlay').classList.remove('active');
   document.body.style.overflow='';
 }
-function updateTV() {
-  document.getElementById('tvRevenue').textContent = fmt(state.revenue);
-  document.getElementById('tvOrders').textContent = state.orders;
-  document.getElementById('tvTicket').textContent = fmt(state.ticket);
-  document.getElementById('tvDelta').textContent = '+18.4%';
+async function updateTV() {
+  const tvToday = new Date().toISOString().slice(0,10);
+  const [exec, channelsRes, topRes, liveRes, kommoRes, syncRes, mktRes] = await Promise.all([
+    fetchAPI('/metrics/executive?date_from=' + tvToday + '&date_to=' + tvToday),
+    fetchAPI('/metrics/channels?date_from=' + tvToday + '&date_to=' + tvToday),
+    fetchAPI('/products/top?date_from=' + tvToday + '&date_to=' + tvToday + '&limit=40'),
+    fetchAPI('/orders/live?limit=8'),
+    fetchAPI('/marketing/kommo?date_from=' + tvToday + '&date_to=' + tvToday),
+    fetchAPI('/sync/status'),
+    fetchAPI('/marketing/overview?date_from=' + tvToday + '&date_to=' + tvToday),
+  ]);
+  const revenue = Number(exec?.total_revenue || 0);
+  const orders = Number(exec?.orders_count || 0);
+  const units = Number(exec?.units_sold || 0);
+  const ticket = Number(exec?.avg_ticket || 0);
+  document.getElementById('tvRevenue').textContent = fmt(revenue);
+  document.getElementById('tvOrders').textContent = orders;
+  document.getElementById('tvTicket').textContent = fmt(ticket);
+  document.getElementById('tvDelta').textContent = units.toLocaleString('es-AR') + ' unidades';
   document.getElementById('tvDate').textContent = new Date().toLocaleString('es-AR',{weekday:'long',day:'numeric',month:'long',hour:'2-digit',minute:'2-digit'});
+
   const feed = document.getElementById('tvFeed');
-  const recent = liveOrders.slice(-5).reverse();
-  feed.innerHTML = recent.map(o => `
-    <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border)">
-      <span class="channel-pill ${o.ch==='VTEX'?'ch-vtex':o.ch.includes('1')?'ch-ml1':'ch-ml2'}" style="font-size:9px">${o.ch}</span>
-      <span style="flex:1;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${o.name}</span>
-      <span style="font-family:var(--mono);font-size:13px;font-weight:500">${fmt(o.amount)}</span>
-    </div>`).join('');
+  const recent = Array.isArray(liveRes) ? liveRes : [];
+  feed.innerHTML = recent.length ? recent.map(o => {
+    const name = o.products?.[0] || 'Orden';
+    const ch = normalizeChannelLabel(o.channel_name || o.source);
+    return `<div style="display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid var(--border)">
+      <span class="channel-pill ${channelClass(ch)}" style="font-size:9px">${ch}</span>
+      <span style="flex:1;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${name}</span>
+      <span style="font-family:var(--mono);font-size:12px;font-weight:500">${fmt(Number(o.total_amount||0))}</span>
+    </div>`;
+  }).join('') : emptyHTML();
+
+  const top = Array.isArray(topRes) ? topRes : (topRes?.data || []);
+  const byChannel = ['VTEX','MeLi #1','MeLi #2'].map(ch => {
+    const list = top.filter(p => productChannel(p) === ch).slice(0,10);
+    return `<div class="tv-orders-feed"><div class="tv-metric-label" style="margin-bottom:10px">Top 10 ${ch}</div>` +
+      (list.length ? list.map((p,i)=>`<div style="display:flex;gap:8px;align-items:center;padding:5px 0;border-bottom:1px solid var(--border)"><span style="width:18px;color:var(--text3);font-family:var(--mono)">${i+1}</span><span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${p.product_name||p.name||'Producto'}</span><b style="font-family:var(--mono)">${productQty(p)}</b></div>`).join('') : emptyHTML()) + '</div>';
+  }).join('');
+  const tvExtra = document.getElementById('tvExtraGrid');
+  if (tvExtra) tvExtra.innerHTML = byChannel;
+
+  const channels = Array.isArray(channelsRes) ? channelsRes : (channelsRes?.data || []);
+  const mktRows = mktRes?.data || [];
+  const spend = mktRows.reduce((a,r)=>a+Number(r.spend||0),0);
+  const purchaseValue = mktRows.reduce((a,r)=>a+Number(r.purchase_value||r.conv_value||0),0);
+  const roas = spend > 0 ? purchaseValue / spend : 0;
+  const kommo = kommoRes?.summary || {};
+  const syncList = Array.isArray(syncRes) ? syncRes : [];
+  const syncOk = syncList.filter(s => s.status === 'success').length;
+  const soft = document.getElementById('tvSoftMetrics');
+  if (soft) soft.innerHTML = `
+    <div class="tv-big-metric"><div class="tv-metric-label">Canales con venta</div><div class="tv-metric-value" style="font-size:34px">${channels.length}</div></div>
+    <div class="tv-big-metric"><div class="tv-metric-label">Leads Kommo hoy</div><div class="tv-metric-value" style="font-size:34px">${Number(kommo.total_leads||0)}</div></div>
+    <div class="tv-big-metric"><div class="tv-metric-label">Inversión marketing hoy</div><div class="tv-metric-value" style="font-size:34px">${fmt(spend)}</div></div>
+    <div class="tv-big-metric"><div class="tv-metric-label">ROAS hoy</div><div class="tv-metric-value" style="font-size:34px">${roas.toFixed(2)}x</div></div>
+    <div class="tv-big-metric"><div class="tv-metric-label">Sync OK</div><div class="tv-metric-value" style="font-size:34px">${syncOk}/${syncList.length}</div></div>`;
 }
-setInterval(() => { if(document.getElementById('tvDate')) document.getElementById('tvDate').textContent = new Date().toLocaleString('es-AR',{weekday:'long',day:'numeric',month:'long',hour:'2-digit',minute:'2-digit'}); }, 30000);
+
+setInterval(() => { if(document.getElementById('tvOverlay')?.classList.contains('active')) updateTV(); }, 60000);
 
 // ============================================================
 // NAVIGATION
