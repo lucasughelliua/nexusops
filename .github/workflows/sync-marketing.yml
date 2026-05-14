@@ -6,8 +6,8 @@ on:
   workflow_dispatch:
 
 jobs:
-  sync-meta-full:
-    name: Sync Meta Full
+  sync-meta:
+    name: Sync Meta Ads
     runs-on: ubuntu-latest
     timeout-minutes: 35
     steps:
@@ -46,7 +46,6 @@ jobs:
           PERFIT_ACCOUNT: ${{ secrets.PERFIT_ACCOUNT }}
           PERFIT_DAYS_BACK: '30'
 
-
   sync-google-ads:
     name: Sync Google Ads
     runs-on: ubuntu-latest
@@ -68,5 +67,23 @@ jobs:
           GOOGLE_ADS_DEVELOPER_TOKEN: ${{ secrets.GOOGLE_ADS_DEVELOPER_TOKEN }}
           GOOGLE_ADS_CUSTOMER_ID: ${{ secrets.GOOGLE_ADS_CUSTOMER_ID }}
           GOOGLE_ADS_LOGIN_CUSTOMER_ID: ${{ secrets.GOOGLE_ADS_LOGIN_CUSTOMER_ID }}
-          GOOGLE_ADS_API_VERSION: v24
           GOOGLE_ADS_DAYS_BACK: '30'
+
+  sync-kommo:
+    name: Sync Kommo CRM
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: jobs/package.json
+      - run: cd jobs && npm install
+      - run: cd jobs && node sync-marketing.js kommo
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          KOMMO_SUBDOMAIN: ${{ secrets.KOMMO_SUBDOMAIN }}
+          KOMMO_LONG_LIVED_TOKEN: ${{ secrets.KOMMO_LONG_LIVED_TOKEN }}
+          KOMMO_DAYS_BACK: '30'
