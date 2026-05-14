@@ -257,7 +257,7 @@ export default {
             CASE WHEN SUM(delivered) > 0 THEN SUM(unique_clicks_email)::NUMERIC / SUM(delivered) * 100 ELSE 0 END AS email_click_rate,
             CASE WHEN SUM(unique_opens) > 0 THEN SUM(unique_clicks_email)::NUMERIC / SUM(unique_opens) * 100 ELSE 0 END AS ctor
           FROM marketing_metrics
-          WHERE date BETWEEN ${dateFrom} AND ${dateTo}
+          WHERE date >= ${dateFrom}::date AND date <= ${dateTo}::date
           GROUP BY source
         `;
 
@@ -271,32 +271,64 @@ export default {
       if (path === '/api/v1/marketing/meta/campaigns' && req.method === 'GET') {
         const { dateFrom, dateTo } = getDateRange(url);
         const page = Math.max(parseInt(url.searchParams.get('page') || '1'), 1);
-        const perPage = Math.min(Math.max(parseInt(url.searchParams.get('per_page') || url.searchParams.get('limit') || '20'), 1), 100);
+        const perPage = 20;
         const offset = (page - 1) * perPage;
         const countRows = await sql`
-          SELECT COUNT(*)::int AS total
-          FROM marketing_campaigns mc
-          WHERE mc.source='meta'
+          WITH paid_campaigns AS (
+            SELECT mc.id
+            FROM marketing_campaigns mc
+            LEFT JOIN marketing_metrics mm
+              ON mm.campaign_id=mc.id
+             AND mm.date >= ${dateFrom}::date
+             AND mm.date <= ${dateTo}::date
+            WHERE mc.source='meta'
+              AND mc.name !~* '^(instagram post|publicaci[oó]n de instagram)'
+              AND mc.name !~* 'post$'
+            GROUP BY mc.id
+            HAVING COALESCE(SUM(mm.spend),0) > 0
+                OR COALESCE(SUM(mm.impressions),0) > 0
+                OR COALESCE(SUM(mm.clicks),0) > 0
+                OR COALESCE(SUM(mm.purchases),0) > 0
+                OR COALESCE(SUM(mm.conversions),0) > 0
+                OR COALESCE(SUM(mm.leads),0) > 0
+          ) SELECT COUNT(*)::int AS total FROM paid_campaigns
         `;
         const rows = await sql`
-          SELECT
-            mc.id, mc.external_id, mc.name, mc.status, mc.objective, mc.channel_id, mc.created_at, mc.synced_at,
-            COALESCE(SUM(mm.spend),0) AS spend,
-            COALESCE(SUM(mm.impressions),0) AS impressions,
-            COALESCE(SUM(mm.clicks),0) AS clicks,
-            COALESCE(SUM(mm.purchases),0) AS purchases,
-            COALESCE(SUM(mm.purchase_value),0) AS purchase_value,
-            COALESCE(SUM(mm.leads),0) AS leads,
-            CASE WHEN COALESCE(SUM(mm.impressions),0) > 0 THEN SUM(mm.clicks)::NUMERIC/SUM(mm.impressions)*100 ELSE 0 END AS ctr,
-            CASE WHEN COALESCE(SUM(mm.impressions),0) > 0 THEN SUM(mm.spend)::NUMERIC/SUM(mm.impressions)*1000 ELSE 0 END AS cpm,
-            CASE WHEN COALESCE(SUM(mm.clicks),0) > 0 THEN SUM(mm.spend)::NUMERIC/SUM(mm.clicks) ELSE 0 END AS cpc,
-            CASE WHEN COALESCE(SUM(mm.purchases),0) > 0 THEN SUM(mm.spend)::NUMERIC/SUM(mm.purchases) ELSE 0 END AS cpa,
-            CASE WHEN COALESCE(SUM(mm.spend),0) > 0 THEN SUM(mm.purchase_value)/SUM(mm.spend) ELSE 0 END AS roas
-          FROM marketing_campaigns mc
-          LEFT JOIN marketing_metrics mm ON mm.campaign_id=mc.id AND mm.date BETWEEN ${dateFrom} AND ${dateTo}
-          WHERE mc.source='meta'
-          GROUP BY mc.id
-          ORDER BY mc.synced_at DESC NULLS LAST, mc.created_at DESC NULLS LAST
+          WITH paid_campaigns AS (
+            SELECT
+              mc.id, mc.external_id, mc.name, mc.status, mc.objective, mc.channel_id, mc.created_at, mc.synced_at,
+              COALESCE(SUM(mm.spend),0) AS spend,
+              COALESCE(SUM(mm.impressions),0) AS impressions,
+              COALESCE(SUM(mm.clicks),0) AS clicks,
+              COALESCE(SUM(mm.purchases),0) AS purchases,
+              COALESCE(SUM(mm.purchase_value),0) AS purchase_value,
+              COALESCE(SUM(mm.conversions),0) AS conversions,
+              COALESCE(SUM(mm.conv_value),0) AS conv_value,
+              COALESCE(SUM(mm.leads),0) AS leads
+            FROM marketing_campaigns mc
+            LEFT JOIN marketing_metrics mm
+              ON mm.campaign_id=mc.id
+             AND mm.date >= ${dateFrom}::date
+             AND mm.date <= ${dateTo}::date
+            WHERE mc.source='meta'
+              AND mc.name !~* '^(instagram post|publicaci[oó]n de instagram)'
+              AND mc.name !~* 'post$'
+            GROUP BY mc.id
+            HAVING COALESCE(SUM(mm.spend),0) > 0
+                OR COALESCE(SUM(mm.impressions),0) > 0
+                OR COALESCE(SUM(mm.clicks),0) > 0
+                OR COALESCE(SUM(mm.purchases),0) > 0
+                OR COALESCE(SUM(mm.conversions),0) > 0
+                OR COALESCE(SUM(mm.leads),0) > 0
+          )
+          SELECT *,
+            CASE WHEN impressions > 0 THEN clicks::NUMERIC/impressions*100 ELSE 0 END AS ctr,
+            CASE WHEN impressions > 0 THEN spend::NUMERIC/impressions*1000 ELSE 0 END AS cpm,
+            CASE WHEN clicks > 0 THEN spend::NUMERIC/clicks ELSE 0 END AS cpc,
+            CASE WHEN COALESCE(purchases, conversions) > 0 THEN spend::NUMERIC/NULLIF(COALESCE(purchases, conversions),0) ELSE 0 END AS cpa,
+            CASE WHEN spend > 0 THEN COALESCE(NULLIF(purchase_value,0), conv_value)/spend ELSE 0 END AS roas
+          FROM paid_campaigns
+          ORDER BY spend DESC, impressions DESC, synced_at DESC NULLS LAST
           LIMIT ${perPage} OFFSET ${offset}
         `;
         return json({ ok: true, page, per_page: perPage, total: countRows[0]?.total || 0, data: rows });
@@ -309,7 +341,7 @@ export default {
         const rows = await sql`
           SELECT *
           FROM meta_insights_daily
-          WHERE date BETWEEN ${dateFrom} AND ${dateTo}
+          WHERE date >= ${dateFrom}::date AND date <= ${dateTo}::date
           AND level=${level}
           ORDER BY date DESC, spend DESC
           LIMIT 1000
@@ -334,7 +366,7 @@ export default {
             SUM(leads) AS leads,
             CASE WHEN SUM(spend) > 0 THEN SUM(purchase_value)/SUM(spend) ELSE 0 END AS roas
           FROM meta_insights_breakdowns
-          WHERE date BETWEEN ${dateFrom} AND ${dateTo}
+          WHERE date >= ${dateFrom}::date AND date <= ${dateTo}::date
           AND breakdown_type=${type}
           GROUP BY breakdown_type, breakdown_value
           ORDER BY spend DESC
@@ -363,7 +395,7 @@ export default {
         const rows = await sql`
           SELECT *
           FROM meta_organic_daily
-          WHERE date BETWEEN ${dateFrom} AND ${dateTo}
+          WHERE date >= ${dateFrom}::date AND date <= ${dateTo}::date
           ORDER BY date DESC
         `;
         return json({ ok: true, data: rows });
@@ -375,7 +407,7 @@ export default {
       if (path === '/api/v1/marketing/perfit/campaigns' && req.method === 'GET') {
         const { dateFrom, dateTo } = getDateRange(url);
         const page = Math.max(parseInt(url.searchParams.get('page') || '1'), 1);
-        const perPage = Math.min(Math.max(parseInt(url.searchParams.get('per_page') || url.searchParams.get('limit') || '20'), 1), 100);
+        const perPage = 20;
         const offset = (page - 1) * perPage;
         const countRows = await sql`
           SELECT COUNT(*)::int AS total
@@ -396,7 +428,7 @@ export default {
             CASE WHEN COALESCE(SUM(mm.delivered),0) > 0 THEN SUM(mm.unique_clicks_email)::NUMERIC / SUM(mm.delivered) * 100 ELSE 0 END AS click_rate,
             CASE WHEN COALESCE(SUM(mm.unique_opens),0) > 0 THEN SUM(mm.unique_clicks_email)::NUMERIC / SUM(mm.unique_opens) * 100 ELSE 0 END AS ctor
           FROM marketing_campaigns mc
-          LEFT JOIN marketing_metrics mm ON mm.campaign_id=mc.id AND mm.date BETWEEN ${dateFrom} AND ${dateTo}
+          LEFT JOIN marketing_metrics mm ON mm.campaign_id=mc.id AND mm.date >= ${dateFrom}::date AND mm.date <= ${dateTo}::date
           WHERE mc.source='perfit'
           GROUP BY mc.id
           ORDER BY mc.created_at DESC NULLS LAST, mc.synced_at DESC NULLS LAST
@@ -419,7 +451,7 @@ export default {
           FROM marketing_metrics mm
           JOIN marketing_campaigns mc ON mc.id=mm.campaign_id
           WHERE mm.source='perfit'
-          AND mm.date BETWEEN ${dateFrom} AND ${dateTo}
+          AND mm.date >= ${dateFrom}::date AND mm.date <= ${dateTo}::date
           ORDER BY mm.date DESC
         `;
         return json({ ok: true, data: rows });
@@ -447,7 +479,7 @@ export default {
                 COUNT(DISTINCT o.id) AS order_count
               FROM order_items oi
               JOIN orders o ON o.id = oi.order_id
-              WHERE o.created_at::DATE BETWEEN ${dateFrom} AND ${dateTo}
+              WHERE o.created_at >= ${dateFrom}::date AND o.created_at < (${dateTo}::date + INTERVAL '1 day')
                 AND NOT o.is_canceled
                 AND o.source = ${channel}
               GROUP BY oi.product_name, o.source
@@ -464,7 +496,7 @@ export default {
                 COUNT(DISTINCT o.id) AS order_count
               FROM order_items oi
               JOIN orders o ON o.id = oi.order_id
-              WHERE o.created_at::DATE BETWEEN ${dateFrom} AND ${dateTo}
+              WHERE o.created_at >= ${dateFrom}::date AND o.created_at < (${dateTo}::date + INTERVAL '1 day')
                 AND NOT o.is_canceled
               GROUP BY oi.product_name, o.source
               ORDER BY quantity DESC
@@ -494,7 +526,7 @@ export default {
               COUNT(*) FILTER (WHERE o.is_returned)::int AS returns
             FROM orders o
             LEFT JOIN order_items oi ON oi.order_id = o.id
-            WHERE o.created_at::DATE BETWEEN ${dateFrom} AND ${dateTo}
+            WHERE o.created_at >= ${dateFrom}::date AND o.created_at < (${dateTo}::date + INTERVAL '1 day')
               AND NOT o.is_canceled
           `;
           return json(rows[0] || {});
@@ -513,7 +545,7 @@ export default {
                 COUNT(*)::int AS orders,
                 COALESCE(AVG(total_amount), 0) AS ticket
               FROM orders
-              WHERE created_at::DATE BETWEEN ${dateFrom} AND ${dateTo}
+              WHERE created_at >= ${dateFrom}::date AND created_at < (${dateTo}::date + INTERVAL '1 day')
                 AND NOT is_canceled
             ),
             previous AS (
@@ -555,7 +587,7 @@ export default {
               COUNT(*) FILTER (WHERE o.is_canceled)::int AS cancellations
             FROM orders o
             LEFT JOIN channels c ON c.id = o.channel_id
-            WHERE o.created_at::DATE BETWEEN ${dateFrom} AND ${dateTo}
+            WHERE o.created_at >= ${dateFrom}::date AND o.created_at < (${dateTo}::date + INTERVAL '1 day')
               AND NOT o.is_canceled
             GROUP BY o.source, c.name
             ORDER BY revenue DESC
@@ -629,7 +661,7 @@ export default {
             FROM marketing_campaigns mc
             JOIN marketing_metrics mm ON mm.campaign_id = mc.id
             WHERE mc.source = 'google_ads'
-              AND mm.date BETWEEN ${dateFrom} AND ${dateTo}
+              AND mm.date >= ${dateFrom}::date AND mm.date <= ${dateTo}::date
             GROUP BY mc.id, mc.name, mc.status
             ORDER BY revenue DESC
           `;
@@ -654,7 +686,7 @@ export default {
               COALESCE(SUM(estimated_value) FILTER (WHERE status = 'won'), 0) AS won_revenue,
               COALESCE(SUM(estimated_value), 0) AS pipeline_value
             FROM leads
-            WHERE created_at::DATE BETWEEN ${dateFrom} AND ${dateTo}
+            WHERE created_at >= ${dateFrom}::date AND created_at < (${dateTo}::date + INTERVAL '1 day')
           `;
           const byDay = await sql`
             SELECT
@@ -663,7 +695,7 @@ export default {
               COUNT(*) FILTER (WHERE status = 'won')::int AS won_leads,
               COALESCE(SUM(estimated_value) FILTER (WHERE status = 'won'), 0) AS revenue
             FROM leads
-            WHERE created_at::DATE BETWEEN ${dateFrom} AND ${dateTo}
+            WHERE created_at >= ${dateFrom}::date AND created_at < (${dateTo}::date + INTERVAL '1 day')
             GROUP BY created_at::DATE
             ORDER BY date ASC
           `;
@@ -688,7 +720,7 @@ export default {
               SELECT DISTINCT o.*
               FROM orders o
               LEFT JOIN order_items oi ON oi.order_id = o.id
-              WHERE o.created_at::DATE BETWEEN ${dateFrom} AND ${dateTo}
+              WHERE o.created_at >= ${dateFrom}::date AND o.created_at < (${dateTo}::date + INTERVAL '1 day')
                 AND (${f.channel} = 'all' OR o.source = ${f.channel} OR (${f.channel}='ml1' AND o.source IN ('meli_1','ml_1')) OR (${f.channel}='ml2' AND o.source IN ('meli_2','ml_2')))
                 AND (${f.province} = '' OR o.customer_province ILIKE '%' || ${f.province} || '%')
                 AND (${f.status} = '' OR o.status = ${f.status})
@@ -718,20 +750,29 @@ export default {
 
         if (path === '/api/v1/dashboard/channels') {
           const rows = await sql`
+            WITH filtered_orders AS (
+              SELECT o.id, o.source, o.channel_id, o.total_amount
+              FROM orders o
+              WHERE o.created_at >= ${dateFrom}::date AND o.created_at < (${dateTo}::date + INTERVAL '1 day')
+                AND NOT o.is_canceled
+                AND (${f.channel} = 'all' OR o.source = ${f.channel} OR (${f.channel}='ml1' AND o.source IN ('meli_1','ml_1')) OR (${f.channel}='ml2' AND o.source IN ('meli_2','ml_2')))
+            ), item_units AS (
+              SELECT fo.source, COALESCE(SUM(oi.quantity),0)::int AS units_sold
+              FROM filtered_orders fo
+              LEFT JOIN order_items oi ON oi.order_id = fo.id
+              GROUP BY fo.source
+            )
             SELECT
-              o.source,
-              COALESCE(c.name, o.source) AS channel_name,
-              COALESCE(SUM(o.total_amount),0) AS revenue,
-              COUNT(DISTINCT o.id)::int AS orders_count,
-              COALESCE(AVG(o.total_amount),0) AS avg_ticket,
-              COALESCE(SUM(oi.quantity),0)::int AS units_sold
-            FROM orders o
-            LEFT JOIN channels c ON c.id = o.channel_id
-            LEFT JOIN order_items oi ON oi.order_id = o.id
-            WHERE o.created_at::DATE BETWEEN ${dateFrom} AND ${dateTo}
-              AND NOT o.is_canceled
-              AND (${f.channel} = 'all' OR o.source = ${f.channel} OR (${f.channel}='ml1' AND o.source IN ('meli_1','ml_1')) OR (${f.channel}='ml2' AND o.source IN ('meli_2','ml_2')))
-            GROUP BY o.source, c.name
+              fo.source,
+              COALESCE(MAX(c.name), fo.source) AS channel_name,
+              COALESCE(SUM(fo.total_amount),0) AS revenue,
+              COUNT(*)::int AS orders_count,
+              COALESCE(AVG(fo.total_amount),0) AS avg_ticket,
+              COALESCE(MAX(iu.units_sold),0)::int AS units_sold
+            FROM filtered_orders fo
+            LEFT JOIN channels c ON c.id = fo.channel_id
+            LEFT JOIN item_units iu ON iu.source = fo.source
+            GROUP BY fo.source
             ORDER BY revenue DESC
           `;
           return json({ ok: true, data: rows });
@@ -747,7 +788,7 @@ export default {
               COALESCE(SUM(oi.quantity),0)::int AS units_sold
             FROM orders o
             LEFT JOIN order_items oi ON oi.order_id = o.id
-            WHERE o.created_at::DATE BETWEEN ${dateFrom} AND ${dateTo}
+            WHERE o.created_at >= ${dateFrom}::date AND o.created_at < (${dateTo}::date + INTERVAL '1 day')
               AND NOT o.is_canceled
               AND (${f.channel} = 'all' OR o.source = ${f.channel} OR (${f.channel}='ml1' AND o.source IN ('meli_1','ml_1')) OR (${f.channel}='ml2' AND o.source IN ('meli_2','ml_2')))
             GROUP BY o.created_at::DATE, o.source
@@ -769,7 +810,7 @@ export default {
               COUNT(DISTINCT o.id)::int AS order_count
             FROM order_items oi
             JOIN orders o ON o.id = oi.order_id
-            WHERE o.created_at::DATE BETWEEN ${dateFrom} AND ${dateTo}
+            WHERE o.created_at >= ${dateFrom}::date AND o.created_at < (${dateTo}::date + INTERVAL '1 day')
               AND NOT o.is_canceled
               AND (${f.channel} = 'all' OR o.source = ${f.channel} OR (${f.channel}='ml1' AND o.source IN ('meli_1','ml_1')) OR (${f.channel}='ml2' AND o.source IN ('meli_2','ml_2')))
               AND (${f.brand} = '' OR oi.brand ILIKE '%' || ${f.brand} || '%')
@@ -798,15 +839,31 @@ export default {
 
         if (path === '/api/v1/dashboard/tv') {
           const [summary, channels, top, recent, sync, kommo, marketing] = await Promise.all([
-            sql`SELECT COALESCE(SUM(total_amount),0) AS total_revenue, COUNT(*)::int AS orders_count, COALESCE(AVG(total_amount),0) AS avg_ticket, COALESCE(SUM(items_count),0)::int AS units_sold FROM orders WHERE created_at::DATE BETWEEN ${dateFrom} AND ${dateTo} AND NOT is_canceled`,
-            sql`SELECT source, COALESCE(SUM(total_amount),0) AS revenue, COUNT(*)::int AS orders_count FROM orders WHERE created_at::DATE BETWEEN ${dateFrom} AND ${dateTo} AND NOT is_canceled GROUP BY source ORDER BY revenue DESC`,
-            sql`SELECT oi.product_name, o.source, SUM(oi.quantity)::int AS quantity, SUM(oi.total_price) AS revenue FROM order_items oi JOIN orders o ON o.id=oi.order_id WHERE o.created_at::DATE BETWEEN ${dateFrom} AND ${dateTo} AND NOT o.is_canceled GROUP BY oi.product_name,o.source ORDER BY quantity DESC LIMIT 40`,
-            sql`SELECT o.external_id,o.source,o.total_amount,o.status,o.payment_status,o.customer_province,o.created_at,COALESCE(c.name,o.source) AS channel_name, ARRAY_AGG(oi.product_name ORDER BY oi.total_price DESC NULLS LAST) AS products FROM orders o LEFT JOIN channels c ON c.id=o.channel_id LEFT JOIN order_items oi ON oi.order_id=o.id WHERE o.created_at::DATE BETWEEN ${dateFrom} AND ${dateTo} GROUP BY o.id,c.name ORDER BY o.created_at DESC LIMIT 10`,
+            sql`SELECT COALESCE(SUM(total_amount),0) AS total_revenue, COUNT(*)::int AS orders_count, COALESCE(AVG(total_amount),0) AS avg_ticket, COALESCE(SUM(items_count),0)::int AS units_sold FROM orders WHERE created_at >= ${dateFrom}::date AND created_at < (${dateTo}::date + INTERVAL '1 day') AND NOT is_canceled`,
+            sql`SELECT source, COALESCE(SUM(total_amount),0) AS revenue, COUNT(*)::int AS orders_count FROM orders WHERE created_at >= ${dateFrom}::date AND created_at < (${dateTo}::date + INTERVAL '1 day') AND NOT is_canceled GROUP BY source ORDER BY revenue DESC`,
+            sql`SELECT oi.product_name, o.source, SUM(oi.quantity)::int AS quantity, SUM(oi.total_price) AS revenue FROM order_items oi JOIN orders o ON o.id=oi.order_id WHERE o.created_at >= ${dateFrom}::date AND o.created_at < (${dateTo}::date + INTERVAL '1 day') AND NOT o.is_canceled GROUP BY oi.product_name,o.source ORDER BY quantity DESC LIMIT 40`,
+            sql`SELECT o.external_id,o.source,o.total_amount,o.status,o.payment_status,o.customer_province,o.created_at,COALESCE(c.name,o.source) AS channel_name, ARRAY_AGG(oi.product_name ORDER BY oi.total_price DESC NULLS LAST) AS products FROM orders o LEFT JOIN channels c ON c.id=o.channel_id LEFT JOIN order_items oi ON oi.order_id=o.id WHERE o.created_at >= ${dateFrom}::date AND o.created_at < (${dateTo}::date + INTERVAL '1 day') GROUP BY o.id,c.name ORDER BY o.created_at DESC LIMIT 10`,
             sql`SELECT DISTINCT ON (source) source, status, records_processed, last_date_synced, error_message, started_at, finished_at FROM sync_log ORDER BY source, started_at DESC`,
-            sql`SELECT COUNT(*)::int AS total_leads, COUNT(*) FILTER (WHERE status='won')::int AS won_leads, COALESCE(SUM(estimated_value) FILTER (WHERE status='won'),0) AS won_revenue, COALESCE(SUM(estimated_value),0) AS pipeline_value FROM leads WHERE created_at::DATE BETWEEN ${dateFrom} AND ${dateTo}`,
-            sql`SELECT source, COALESCE(SUM(spend),0) AS spend, COALESCE(SUM(conv_value),0) AS revenue, COALESCE(SUM(conversions),0) AS conversions, COALESCE(SUM(leads),0) AS leads FROM marketing_metrics WHERE date BETWEEN ${dateFrom} AND ${dateTo} GROUP BY source`,
+            sql`SELECT COUNT(*)::int AS total_leads, COUNT(*) FILTER (WHERE status='won')::int AS won_leads, COALESCE(SUM(estimated_value) FILTER (WHERE status='won'),0) AS won_revenue, COALESCE(SUM(estimated_value),0) AS pipeline_value FROM leads WHERE created_at >= ${dateFrom}::date AND created_at < (${dateTo}::date + INTERVAL '1 day')`,
+            sql`SELECT source, COALESCE(SUM(spend),0) AS spend, COALESCE(SUM(conv_value),0) AS revenue, COALESCE(SUM(conversions),0) AS conversions, COALESCE(SUM(leads),0) AS leads FROM marketing_metrics WHERE date >= ${dateFrom}::date AND date <= ${dateTo}::date GROUP BY source`,
           ]);
           return json({ ok: true, date_from: dateFrom, date_to: dateTo, summary: summary[0], channels, top_products: top, recent_orders: recent, sync, kommo: kommo[0], marketing });
+        }
+      }
+
+      if (path === '/api/v1/debug/data-health' && req.method === 'GET') {
+        try {
+          const [orders, orderItems, marketing, campaigns, leads, sync] = await Promise.all([
+            sql`SELECT COUNT(*)::int AS count, MIN(created_at) AS min_date, MAX(created_at) AS max_date, COUNT(*) FILTER (WHERE created_at::date = CURRENT_DATE)::int AS today_count FROM orders`,
+            sql`SELECT COUNT(*)::int AS count FROM order_items`,
+            sql`SELECT source, COUNT(*)::int AS rows, MIN(date) AS min_date, MAX(date) AS max_date, COALESCE(SUM(spend),0) AS spend, COALESCE(SUM(impressions),0) AS impressions, COALESCE(SUM(clicks),0) AS clicks FROM marketing_metrics GROUP BY source ORDER BY source`,
+            sql`SELECT source, COUNT(*)::int AS count FROM marketing_campaigns GROUP BY source ORDER BY source`,
+            sql`SELECT COUNT(*)::int AS count, MIN(created_at) AS min_date, MAX(created_at) AS max_date FROM leads`,
+            sql`SELECT DISTINCT ON (source) source, status, records_processed, last_date_synced, error_message, started_at, finished_at FROM sync_log ORDER BY source, started_at DESC`,
+          ]);
+          return json({ ok:true, orders:orders[0], order_items:orderItems[0], marketing, campaigns, leads:leads[0], sync });
+        } catch(e) {
+          return json({ ok:false, error:e.message }, 500);
         }
       }
 
