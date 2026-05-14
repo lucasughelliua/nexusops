@@ -1,493 +1,241 @@
-# sync-marketing.js completo
+/**
+ * NexusOps — sync-marketing.js
+ * Sincronización de Meta Ads + Perfit
+ * Correr con: node sync-marketing.js [meta|meta_full|perfit]
+ */
 
-```js
 import { Pool } from 'pg';
 
-const db = new Pool({
-  connectionString: process.env.DATABASE_URL,
-});
+const db = new Pool({ connectionString: process.env.DATABASE_URL });
 
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+const todayISO = () => new Date().toISOString().split('T')[0];
+const daysAgoISO = d => new Date(Date.now() - 86400000 * d).toISOString().split('T')[0];
+const num = v => { const n = Number(v); return Number.isFinite(n) ? n : 0; };
+const int = v => { const n = parseInt(v, 10); return Number.isFinite(n) ? n : 0; };
 
-function todayISO() {
-  return new Date().toISOString().split('T')[0];
-}
-
-function daysAgoISO(days) {
-  return new Date(Date.now() - 86400000 * days)
-    .toISOString()
-    .split('T')[0];
-}
-
-function num(v) {
-  const n = Number(v);
-  return Number.isFinite(n) ? n : 0;
-}
-
-function int(v) {
-  const n = parseInt(v, 10);
-  return Number.isFinite(n) ? n : 0;
-}
-
+// ============================================================
+// FETCH CON RETRY
+// ============================================================
 async function fetchJson(url, options = {}, retries = 3) {
   let lastError;
-
   for (let i = 0; i <= retries; i++) {
     try {
       const res = await fetch(url, options);
       const text = await res.text();
-
       let data = {};
-
-      try {
-        data = text ? JSON.parse(text) : {};
-      } catch {
-        data = { raw: text };
-      }
-
+      try { data = text ? JSON.parse(text) : {}; } catch { data = { raw: text }; }
       if (!res.ok) {
-        const msg =
-          data?.error?.message ||
-          data?.message ||
-          text ||
-          `HTTP ${res.status}`;
-
+        const msg = data?.error?.message || data?.message || data?.userMessage || text || `HTTP ${res.status}`;
         if ((res.status === 429 || res.status >= 500) && i < retries) {
-          await sleep(1000 * Math.pow(2, i));
-          continue;
+          await sleep(2000 * Math.pow(2, i)); continue;
         }
-
         throw new Error(`${res.status} ${msg}`);
       }
-
       return data;
     } catch (e) {
       lastError = e;
-
-      if (i < retries) {
-        await sleep(1000 * Math.pow(2, i));
-        continue;
-      }
+      if (i < retries) { await sleep(1000 * Math.pow(2, i)); continue; }
     }
   }
-
   throw lastError;
 }
 
-async function startSyncLog(source) {
-  try {
-    const { rows } = await db.query(
-      `
-      INSERT INTO sync_log(source, status)
-      VALUES($1, 'running')
-      RETURNING id
-    `,
-      [source]
-    );
-
-    return rows[0].id;
-  } catch {
-    return null;
-  }
-}
-
-async function endSyncLog(id, data) {
-  if (!id) return;
-
-  await db.query(
-    `
-    UPDATE sync_log
-    SET
-      status = $1,
-      finished_at = NOW(),
-      records_processed = $2,
-      records_created = $3,
-      records_updated = $4,
-      last_date_synced = $5,
-      error_message = $6
-    WHERE id = $7
-  `,
-    [
-      data.status,
-      data.records || 0,
-      data.created || 0,
-      data.updated || 0,
-      data.lastDate || null,
-      data.error || null,
-      id,
-    ]
-  );
-}
-
+// ============================================================
+// SYNC LOG
+// ============================================================
 async function getLastSync(source) {
-  try {
-    const { rows } = await db.query(
-      `
-      SELECT last_date_synced
-      FROM sync_log
-      WHERE source = $1
-      AND status IN ('success', 'partial')
-      ORDER BY started_at DESC
-      LIMIT 1
-    `,
-      [source]
-    );
-
-    return rows[0]?.last_date_synced || null;
-  } catch {
-    return null;
-  }
-}
-
-async function ensureChannel(name, type = 'other') {
-  let { rows: [channel] } = await db.query(
-    `
-    SELECT id
-    FROM channels
-    WHERE name = $1
-    AND type = $2
-    LIMIT 1
-  `,
-    [name, type]
+  const { rows } = await db.query(
+    `SELECT last_date_synced FROM sync_log WHERE source=$1 AND status IN ('success','partial') ORDER BY started_at DESC LIMIT 1`,
+    [source]
   );
-
-  if (!channel) {
-    const { rows: [created] } = await db.query(
-      `
-      INSERT INTO channels(name, type, active)
-      VALUES($1, $2, true)
-      RETURNING id
-    `,
-      [name, type]
-    );
-
-    channel = created;
-  }
-
-  return channel;
+  return rows[0]?.last_date_synced || null;
 }
 
-function metaUrl(path, params = {}) {
-  const url = new URL(`https://graph.facebook.com/v19.0/${path}`);
-
-  url.searchParams.set(
-    'access_token',
-    process.env.META_ACCESS_TOKEN
+async function startSyncLog(source) {
+  const { rows } = await db.query(
+    `INSERT INTO sync_log(source,status) VALUES($1,'running') RETURNING id`, [source]
   );
+  return rows[0].id;
+}
 
-  for (const [k, v] of Object.entries(params)) {
-    if (v !== undefined && v !== null && v !== '') {
-      url.searchParams.set(
-        k,
-        typeof v === 'object'
-          ? JSON.stringify(v)
-          : String(v)
-      );
-    }
+async function endSyncLog(id, { status, records = 0, created = 0, updated = 0, lastDate = null, error = null }) {
+  await db.query(`
+    UPDATE sync_log SET
+      status=$1, finished_at=NOW(), records_processed=$2,
+      records_created=$3, records_updated=$4,
+      last_date_synced=$5, error_message=$6,
+      duration_ms=EXTRACT(EPOCH FROM (NOW()-started_at))*1000
+    WHERE id=$7
+  `, [status, records, created, updated, lastDate, error, id]);
+}
+
+// ============================================================
+// HELPERS DB
+// ============================================================
+async function getOrCreateChannel(name, type) {
+  let { rows: [ch] } = await db.query(`SELECT id FROM channels WHERE name=$1 AND type=$2`, [name, type]);
+  if (!ch) {
+    const { rows: [c] } = await db.query(`INSERT INTO channels(name,type,active) VALUES($1,$2,true) RETURNING id`, [name, type]);
+    ch = c;
   }
-
-  return url.toString();
+  return ch.id;
 }
 
-async function fetchMetaPaged(path, params = {}) {
-  let url = metaUrl(path, {
-    limit: 100,
-    ...params,
-  });
-
-  const all = [];
-
-  while (url) {
-    const data = await fetchJson(url);
-
-    if (Array.isArray(data.data)) {
-      all.push(...data.data);
-    }
-
-    url = data.paging?.next || null;
-
-    if (url) {
-      await sleep(200);
-    }
-  }
-
-  return all;
-}
-
-function getAction(actions, names) {
-  if (!Array.isArray(actions)) return 0;
-
-  const arr = Array.isArray(names)
-    ? names
-    : [names];
-
-  return arr.reduce((sum, name) => {
-    const item = actions.find(
-      (a) => a.action_type === name
-    );
-
-    return sum + num(item?.value);
-  }, 0);
-}
-
-function parseMetaInsight(ins) {
-  const actions = ins.actions || [];
-  const actionValues = ins.action_values || [];
-
-  const purchases = getAction(actions, [
-    'purchase',
-    'offsite_conversion.fb_pixel_purchase',
+async function upsertCampaign(data) {
+  const { rows } = await db.query(`
+    INSERT INTO marketing_campaigns
+      (external_id,source,channel_id,name,status,objective,
+       daily_budget,lifetime_budget,start_date,end_date,created_at,updated_at)
+    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+    ON CONFLICT (external_id,source) DO UPDATE SET
+      status=EXCLUDED.status, name=EXCLUDED.name,
+      daily_budget=EXCLUDED.daily_budget, updated_at=EXCLUDED.updated_at, synced_at=NOW()
+    RETURNING id
+  `, [
+    data.external_id, data.source, data.channel_id, data.name,
+    data.status || 'unknown', data.objective || null,
+    data.daily_budget || null, data.lifetime_budget || null,
+    data.start_date || null, data.end_date || null,
+    data.created_at || new Date().toISOString(),
+    data.updated_at || new Date().toISOString(),
   ]);
-
-  const purchaseValue = getAction(actionValues, [
-    'purchase',
-    'offsite_conversion.fb_pixel_purchase',
-  ]);
-
-  return {
-    impressions: int(ins.impressions),
-    reach: int(ins.reach),
-    clicks: int(ins.clicks),
-    spend: num(ins.spend),
-    ctr: num(ins.ctr),
-    cpc: num(ins.cpc),
-    cpm: num(ins.cpm),
-    leads: int(
-      getAction(actions, [
-        'lead',
-        'offsite_conversion.fb_pixel_lead',
-      ])
-    ),
-    purchases: int(purchases),
-    purchase_value: num(purchaseValue),
-  };
+  return rows[0].id;
 }
 
-export async function syncMetaFull() {
+async function upsertMetrics(data) {
+  await db.query(`
+    INSERT INTO marketing_metrics
+      (campaign_id,source,date,
+       impressions,reach,clicks,spend,cpm,cpc,ctr,frequency,
+       conversions,conv_value,leads,video_views,
+       sent,delivered,opens,unique_opens,
+       clicks_email,unique_clicks,unsubscribes,
+       bounces_soft,bounces_hard,spam_reports,revenue_attr)
+    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26)
+    ON CONFLICT (campaign_id,date) DO UPDATE SET
+      impressions=EXCLUDED.impressions, reach=EXCLUDED.reach,
+      clicks=EXCLUDED.clicks, spend=EXCLUDED.spend,
+      cpm=EXCLUDED.cpm, cpc=EXCLUDED.cpc, ctr=EXCLUDED.ctr,
+      frequency=EXCLUDED.frequency, conversions=EXCLUDED.conversions,
+      conv_value=EXCLUDED.conv_value, leads=EXCLUDED.leads,
+      sent=EXCLUDED.sent, delivered=EXCLUDED.delivered,
+      opens=EXCLUDED.opens, unique_opens=EXCLUDED.unique_opens,
+      clicks_email=EXCLUDED.clicks_email, unique_clicks=EXCLUDED.unique_clicks,
+      unsubscribes=EXCLUDED.unsubscribes, bounces_soft=EXCLUDED.bounces_soft,
+      bounces_hard=EXCLUDED.bounces_hard, spam_reports=EXCLUDED.spam_reports,
+      revenue_attr=EXCLUDED.revenue_attr, synced_at=NOW()
+  `, [
+    data.campaign_id, data.source, data.date,
+    data.impressions||0, data.reach||0, data.clicks||0,
+    data.spend||0, data.cpm||0, data.cpc||0, data.ctr||0, data.frequency||0,
+    data.conversions||0, data.conv_value||0, data.leads||0, data.video_views||0,
+    data.sent||0, data.delivered||0, data.opens||0, data.unique_opens||0,
+    data.clicks_email||0, data.unique_clicks||0, data.unsubscribes||0,
+    data.bounces_soft||0, data.bounces_hard||0, data.spam_reports||0, data.revenue_attr||0,
+  ]);
+}
+
+// ============================================================
+// JOB: META ADS
+// ============================================================
+export async function syncMetaAds(daysBack = 30) {
   const source = 'meta';
   const logId = await startSyncLog(source);
+  const token = process.env.META_ACCESS_TOKEN?.trim();
+  const adAccountId = process.env.META_AD_ACCOUNT_ID?.trim();
 
-  try {
-    const adAccountId = process.env.META_AD_ACCOUNT_ID?.trim();
+  if (!token) throw new Error('Falta META_ACCESS_TOKEN');
+  if (!adAccountId) throw new Error('Falta META_AD_ACCOUNT_ID');
 
-    if (!adAccountId) {
-      throw new Error('Falta META_AD_ACCOUNT_ID');
-    }
+  const lastSync = await getLastSync(source);
+  const dateFrom = lastSync
+    ? new Date(new Date(lastSync) - 86400000).toISOString().split('T')[0]
+    : daysAgoISO(daysBack);
+  const dateTo = todayISO();
 
-    const lastSync = await getLastSync(source);
+  console.log(`[Meta] Sincronizando ${dateFrom} → ${dateTo}`);
+  const channelId = await getOrCreateChannel('Meta Ads', 'other');
+  let totalCampaigns = 0, totalMetrics = 0;
 
-    const dateFrom = lastSync
-      ? new Date(new Date(lastSync) - 86400000)
-          .toISOString()
-          .split('T')[0]
-      : daysAgoISO(30);
-
-    const dateTo = todayISO();
-
-    console.log(`[Meta] Sync desde ${dateFrom}`);
-
-    const channel = await ensureChannel('Meta Ads');
-
-    const campaigns = await fetchMetaPaged(
-      `${adAccountId}/campaigns`,
-      {
-        fields: [
-          'id',
-          'name',
-          'status',
-          'objective',
-          'daily_budget',
-          'lifetime_budget',
-          'created_time',
-          'updated_time',
-        ].join(','),
-      }
-    );
-
-    console.log(`[Meta] Campañas: ${campaigns.length}`);
-
-    for (const c of campaigns) {
-      await db.query(
-        `
-        INSERT INTO marketing_campaigns (
-          external_id,
-          source,
-          channel_id,
-          name,
-          status,
-          objective,
-          daily_budget,
-          lifetime_budget,
-          created_at,
-          updated_at
-        )
-        VALUES (
-          $1,
-          'meta',
-          $2,
-          $3,
-          $4,
-          $5,
-          $6,
-          $7,
-          $8,
-          $9
-        )
-        ON CONFLICT (external_id, source)
-        DO UPDATE SET
-          name = EXCLUDED.name,
-          status = EXCLUDED.status,
-          objective = EXCLUDED.objective,
-          daily_budget = EXCLUDED.daily_budget,
-          lifetime_budget = EXCLUDED.lifetime_budget,
-          updated_at = EXCLUDED.updated_at,
-          synced_at = NOW()
-      `,
-        [
-          c.id,
-          channel.id,
-          c.name,
-          c.status,
-          c.objective,
-          c.daily_budget
-            ? num(c.daily_budget) / 100
-            : null,
-          c.lifetime_budget
-            ? num(c.lifetime_budget) / 100
-            : null,
-          c.created_time || null,
-          c.updated_time || null,
-        ]
-      );
-    }
-
-    const insights = await fetchMetaPaged(
-      `${adAccountId}/insights`,
-      {
-        level: 'campaign',
-        time_increment: 1,
-        time_range: {
-          since: dateFrom,
-          until: dateTo,
-        },
-        fields: [
-          'date_start',
-          'campaign_id',
-          'campaign_name',
-          'impressions',
-          'reach',
-          'clicks',
-          'spend',
-          'ctr',
-          'cpc',
-          'cpm',
-          'actions',
-          'action_values',
-        ].join(','),
-      }
-    );
-
-    console.log(`[Meta] Insights: ${insights.length}`);
-
-    for (const ins of insights) {
-      const p = parseMetaInsight(ins);
-
-      const { rows: [camp] } = await db.query(
-        `
-        SELECT id
-        FROM marketing_campaigns
-        WHERE external_id = $1
-        AND source = 'meta'
-        LIMIT 1
-      `,
-        [ins.campaign_id]
-      );
-
-      if (!camp) continue;
-
-      await db.query(
-        `
-        INSERT INTO marketing_metrics (
-          campaign_id,
-          source,
-          date,
-          impressions,
-          reach,
-          clicks,
-          spend,
-          ctr,
-          cpc,
-          cpm,
-          leads,
-          purchases,
-          purchase_value
-        )
-        VALUES (
-          $1,
-          'meta',
-          $2,
-          $3,
-          $4,
-          $5,
-          $6,
-          $7,
-          $8,
-          $9,
-          $10,
-          $11,
-          $12
-        )
-        ON CONFLICT (campaign_id, date)
-        DO UPDATE SET
-          impressions = EXCLUDED.impressions,
-          reach = EXCLUDED.reach,
-          clicks = EXCLUDED.clicks,
-          spend = EXCLUDED.spend,
-          ctr = EXCLUDED.ctr,
-          cpc = EXCLUDED.cpc,
-          cpm = EXCLUDED.cpm,
-          leads = EXCLUDED.leads,
-          purchases = EXCLUDED.purchases,
-          purchase_value = EXCLUDED.purchase_value,
-          synced_at = NOW()
-      `,
-        [
-          camp.id,
-          ins.date_start,
-          p.impressions,
-          p.reach,
-          p.clicks,
-          p.spend,
-          p.ctr,
-          p.cpc,
-          p.cpm,
-          p.leads,
-          p.purchases,
-          p.purchase_value,
-        ]
-      );
-    }
-
-    await endSyncLog(logId, {
-      status: 'success',
-      records: campaigns.length + insights.length,
-      created: insights.length,
-      updated: 0,
-      lastDate: dateTo,
+  // 1. Campañas
+  let after = null;
+  while (true) {
+    const params = new URLSearchParams({
+      access_token: token,
+      fields: 'id,name,status,objective,daily_budget,lifetime_budget,start_time,stop_time,created_time,updated_time',
+      limit: '100',
     });
+    if (after) params.set('after', after);
 
-    console.log('[Meta] Sync completo');
-  } catch (e) {
-    await endSyncLog(logId, {
-      status: 'error',
-      error: e.message,
-      lastDate: todayISO(),
-    });
+    const data = await fetchJson(`https://graph.facebook.com/v19.0/${adAccountId}/campaigns?${params}`);
+    if (data.error) throw new Error(`Meta: ${data.error.message}`);
 
-    throw e;
+    for (const camp of (data.data || [])) {
+      await upsertCampaign({
+        external_id: camp.id, source, channel_id: channelId,
+        name: camp.name, status: camp.status, objective: camp.objective,
+        daily_budget: camp.daily_budget ? camp.daily_budget / 100 : null,
+        lifetime_budget: camp.lifetime_budget ? camp.lifetime_budget / 100 : null,
+        start_date: camp.start_time?.split('T')[0] || null,
+        end_date: camp.stop_time?.split('T')[0] || null,
+        created_at: camp.created_time, updated_at: camp.updated_time,
+      });
+      totalCampaigns++;
+    }
+    after = data.paging?.cursors?.after;
+    if (!data.paging?.next) break;
+    await sleep(200);
   }
+
+  console.log(`[Meta] ${totalCampaigns} campañas`);
+
+  // 2. Insights por campaña
+  const { rows: campaigns } = await db.query(`SELECT id,external_id FROM marketing_campaigns WHERE source='meta'`);
+
+  for (const camp of campaigns) {
+    try {
+      const params = new URLSearchParams({
+        access_token: token,
+        level: 'campaign', time_increment: '1',
+        time_range: JSON.stringify({ since: dateFrom, until: dateTo }),
+        fields: 'date_start,impressions,reach,clicks,spend,cpm,cpc,ctr,frequency,actions,action_values',
+        limit: '90',
+      });
+      const data = await fetchJson(`https://graph.facebook.com/v19.0/${camp.external_id}/insights?${params}`);
+      if (data.error) { console.warn(`[Meta] insights error ${camp.external_id}`); continue; }
+
+      for (const ins of (data.data || [])) {
+        const actions = ins.actions || [];
+        const actionValues = ins.action_values || [];
+        const getA = t => int(actions.find(a => a.action_type === t)?.value);
+        const getAV = t => num(actionValues.find(a => a.action_type === t)?.value);
+        const conversions = getA('purchase') + getA('offsite_conversion.fb_pixel_purchase');
+        const convValue = getAV('purchase') + getAV('offsite_conversion.fb_pixel_purchase');
+        const leads = getA('lead') + getA('offsite_conversion.fb_pixel_lead');
+
+        await upsertMetrics({
+          campaign_id: camp.id, source, date: ins.date_start,
+          impressions: int(ins.impressions), reach: int(ins.reach),
+          clicks: int(ins.clicks), spend: num(ins.spend),
+          cpm: num(ins.cpm), cpc: num(ins.cpc),
+          ctr: num(ins.ctr), frequency: num(ins.frequency),
+          conversions, conv_value: convValue, leads,
+        });
+        totalMetrics++;
+      }
+    } catch (e) { console.warn(`[Meta] camp ${camp.external_id}:`, e.message); }
+    await sleep(100);
+  }
+
+  await endSyncLog(logId, { status: 'success', records: totalCampaigns + totalMetrics, created: totalMetrics, lastDate: dateTo });
+  console.log(`[Meta] ✓ ${totalCampaigns} campañas, ${totalMetrics} métricas`);
 }
 
+// ============================================================
+// JOB: PERFIT
+// Estrategia: probar múltiples métodos de auth y endpoints
+// ============================================================
 export async function syncPerfit() {
   const source = 'perfit';
   const logId = await startSyncLog(source);
@@ -500,348 +248,139 @@ export async function syncPerfit() {
 
   const lastSync = await getLastSync(source);
   const daysBack = parseInt(process.env.PERFIT_DAYS_BACK || '30', 10);
-
   const dateFrom = lastSync
     ? new Date(new Date(lastSync) - 86400000).toISOString().split('T')[0]
     : daysAgoISO(daysBack);
 
-  const headers = {
-    Authorization: `Bearer ${apiKey}`,
-    'Content-Type': 'application/json',
-  };
-
   const baseUrl = `https://api.myperfit.com/v2/${account}`;
+  console.log(`[Perfit] Account: ${account}, desde: ${dateFrom}`);
 
-  console.log('[Perfit] API key cargada:', !!apiKey);
-  console.log('[Perfit] Account:', account);
-  console.log(`[Perfit] Sincronizando desde ${dateFrom}`);
+  // Intentar con todas las estrategias de auth posibles
+  const authStrategies = [
+    // 1. API key como query param
+    (url) => ({ url: `${url}${url.includes('?')?'&':'?'}api_key=${apiKey}`, opts: {} }),
+    // 2. Basic auth con key como usuario
+    (url) => ({ url, opts: { headers: { 'Authorization': `Basic ${Buffer.from(`${apiKey}:`).toString('base64')}` } } }),
+    // 3. Bearer token
+    (url) => ({ url, opts: { headers: { 'Authorization': `Bearer ${apiKey}` } } }),
+    // 4. X-Auth-Token header
+    (url) => ({ url, opts: { headers: { 'X-Auth-Token': apiKey } } }),
+  ];
 
-  async function fetchPerfitCampaigns(page) {
-    const offset = (page - 1) * 50;
+  let workingAuth = null;
+  let workingNamespace = null;
 
-    const endpoints = [
-      `${baseUrl}/campaigns?offset=${offset}&limit=50`,
-      `${baseUrl}/messages?offset=${offset}&limit=50`,
-      `${baseUrl}/mailings?offset=${offset}&limit=50`,
-      `${baseUrl}/broadcasts?offset=${offset}&limit=50`,
-      `${baseUrl}/emails?offset=${offset}&limit=50`,
-    ];
+  // Probar combinaciones de auth + namespace
+  const namespaces = ['campaigns', 'mailings', 'messages'];
 
-    let lastError = null;
-
-    for (const url of endpoints) {
+  outer: for (const auth of authStrategies) {
+    for (const ns of namespaces) {
       try {
-        console.log('[Perfit] Probando endpoint:', url);
+        const { url, opts } = auth(`${baseUrl}/${ns}?limit=1`);
+        console.log(`[Perfit] Probando auth → /${ns}`);
+        const data = await fetchJson(url, { method: 'GET', ...opts }, 1);
 
-        const data = await fetchJson(
-          url,
-          { method: 'GET', headers },
-          2
-        );
+        // Verificar que no sea un error de autenticación
+        if (data?.error?.status === 401 || data?.success === false) continue;
 
-        return { data, url };
+        workingAuth = auth;
+        workingNamespace = ns;
+        console.log(`[Perfit] ✓ Auth funcionando con namespace: ${ns}`);
+        break outer;
       } catch (e) {
-        lastError = e;
-        console.warn('[Perfit] Endpoint inválido:', url, e.message);
+        // Continuar probando
       }
     }
-
-    throw lastError || new Error('No se encontró endpoint válido');
   }
 
-  async function fetchPerfitStats(id) {
-    const endpoints = [
-      `${baseUrl}/campaigns/${id}/stats`,
-      `${baseUrl}/campaigns/${id}/statistics`,
-      `${baseUrl}/messages/${id}/stats`,
-      `${baseUrl}/mailings/${id}/stats`,
-      `${baseUrl}/broadcasts/${id}/stats`,
-      `${baseUrl}/emails/${id}/stats`,
-    ];
-
-    for (const url of endpoints) {
-      try {
-        console.log('[Perfit] Stats endpoint:', url);
-
-        const data = await fetchJson(
-          url,
-          { method: 'GET', headers },
-          1
-        );
-
-        return data;
-      } catch (e) {
-        console.warn('[Perfit] Stats endpoint inválido:', url, e.message);
-      }
-    }
-
-    return {};
+  if (!workingAuth || !workingNamespace) {
+    const errMsg = 'No se pudo autenticar con Perfit. Ir a Perfit → Ajustes → click en tu Usuario → "Obtener API key" y actualizar el secret PERFIT_API_KEY en GitHub.';
+    await endSyncLog(logId, { status: 'error', records: 0, error: errMsg });
+    console.error('[Perfit] ✗', errMsg);
+    return;
   }
 
-  let totalCampaigns = 0;
-  let totalMetrics = 0;
+  async function perfitGet(path) {
+    const { url, opts } = workingAuth(`${baseUrl}${path}`);
+    return fetchJson(url, { method: 'GET', ...opts });
+  }
 
-  const channel = await ensureChannel('Perfit', 'other');
+  const channelId = await getOrCreateChannel('Perfit', 'other');
+  let totalCampaigns = 0, totalMetrics = 0;
 
+  // Paginar campañas
   let page = 1;
-
   while (true) {
-    const { data, url } = await fetchPerfitCampaigns(page);
-
-    console.log('[Perfit] Endpoint usado:', url);
-
-    const mailings =
-      data.data ||
-      data.campaigns ||
-      data.messages ||
-      data.items ||
-      data.results ||
-      data ||
-      [];
-
-    if (!Array.isArray(mailings) || !mailings.length) {
-      console.log('[Perfit] No hay más campañas');
+    const offset = (page - 1) * 50;
+    let data;
+    try {
+      data = await perfitGet(`/${workingNamespace}?limit=50&offset=${offset}`);
+    } catch (e) {
+      console.warn(`[Perfit] Error página ${page}:`, e.message);
       break;
     }
 
-    for (const m of mailings) {
-      const sentAt =
-        m.sentAt ||
-        m.sent_at ||
-        m.createdAt ||
-        m.created_at ||
-        m.scheduleDate ||
-        m.date;
+    const items = Array.isArray(data) ? data : (data?.data || data?.results || data?.items || []);
+    if (!items.length) break;
 
-      if (sentAt && new Date(sentAt) < new Date(dateFrom)) {
-        continue;
-      }
+    for (const item of items) {
+      const sentAt = item.sentAt || item.sent_at || item.scheduledAt || item.createdAt || item.created_at;
+      if (!sentAt) continue;
+      const sentDate = new Date(sentAt).toISOString().split('T')[0];
+      if (sentDate < dateFrom) continue;
 
-      await db.query(`
-        INSERT INTO marketing_campaigns (
-          external_id,
-          source,
-          channel_id,
-          name,
-          status,
-          created_at,
-          updated_at
-        )
-        VALUES (
-          $1,
-          'perfit',
-          $2,
-          $3,
-          $4,
-          $5,
-          $6
-        )
-        ON CONFLICT (external_id, source)
-        DO UPDATE SET
-          status = EXCLUDED.status,
-          name = EXCLUDED.name,
-          updated_at = EXCLUDED.updated_at,
-          synced_at = NOW()
-      `, [
-        String(m.id),
-        channel.id,
-        m.name ||
-        m.subject ||
-        `Campaña ${m.id}`,
-        m.status ||
-        m.state ||
-        'sent',
-        sentAt || new Date().toISOString(),
-        sentAt || new Date().toISOString(),
-      ]);
-
+      const campId = await upsertCampaign({
+        external_id: String(item.id), source, channel_id: channelId,
+        name: item.name || item.subject || item.title || `Campaña ${item.id}`,
+        status: item.status || 'sent',
+        created_at: sentAt, updated_at: sentAt,
+      });
       totalCampaigns++;
 
-      const stats = await fetchPerfitStats(m.id);
-
-      const { rows: [camp] } = await db.query(`
-        SELECT id
-        FROM marketing_campaigns
-        WHERE external_id = $1
-        AND source = 'perfit'
-      `, [String(m.id)]);
-
-      if (!camp) continue;
-
-      const campaignDate = sentAt
-        ? sentAt.split('T')[0]
-        : todayISO();
-
-      const sent = int(
-        stats.sent ||
-        stats.total ||
-        stats.recipients ||
-        stats.emailsSent
-      );
-
-      const delivered = int(
-        stats.delivered ||
-        stats.deliveries ||
-        Math.max(
-          0,
-          sent - int(stats.hardBounces || stats.hard_bounces)
-        )
-      );
-
-      const opens = int(
-        stats.opens ||
-        stats.opened ||
-        stats.totalOpens
-      );
-
-      const uniqueOpens = int(
-        stats.uniqueOpens ||
-        stats.unique_opens ||
-        stats.openedUnique
-      );
-
-      const clicks = int(
-        stats.clicks ||
-        stats.totalClicks
-      );
-
-      const uniqueClicks = int(
-        stats.uniqueClicks ||
-        stats.unique_clicks ||
-        stats.clickedUnique
-      );
-
-      const unsubscribes = int(
-        stats.unsubscribes ||
-        stats.unsubscribed ||
-        stats.removed
-      );
-
-      const softBounces = int(
-        stats.softBounces ||
-        stats.soft_bounces
-      );
-
-      const hardBounces = int(
-        stats.hardBounces ||
-        stats.hard_bounces
-      );
-
-      const spamReports = int(
-        stats.spamComplaints ||
-        stats.spam ||
-        stats.spam_reports
-      );
-
-      const revenueAttr = num(
-        stats.revenue ||
-        stats.revenue_attr ||
-        stats.salesAmount
-      );
-
-      await db.query(`
-        INSERT INTO marketing_metrics (
-          campaign_id,
-          source,
-          date,
-          sent,
-          delivered,
-          opens,
-          unique_opens,
-          clicks_email,
-          unique_clicks_email,
-          unsubscribes,
-          bounces_soft,
-          bounces_hard,
-          spam_reports,
-          revenue_attr
-        )
-        VALUES (
-          $1,
-          'perfit',
-          $2,
-          $3,
-          $4,
-          $5,
-          $6,
-          $7,
-          $8,
-          $9,
-          $10,
-          $11,
-          $12,
-          $13
-        )
-        ON CONFLICT (campaign_id, date)
-        DO UPDATE SET
-          sent = EXCLUDED.sent,
-          delivered = EXCLUDED.delivered,
-          opens = EXCLUDED.opens,
-          unique_opens = EXCLUDED.unique_opens,
-          clicks_email = EXCLUDED.clicks_email,
-          unique_clicks_email = EXCLUDED.unique_clicks_email,
-          unsubscribes = EXCLUDED.unsubscribes,
-          bounces_soft = EXCLUDED.bounces_soft,
-          bounces_hard = EXCLUDED.bounces_hard,
-          spam_reports = EXCLUDED.spam_reports,
-          revenue_attr = EXCLUDED.revenue_attr,
-          synced_at = NOW()
-      `, [
-        camp.id,
-        campaignDate,
-        sent,
-        delivered,
-        opens,
-        uniqueOpens,
-        clicks,
-        uniqueClicks,
-        unsubscribes,
-        softBounces,
-        hardBounces,
-        spamReports,
-        revenueAttr,
-      ]);
-
-      totalMetrics++;
-
-      console.log(
-        `[Perfit] Campaña procesada: ${m.name || m.subject || m.id}`
-      );
-
-      await sleep(150);
+      // Obtener stats
+      for (const sNs of ['stats', 'statistics', 'report']) {
+        try {
+          const stats = await perfitGet(`/${workingNamespace}/${item.id}/${sNs}`);
+          const s = stats?.data || stats || {};
+          await upsertMetrics({
+            campaign_id: campId, source, date: sentDate,
+            sent: int(s.sent || s.total || s.totalSent || 0),
+            delivered: int(s.delivered || s.totalDelivered || 0),
+            opens: int(s.opens || s.opened || s.totalOpens || 0),
+            unique_opens: int(s.uniqueOpens || s.unique_opens || 0),
+            clicks_email: int(s.clicks || s.totalClicks || 0),
+            unique_clicks: int(s.uniqueClicks || s.unique_clicks || 0),
+            unsubscribes: int(s.unsubscribes || s.unsubscribed || 0),
+            bounces_soft: int(s.softBounces || s.soft_bounces || 0),
+            bounces_hard: int(s.hardBounces || s.hard_bounces || 0),
+            spam_reports: int(s.spam || s.spamComplaints || 0),
+            revenue_attr: num(s.revenue || s.revenueAttr || 0),
+          });
+          totalMetrics++;
+          break;
+        } catch (_) {}
+      }
+      await sleep(200);
     }
 
-    if (mailings.length < 50) {
-      break;
-    }
-
+    console.log(`[Perfit] Página ${page}: ${items.length} items`);
+    if (items.length < 50) break;
     page++;
+    await sleep(300);
   }
 
-  await endSyncLog(logId, {
-    status: 'success',
-    records: totalCampaigns + totalMetrics,
-    created: totalMetrics,
-    updated: 0,
-    lastDate: todayISO(),
-  });
-
-  console.log(
-    `[Perfit] ✓ ${totalCampaigns} campañas, ${totalMetrics} métricas`
-  );
+  await endSyncLog(logId, { status: 'success', records: totalCampaigns + totalMetrics, created: totalMetrics, lastDate: todayISO() });
+  console.log(`[Perfit] ✓ ${totalCampaigns} campañas, ${totalMetrics} métricas`);
 }
 
+// ENTRYPOINT
 const job = process.argv[2];
-
 (async () => {
   try {
-    if (job === 'meta' || job === 'meta_full') {
-      await syncMetaFull();
-    } else if (job === 'perfit') {
-      await syncPerfit();
-    } else {
-      throw new Error(`Job inválido: ${job}`);
-    }
+    const daysBack = parseInt(process.env.META_DAYS_BACK || '30', 10);
+    if (job === 'meta' || job === 'meta_full') await syncMetaAds(daysBack);
+    else if (job === 'perfit') await syncPerfit();
+    else console.error('Job desconocido. Usar: meta | perfit');
   } catch (e) {
     console.error(`[${job}] ERROR:`, e.message);
     process.exit(1);
@@ -849,4 +388,3 @@ const job = process.argv[2];
     await db.end();
   }
 })();
-```
