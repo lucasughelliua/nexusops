@@ -1492,10 +1492,12 @@ const API_KEY = 'UA-KPI-ECOMMERCE';
 async function fetchAPI(path) {
   try {
     const res = await fetch(API_BASE + path, {
-      headers: { 'x-api-key': API_KEY }
+      headers: { 'x-api-key': API_KEY, 'cache-control': 'no-cache' }, cache: 'no-store'
     });
-    if (!res.ok) return null;
-    return res.json();
+    if (!res.ok) { console.error('API HTTP error', res.status, path, await res.text()); return null; }
+    const payload = await res.json();
+    if (payload && payload.ok === false) console.error('API payload error', path, payload.error);
+    return payload;
   } catch(e) {
     console.warn('API error:', path, e.message);
     return null;
@@ -2485,13 +2487,14 @@ function getMktPerfitData(){
 
 let mktCharts={}, mktMetaData=null, mktPerfitData=null;
 let mktMetaPage = 1, mktPerfitPage = 1;
+let mktMetaTotal = 0, mktPerfitTotal = 0;
 const MKT_PAGE_SIZE = 20;
 let mktGoogleData=null, mktKommoData=null;
 let mktDataCacheKey = null; // tracks which period data was generated for
 
 // Generate all marketing data for current period ONCE and cache it
 async function loadMktData() {
-  const cacheKey = `${mktState.dateFrom}|${mktState.dateTo}`;
+  const cacheKey = `${mktState.dateFrom}|${mktState.dateTo}|meta:${mktMetaPage}|perfit:${mktPerfitPage}`;
   if (mktDataCacheKey === cacheKey && mktMetaData && mktPerfitData && mktGoogleData && mktKommoData) return;
 
   mktMetaData = getMktMetaData();
@@ -2500,11 +2503,12 @@ async function loadMktData() {
   mktKommoData = getKommoData();
 
   const qs = `date_from=${mktState.dateFrom}&date_to=${mktState.dateTo}`;
-  const qsPage20 = qs + '&per_page=100&limit=100';
+  const qsMetaPage20 = qs + '&per_page=20&limit=20&page=' + mktMetaPage;
+  const qsPerfitPage20 = qs + '&per_page=20&limit=20&page=' + mktPerfitPage;
   const [overview, metaCamps, perfitCamps, google, kommo] = await Promise.all([
     fetchAPI('/marketing/overview?' + qs),
-    fetchAPI('/marketing/meta/campaigns?' + qsPage20),
-    fetchAPI('/marketing/perfit/campaigns?' + qsPage20),
+    fetchAPI('/marketing/meta/campaigns?' + qsMetaPage20),
+    fetchAPI('/marketing/perfit/campaigns?' + qsPerfitPage20),
     fetchAPI('/marketing/google-ads?' + qs),
     fetchAPI('/marketing/kommo?' + qs),
   ]);
@@ -2516,13 +2520,17 @@ async function loadMktData() {
     spend:Number(meta.spend||0), impr:Number(meta.impressions||0), clicks:Number(meta.clicks||0),
     convs:Number(meta.purchases||meta.conversions||0), revenue:Number(meta.purchase_value||meta.conv_value||meta.revenue_attr||0), leads:Number(meta.leads||0)
   };
-  mktMetaData.campaigns = (metaCamps?.data || []).map(c=>({
-    name:c.name||'Campaña Meta', status:c.status||'ACTIVE', obj:c.objective||'', spend:Number(c.spend||0),
-    impr:Number(c.impressions||0), clicks:Number(c.clicks||0), ctr:Number(c.ctr||0), cpm:Number(c.cpm||0), cpc:Number(c.cpc||0),
-    convs:Number(c.purchases||c.conversions||0), cpa:Number(c.cpa||0), roas:Number(c.roas||0)
-  }));
+  mktMetaTotal = Number(metaCamps?.total || (metaCamps?.data || []).length || 0);
+  mktMetaData.campaigns = (metaCamps?.data || [])
+    .filter(c => !/^(instagram post|publicaci[oó]n de instagram)/i.test(String(c.name||'')) && !/post$/i.test(String(c.name||'')))
+    .map(c=>({
+      name:c.name||'Campaña Meta', status:c.status||'ACTIVE', obj:c.objective||'', spend:Number(c.spend||0),
+      impr:Number(c.impressions||0), clicks:Number(c.clicks||0), ctr:Number(c.ctr||0), cpm:Number(c.cpm||0), cpc:Number(c.cpc||0),
+      convs:Number(c.purchases||c.conversions||0), cpa:Number(c.cpa||0), roas:Number(c.roas||0)
+    }));
 
   const pf = pick('perfit');
+  mktPerfitTotal = Number(perfitCamps?.total || (perfitCamps?.data || []).length || 0);
   mktPerfitData.camps = (perfitCamps?.data || []).map(c=>({
     name:c.name||'Campaña Perfit', status:c.status||'sent', sent:Number(c.sent||0), delivered:Number(c.delivered||0),
     opens:Number(c.unique_opens||c.opens||0), openRate:Number(c.open_rate||0).toFixed(1), clicks:Number(c.unique_clicks||c.clicks_email||0), ctr:Number(c.click_rate||0).toFixed(1), unsubs:Number(c.unsubscribes||0)
@@ -2836,24 +2844,26 @@ function renderPager(elId, page, total, onClickName){
   el.innerHTML = `<button class="channel-btn" ${page<=1?'disabled style="opacity:.45"':''} onclick="${onClickName}(${page-1})">Anterior</button><span>Página ${page} de ${pages} · ${total} campañas</span><button class="channel-btn" ${page>=pages?'disabled style="opacity:.45"':''} onclick="${onClickName}(${page+1})">Siguiente</button>`;
 }
 function mktSetMetaPage(page){
-  const camps=mktState.metaFilter==='all'?mktMetaData.campaigns:mktMetaData.campaigns.filter(c=>c.status===mktState.metaFilter);
-  const pages=Math.max(1,Math.ceil(camps.length/MKT_PAGE_SIZE));
+  const pages=Math.max(1,Math.ceil((mktMetaTotal || 0)/MKT_PAGE_SIZE));
   mktMetaPage=Math.min(Math.max(1,page),pages);
-  renderMetaCampaignsTable();
+  mktDataCacheKey = null;
+  renderMarketing();
 }
 function mktSetPerfitPage(page){
-  const pages=Math.max(1,Math.ceil((mktPerfitData?.camps?.length||0)/MKT_PAGE_SIZE));
+  const pages=Math.max(1,Math.ceil((mktPerfitTotal || 0)/MKT_PAGE_SIZE));
   mktPerfitPage=Math.min(Math.max(1,page),pages);
-  renderPerfitCampaignsTable();
+  mktDataCacheKey = null;
+  renderMarketing();
 }
 function renderMetaCampaignsTable(){
   if(!mktMetaData) return;
   const f=n=>'$'+Math.round(n||0).toLocaleString('es-AR');
   const camps=mktState.metaFilter==='all'?mktMetaData.campaigns:mktMetaData.campaigns.filter(c=>c.status===mktState.metaFilter);
-  const pages=Math.max(1,Math.ceil(camps.length/MKT_PAGE_SIZE));
+  const total = mktMetaTotal || camps.length;
+  const pages=Math.max(1,Math.ceil(total/MKT_PAGE_SIZE));
   if(mktMetaPage>pages) mktMetaPage=pages;
-  const pageItems=camps.slice((mktMetaPage-1)*MKT_PAGE_SIZE,mktMetaPage*MKT_PAGE_SIZE);
-  document.getElementById('mktMetaCampCount').textContent=`(${camps.length} campañas)`;
+  const pageItems=camps;
+  document.getElementById('mktMetaCampCount').textContent=`(${total} campañas)`;
   document.getElementById('mktMetaTbody').innerHTML=pageItems.length ? pageItems.map(c=>`
     <tr>
       <td style="text-align:left;max-width:170px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:500">${c.name}</td>
@@ -2867,15 +2877,16 @@ function renderMetaCampaignsTable(){
       <td>${c.cpa>0?f(c.cpa):'—'}</td>
       <td>${c.roas>0?Number(c.roas).toFixed(2)+'x':'—'}</td>
     </tr>`).join('') : `<tr><td colspan="11" style="text-align:center;padding:16px;color:var(--text3)">Sin campañas para este período.</td></tr>`;
-  renderPager('mktMetaPager',mktMetaPage,camps.length,'mktSetMetaPage');
+  renderPager('mktMetaPager',mktMetaPage,total,'mktSetMetaPage');
 }
 function renderPerfitCampaignsTable(){
   if(!mktPerfitData) return;
   const camps=mktPerfitData.camps || [];
-  const pages=Math.max(1,Math.ceil(camps.length/MKT_PAGE_SIZE));
+  const total = mktPerfitTotal || camps.length;
+  const pages=Math.max(1,Math.ceil(total/MKT_PAGE_SIZE));
   if(mktPerfitPage>pages) mktPerfitPage=pages;
-  const pageItems=camps.slice((mktPerfitPage-1)*MKT_PAGE_SIZE,mktPerfitPage*MKT_PAGE_SIZE);
-  document.getElementById('mktPerfitCampCount').textContent=`(${camps.length} campañas)`;
+  const pageItems=camps;
+  document.getElementById('mktPerfitCampCount').textContent=`(${total} campañas)`;
   document.getElementById('mktPerfitTbody').innerHTML=pageItems.length ? pageItems.map(c=>`
       <tr>
         <td style="text-align:left;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:500">${c.name}</td>
@@ -2883,7 +2894,7 @@ function renderPerfitCampaignsTable(){
         <td>${numM(c.sent)}</td><td>${numM(c.delivered)}</td><td>${numM(c.opens)}</td>
         <td>${c.openRate}%</td><td>${numM(c.clicks)}</td><td>${c.ctr}%</td><td>${c.unsubs}</td>
       </tr>`).join('') : `<tr><td colspan="9" style="text-align:center;padding:16px;color:var(--text3)">Sin campañas para este período.</td></tr>`;
-  renderPager('mktPerfitPager',mktPerfitPage,camps.length,'mktSetPerfitPage');
+  renderPager('mktPerfitPager',mktPerfitPage,total,'mktSetPerfitPage');
 }
 
 
