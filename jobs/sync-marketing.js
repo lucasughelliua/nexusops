@@ -1,12 +1,10 @@
 /**
  * NexusOps — sync-marketing.js
- * Jobs separados:
- *   node sync-marketing.js meta_full
- *   node sync-marketing.js perfit
- *   node sync-marketing.js google_ads
- *   node sync-marketing.js kommo
- *
- * No usa dotenv. En GitHub Actions toma todo desde Secrets.
+ * Jobs separados por canal:
+ *   node sync-marketing.js meta_full    → Meta Ads (Facebook + Instagram)
+ *   node sync-marketing.js perfit       → Perfit Email Marketing
+ *   node sync-marketing.js google_ads   → Google Ads API (oficial)
+ *   node sync-marketing.js kommo        → Kommo CRM leads
  */
 
 import { Pool } from 'pg';
@@ -17,22 +15,13 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const todayISO = () => new Date().toISOString().slice(0, 10);
 const daysAgoISO = (d) => new Date(Date.now() - 86400000 * d).toISOString().slice(0, 10);
 const isoFromUnix = (ts) => (ts ? new Date(Number(ts) * 1000).toISOString() : null);
-const dateFromUnix = (ts) => (ts ? new Date(Number(ts) * 1000).toISOString().slice(0, 10) : todayISO());
-const num = (v) => {
-  if (v === null || v === undefined || v === '') return 0;
-  const normalized = String(v).replace(/\./g, '').replace(',', '.');
-  const n = Number(normalized);
-  return Number.isFinite(n) ? n : 0;
-};
-const int = (v) => {
-  const n = parseInt(v, 10);
-  return Number.isFinite(n) ? n : 0;
-};
+const num = (v) => { const n = Number(String(v || 0).replace(',', '.')); return Number.isFinite(n) ? n : 0; };
+const int = (v) => { const n = parseInt(v, 10); return Number.isFinite(n) ? n : 0; };
 
 function requireEnv(name) {
-  const value = process.env[name]?.trim();
-  if (!value) throw new Error(`Falta ${name}`);
-  return value;
+  const v = process.env[name]?.trim();
+  if (!v) throw new Error(`Falta variable de entorno: ${name}`);
+  return v;
 }
 
 async function fetchJson(url, options = {}, retries = 3) {
@@ -44,7 +33,7 @@ async function fetchJson(url, options = {}, retries = 3) {
       let data = {};
       try { data = text ? JSON.parse(text) : {}; } catch { data = { raw: text }; }
       if (!res.ok) {
-        const msg = data?.error?.message || data?.message || data?.userMessage || text || `HTTP ${res.status}`;
+        const msg = data?.error?.message || data?.message || data?.userMessage || `HTTP ${res.status}`;
         if ((res.status === 429 || res.status >= 500) && i < retries) {
           const wait = 2000 * Math.pow(2, i);
           console.warn(`[fetch] ${res.status}. Reintento en ${wait / 1000}s`);
@@ -56,15 +45,15 @@ async function fetchJson(url, options = {}, retries = 3) {
       return data;
     } catch (e) {
       lastError = e;
-      if (i < retries) {
-        await sleep(1000 * Math.pow(2, i));
-        continue;
-      }
+      if (i < retries) { await sleep(1000 * Math.pow(2, i)); continue; }
     }
   }
   throw lastError;
 }
 
+// ============================================================
+// SYNC LOG
+// ============================================================
 async function getLastSync(source) {
   const { rows } = await db.query(
     `SELECT last_date_synced FROM sync_log WHERE source=$1 AND status IN ('success','partial') ORDER BY started_at DESC LIMIT 1`,
@@ -75,38 +64,31 @@ async function getLastSync(source) {
 
 async function startSyncLog(source) {
   const { rows } = await db.query(
-    `INSERT INTO sync_log(source,status) VALUES($1,'running') RETURNING id`,
-    [source]
+    `INSERT INTO sync_log(source,status) VALUES($1,'running') RETURNING id`, [source]
   );
   return rows[0].id;
 }
 
 async function endSyncLog(id, { status, records = 0, created = 0, updated = 0, lastDate = null, error = null }) {
   await db.query(`
-    UPDATE sync_log SET
-      status=$1,
-      finished_at=NOW(),
-      records_processed=$2,
-      records_created=$3,
-      records_updated=$4,
-      last_date_synced=$5,
-      error_message=$6,
+    UPDATE sync_log SET status=$1, finished_at=NOW(), records_processed=$2,
+      records_created=$3, records_updated=$4, last_date_synced=$5, error_message=$6,
       duration_ms=EXTRACT(EPOCH FROM (NOW()-started_at))*1000
     WHERE id=$7
   `, [status, records, created, updated, lastDate, error, id]);
 }
 
-async function getOrCreateChannel(name, type = 'other', externalId = null) {
-  let { rows: [ch] } = await db.query(
-    `SELECT id FROM channels WHERE name=$1 AND type=$2 LIMIT 1`,
-    [name, type]
-  );
+// ============================================================
+// DB HELPERS
+// ============================================================
+async function getOrCreateChannel(name, type, externalId = null) {
+  let { rows: [ch] } = await db.query(`SELECT id FROM channels WHERE name=$1 AND type=$2`, [name, type]);
   if (!ch) {
-    const { rows: [created] } = await db.query(
+    const { rows: [c] } = await db.query(
       `INSERT INTO channels(name,type,external_id,active) VALUES($1,$2,$3,true) RETURNING id`,
       [name, type, externalId]
     );
-    ch = created;
+    ch = c;
   }
   return ch.id;
 }
@@ -117,28 +99,14 @@ async function upsertCampaign(data) {
       (external_id,source,channel_id,name,status,objective,daily_budget,lifetime_budget,start_date,end_date,created_at,updated_at)
     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
     ON CONFLICT (external_id,source) DO UPDATE SET
-      channel_id=EXCLUDED.channel_id,
-      name=EXCLUDED.name,
-      status=EXCLUDED.status,
-      objective=EXCLUDED.objective,
-      daily_budget=EXCLUDED.daily_budget,
-      lifetime_budget=EXCLUDED.lifetime_budget,
-      start_date=EXCLUDED.start_date,
-      end_date=EXCLUDED.end_date,
-      updated_at=EXCLUDED.updated_at,
-      synced_at=NOW()
+      status=EXCLUDED.status, name=EXCLUDED.name,
+      daily_budget=EXCLUDED.daily_budget, updated_at=EXCLUDED.updated_at, synced_at=NOW()
     RETURNING id
   `, [
-    data.external_id,
-    data.source,
-    data.channel_id,
-    data.name || data.external_id,
-    data.status || 'unknown',
-    data.objective || null,
-    data.daily_budget || null,
-    data.lifetime_budget || null,
-    data.start_date || null,
-    data.end_date || null,
+    data.external_id, data.source, data.channel_id, data.name,
+    data.status || 'unknown', data.objective || null,
+    data.daily_budget || null, data.lifetime_budget || null,
+    data.start_date || null, data.end_date || null,
     data.created_at || new Date().toISOString(),
     data.updated_at || new Date().toISOString(),
   ]);
@@ -149,102 +117,32 @@ async function upsertMetrics(data) {
   await db.query(`
     INSERT INTO marketing_metrics
       (campaign_id,source,date,impressions,reach,clicks,spend,cpm,cpc,ctr,frequency,
-       conversions,conv_value,leads,video_views,sent,delivered,opens,unique_opens,
-       clicks_email,unique_clicks,unsubscribes,bounces_soft,bounces_hard,spam_reports,revenue_attr)
+       conversions,conv_value,leads,video_views,
+       sent,delivered,opens,unique_opens,clicks_email,unique_clicks,
+       unsubscribes,bounces_soft,bounces_hard,spam_reports,revenue_attr)
     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26)
     ON CONFLICT (campaign_id,date) DO UPDATE SET
-      impressions=EXCLUDED.impressions,
-      reach=EXCLUDED.reach,
-      clicks=EXCLUDED.clicks,
-      spend=EXCLUDED.spend,
-      cpm=EXCLUDED.cpm,
-      cpc=EXCLUDED.cpc,
-      ctr=EXCLUDED.ctr,
-      frequency=EXCLUDED.frequency,
-      conversions=EXCLUDED.conversions,
-      conv_value=EXCLUDED.conv_value,
-      leads=EXCLUDED.leads,
-      video_views=EXCLUDED.video_views,
-      sent=EXCLUDED.sent,
-      delivered=EXCLUDED.delivered,
-      opens=EXCLUDED.opens,
-      unique_opens=EXCLUDED.unique_opens,
-      clicks_email=EXCLUDED.clicks_email,
-      unique_clicks=EXCLUDED.unique_clicks,
-      unsubscribes=EXCLUDED.unsubscribes,
-      bounces_soft=EXCLUDED.bounces_soft,
-      bounces_hard=EXCLUDED.bounces_hard,
-      spam_reports=EXCLUDED.spam_reports,
-      revenue_attr=EXCLUDED.revenue_attr,
-      synced_at=NOW()
+      impressions=EXCLUDED.impressions, reach=EXCLUDED.reach, clicks=EXCLUDED.clicks,
+      spend=EXCLUDED.spend, cpm=EXCLUDED.cpm, cpc=EXCLUDED.cpc, ctr=EXCLUDED.ctr,
+      frequency=EXCLUDED.frequency, conversions=EXCLUDED.conversions, conv_value=EXCLUDED.conv_value,
+      leads=EXCLUDED.leads, sent=EXCLUDED.sent, delivered=EXCLUDED.delivered,
+      opens=EXCLUDED.opens, unique_opens=EXCLUDED.unique_opens, clicks_email=EXCLUDED.clicks_email,
+      unique_clicks=EXCLUDED.unique_clicks, unsubscribes=EXCLUDED.unsubscribes,
+      bounces_soft=EXCLUDED.bounces_soft, bounces_hard=EXCLUDED.bounces_hard,
+      spam_reports=EXCLUDED.spam_reports, revenue_attr=EXCLUDED.revenue_attr, synced_at=NOW()
   `, [
-    data.campaign_id,
-    data.source,
-    data.date,
-    int(data.impressions),
-    int(data.reach),
-    int(data.clicks),
-    num(data.spend),
-    num(data.cpm),
-    num(data.cpc),
-    num(data.ctr),
-    num(data.frequency),
-    num(data.conversions),
-    num(data.conv_value),
-    int(data.leads),
-    int(data.video_views),
-    int(data.sent),
-    int(data.delivered),
-    int(data.opens),
-    int(data.unique_opens),
-    int(data.clicks_email),
-    int(data.unique_clicks),
-    int(data.unsubscribes),
-    int(data.bounces_soft),
-    int(data.bounces_hard),
-    int(data.spam_reports),
-    num(data.revenue_attr),
+    data.campaign_id, data.source, data.date,
+    data.impressions||0, data.reach||0, data.clicks||0,
+    data.spend||0, data.cpm||0, data.cpc||0, data.ctr||0, data.frequency||0,
+    data.conversions||0, data.conv_value||0, data.leads||0, data.video_views||0,
+    data.sent||0, data.delivered||0, data.opens||0, data.unique_opens||0,
+    data.clicks_email||0, data.unique_clicks||0, data.unsubscribes||0,
+    data.bounces_soft||0, data.bounces_hard||0, data.spam_reports||0, data.revenue_attr||0,
   ]);
 }
 
-function parseCSVLine(line) {
-  const result = [];
-  let current = '';
-  let insideQuotes = false;
-  for (let i = 0; i < line.length; i++) {
-    const char = line[i];
-    const next = line[i + 1];
-    if (char === '"' && insideQuotes && next === '"') {
-      current += '"';
-      i++;
-      continue;
-    }
-    if (char === '"') {
-      insideQuotes = !insideQuotes;
-      continue;
-    }
-    if (char === ',' && !insideQuotes) {
-      result.push(current.trim());
-      current = '';
-      continue;
-    }
-    current += char;
-  }
-  result.push(current.trim());
-  return result;
-}
-
-function normalizeGa4Date(value) {
-  const raw = String(value || '').trim();
-  if (/^\d{8}$/.test(raw)) return `${raw.slice(0, 4)}-${raw.slice(4, 6)}-${raw.slice(6, 8)}`;
-  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
-  const d = new Date(raw);
-  if (!Number.isNaN(d.getTime())) return d.toISOString().slice(0, 10);
-  return todayISO();
-}
-
 // ============================================================
-// META
+// JOB 1: META ADS (Facebook + Instagram)
 // ============================================================
 export async function syncMetaAds(daysBack = 30) {
   const source = 'meta';
@@ -253,14 +151,16 @@ export async function syncMetaAds(daysBack = 30) {
     const token = requireEnv('META_ACCESS_TOKEN');
     const adAccountId = requireEnv('META_AD_ACCOUNT_ID');
     const lastSync = await getLastSync(source);
-    const dateFrom = lastSync ? new Date(new Date(lastSync) - 86400000).toISOString().slice(0, 10) : daysAgoISO(daysBack);
+    const dateFrom = lastSync
+      ? new Date(new Date(lastSync) - 86400000).toISOString().split('T')[0]
+      : daysAgoISO(daysBack);
     const dateTo = todayISO();
 
     console.log(`[Meta] Sincronizando ${dateFrom} → ${dateTo}`);
     const channelId = await getOrCreateChannel('Meta Ads', 'other', adAccountId);
-    let totalCampaigns = 0;
-    let totalMetrics = 0;
+    let totalCampaigns = 0, totalMetrics = 0;
 
+    // 1. Campañas
     let after = null;
     while (true) {
       const params = new URLSearchParams({
@@ -269,76 +169,68 @@ export async function syncMetaAds(daysBack = 30) {
         limit: '100',
       });
       if (after) params.set('after', after);
+
       const data = await fetchJson(`https://graph.facebook.com/v19.0/${adAccountId}/campaigns?${params}`);
-      for (const camp of data.data || []) {
+      if (data.error) throw new Error(`Meta: ${data.error.message}`);
+
+      for (const camp of (data.data || [])) {
         await upsertCampaign({
-          external_id: String(camp.id),
-          source,
-          channel_id: channelId,
-          name: camp.name,
-          status: camp.status,
-          objective: camp.objective,
-          daily_budget: camp.daily_budget ? Number(camp.daily_budget) / 100 : null,
-          lifetime_budget: camp.lifetime_budget ? Number(camp.lifetime_budget) / 100 : null,
-          start_date: camp.start_time?.slice(0, 10) || null,
-          end_date: camp.stop_time?.slice(0, 10) || null,
-          created_at: camp.created_time,
-          updated_at: camp.updated_time,
+          external_id: camp.id, source, channel_id: channelId,
+          name: camp.name, status: camp.status, objective: camp.objective,
+          daily_budget: camp.daily_budget ? camp.daily_budget / 100 : null,
+          lifetime_budget: camp.lifetime_budget ? camp.lifetime_budget / 100 : null,
+          start_date: camp.start_time?.split('T')[0] || null,
+          end_date: camp.stop_time?.split('T')[0] || null,
+          created_at: camp.created_time, updated_at: camp.updated_time,
         });
         totalCampaigns++;
       }
       after = data.paging?.cursors?.after;
       if (!data.paging?.next) break;
-      await sleep(250);
+      await sleep(200);
     }
 
-    const { rows: campaigns } = await db.query(`SELECT id, external_id FROM marketing_campaigns WHERE source='meta'`);
+    // 2. Insights por campaña
+    const { rows: campaigns } = await db.query(
+      `SELECT id, external_id FROM marketing_campaigns WHERE source='meta'`
+    );
+
     for (const camp of campaigns) {
       try {
         const params = new URLSearchParams({
           access_token: token,
-          level: 'campaign',
-          time_increment: '1',
+          level: 'campaign', time_increment: '1',
           time_range: JSON.stringify({ since: dateFrom, until: dateTo }),
           fields: 'date_start,impressions,reach,clicks,spend,cpm,cpc,ctr,frequency,actions,action_values',
           limit: '90',
         });
         const data = await fetchJson(`https://graph.facebook.com/v19.0/${camp.external_id}/insights?${params}`);
-        for (const ins of data.data || []) {
+        if (data.error) continue;
+
+        for (const ins of (data.data || [])) {
           const actions = ins.actions || [];
           const actionValues = ins.action_values || [];
           const getA = (t) => int(actions.find((a) => a.action_type === t)?.value);
           const getAV = (t) => num(actionValues.find((a) => a.action_type === t)?.value);
-          const conversions = getA('purchase') + getA('offsite_conversion.fb_pixel_purchase');
-          const convValue = getAV('purchase') + getAV('offsite_conversion.fb_pixel_purchase');
+          const purchases = getA('purchase') + getA('offsite_conversion.fb_pixel_purchase');
+          const purchaseValue = getAV('purchase') + getAV('offsite_conversion.fb_pixel_purchase');
           const leads = getA('lead') + getA('offsite_conversion.fb_pixel_lead');
+
           await upsertMetrics({
-            campaign_id: camp.id,
-            source,
-            date: ins.date_start,
-            impressions: ins.impressions,
-            reach: ins.reach,
-            clicks: ins.clicks,
-            spend: ins.spend,
-            cpm: ins.cpm,
-            cpc: ins.cpc,
-            ctr: ins.ctr,
-            frequency: ins.frequency,
-            conversions,
-            conv_value: convValue,
-            revenue_attr: convValue,
-            leads,
+            campaign_id: camp.id, source, date: ins.date_start,
+            impressions: int(ins.impressions), reach: int(ins.reach),
+            clicks: int(ins.clicks), spend: num(ins.spend),
+            cpm: num(ins.cpm), cpc: num(ins.cpc), ctr: num(ins.ctr), frequency: num(ins.frequency),
+            conversions: purchases, conv_value: purchaseValue, leads, revenue_attr: purchaseValue,
           });
           totalMetrics++;
         }
-      } catch (e) {
-        console.warn(`[Meta] campaña ${camp.external_id}: ${e.message}`);
-      }
-      await sleep(150);
+      } catch (e) { console.warn(`[Meta] camp ${camp.external_id}:`, e.message); }
+      await sleep(100);
     }
 
     await endSyncLog(logId, { status: 'success', records: totalCampaigns + totalMetrics, created: totalMetrics, lastDate: dateTo });
-    console.log(`[Meta] OK: ${totalCampaigns} campañas, ${totalMetrics} métricas`);
+    console.log(`[Meta] ✓ ${totalCampaigns} campañas, ${totalMetrics} métricas`);
   } catch (e) {
     await endSyncLog(logId, { status: 'error', error: e.message });
     throw e;
@@ -346,7 +238,7 @@ export async function syncMetaAds(daysBack = 30) {
 }
 
 // ============================================================
-// PERFIT
+// JOB 2: PERFIT EMAIL MARKETING
 // ============================================================
 export async function syncPerfit() {
   const source = 'perfit';
@@ -354,103 +246,108 @@ export async function syncPerfit() {
   try {
     const apiKey = requireEnv('PERFIT_API_KEY');
     const account = requireEnv('PERFIT_ACCOUNT');
-    const daysBack = int(process.env.PERFIT_DAYS_BACK || 30);
     const lastSync = await getLastSync(source);
-    const dateFrom = lastSync ? new Date(new Date(lastSync) - 86400000).toISOString().slice(0, 10) : daysAgoISO(daysBack);
-    const baseUrl = `https://api.myperfit.com/v2/${account}`;
+    const daysBack = int(process.env.PERFIT_DAYS_BACK || 30);
+    const dateFrom = lastSync
+      ? new Date(new Date(lastSync) - 86400000).toISOString().split('T')[0]
+      : daysAgoISO(daysBack);
 
-    console.log(`[Perfit] Sincronizando desde ${dateFrom}`);
+    console.log(`[Perfit] Account: ${account}, desde: ${dateFrom}`);
+    const baseUrl = `https://api.myperfit.com/v2/${account}`;
     const channelId = await getOrCreateChannel('Perfit', 'other', account);
 
+    // Estrategia multi-auth: probar en orden hasta encontrar la que funciona
     const authStrategies = [
-      (url) => ({ url: `${url}${url.includes('?') ? '&' : '?'}api_key=${encodeURIComponent(apiKey)}`, opts: {} }),
-      (url) => ({ url, opts: { headers: { Authorization: `Bearer ${apiKey}` } } }),
+      (url) => ({ url: `${url}${url.includes('?') ? '&' : '?'}api_key=${apiKey}`, opts: {} }),
+      (url) => ({ url, opts: { headers: { 'Authorization': `Basic ${Buffer.from(`${apiKey}:`).toString('base64')}` } } }),
+      (url) => ({ url, opts: { headers: { 'Authorization': `Bearer ${apiKey}` } } }),
       (url) => ({ url, opts: { headers: { 'X-Auth-Token': apiKey } } }),
-      (url) => ({ url, opts: { headers: { Authorization: `Basic ${Buffer.from(`${apiKey}:`).toString('base64')}` } } }),
     ];
-    const namespaces = ['campaigns', 'mailings', 'messages'];
-    let workingAuth = null;
-    let workingNamespace = null;
 
-    outer: for (const auth of authStrategies) {
-      for (const ns of namespaces) {
+    let workingAuth = null, workingNs = null;
+    for (const auth of authStrategies) {
+      for (const ns of ['campaigns', 'mailings', 'messages']) {
         try {
           const { url, opts } = auth(`${baseUrl}/${ns}?limit=1`);
-          await fetchJson(url, { method: 'GET', ...opts }, 1);
-          workingAuth = auth;
-          workingNamespace = ns;
-          console.log(`[Perfit] Auth OK con /${ns}`);
-          break outer;
+          const data = await fetchJson(url, { method: 'GET', ...opts }, 1);
+          if (data?.error?.status === 401 || data?.success === false) continue;
+          workingAuth = auth; workingNs = ns;
+          console.log(`[Perfit] Auth OK con namespace: ${ns}`);
+          break;
         } catch (_) {}
       }
+      if (workingAuth) break;
     }
 
-    if (!workingAuth || !workingNamespace) throw new Error('No se pudo autenticar con Perfit. Revisar PERFIT_API_KEY y PERFIT_ACCOUNT.');
+    if (!workingAuth) {
+      await endSyncLog(logId, { status: 'error', error: 'No se pudo autenticar con Perfit. Verificar API key.' });
+      console.error('[Perfit] ✗ Autenticación fallida');
+      return;
+    }
 
-    async function perfitGet(path) {
+    const perfitGet = async (path) => {
       const { url, opts } = workingAuth(`${baseUrl}${path}`);
       return fetchJson(url, { method: 'GET', ...opts });
-    }
+    };
 
-    let totalCampaigns = 0;
-    let totalMetrics = 0;
-    for (let page = 1; page <= 20; page++) {
+    let totalCampaigns = 0, totalMetrics = 0, page = 1;
+
+    while (true) {
       const offset = (page - 1) * 50;
-      const data = await perfitGet(`/${workingNamespace}?limit=50&offset=${offset}`);
+      let data;
+      try { data = await perfitGet(`/${workingNs}?limit=50&offset=${offset}`); }
+      catch (e) { console.warn(`[Perfit] Página ${page}:`, e.message); break; }
+
       const items = Array.isArray(data) ? data : (data?.data || data?.results || data?.items || []);
       if (!items.length) break;
 
       for (const item of items) {
         const sentAt = item.sentAt || item.sent_at || item.scheduledAt || item.createdAt || item.created_at;
-        const sentDate = sentAt ? new Date(sentAt).toISOString().slice(0, 10) : todayISO();
+        if (!sentAt) continue;
+        const sentDate = new Date(sentAt).toISOString().split('T')[0];
         if (sentDate < dateFrom) continue;
 
-        const campaignId = await upsertCampaign({
-          external_id: String(item.id),
-          source,
-          channel_id: channelId,
-          name: item.name || item.subject || item.title || `Perfit ${item.id}`,
+        const campId = await upsertCampaign({
+          external_id: String(item.id), source, channel_id: channelId,
+          name: item.name || item.subject || item.title || `Campaña ${item.id}`,
           status: item.status || 'sent',
-          created_at: sentAt || new Date().toISOString(),
-          updated_at: sentAt || new Date().toISOString(),
+          created_at: sentAt, updated_at: sentAt,
         });
         totalCampaigns++;
 
         for (const sNs of ['stats', 'statistics', 'report']) {
           try {
-            const stats = await perfitGet(`/${workingNamespace}/${item.id}/${sNs}`);
+            const stats = await perfitGet(`/${workingNs}/${item.id}/${sNs}`);
             const s = stats?.data || stats || {};
             await upsertMetrics({
-              campaign_id: campaignId,
-              source,
-              date: sentDate,
-              sent: s.sent || s.total || s.totalSent || 0,
-              delivered: s.delivered || s.totalDelivered || 0,
-              opens: s.opens || s.opened || s.totalOpens || 0,
-              unique_opens: s.uniqueOpens || s.unique_opens || 0,
-              clicks_email: s.clicks || s.totalClicks || 0,
-              unique_clicks: s.uniqueClicks || s.unique_clicks || 0,
-              unsubscribes: s.unsubscribes || s.unsubscribed || 0,
-              bounces_soft: s.softBounces || s.soft_bounces || 0,
-              bounces_hard: s.hardBounces || s.hard_bounces || 0,
-              spam_reports: s.spam || s.spamComplaints || 0,
-              revenue_attr: s.revenue || s.revenueAttr || 0,
-              conv_value: s.revenue || s.revenueAttr || 0,
+              campaign_id: campId, source, date: sentDate,
+              sent: int(s.sent || s.total || s.totalSent || 0),
+              delivered: int(s.delivered || s.totalDelivered || 0),
+              opens: int(s.opens || s.opened || s.totalOpens || 0),
+              unique_opens: int(s.uniqueOpens || s.unique_opens || 0),
+              clicks_email: int(s.clicks || s.totalClicks || 0),
+              unique_clicks: int(s.uniqueClicks || s.unique_clicks || 0),
+              unsubscribes: int(s.unsubscribes || s.unsubscribed || 0),
+              bounces_soft: int(s.softBounces || s.soft_bounces || 0),
+              bounces_hard: int(s.hardBounces || s.hard_bounces || 0),
+              spam_reports: int(s.spam || s.spamComplaints || 0),
+              revenue_attr: num(s.revenue || s.revenueAttr || 0),
             });
             totalMetrics++;
             break;
           } catch (_) {}
         }
-        await sleep(150);
+        await sleep(200);
       }
 
-      console.log(`[Perfit] Página ${page}: ${items.length}`);
+      console.log(`[Perfit] Página ${page}: ${items.length} campañas`);
       if (items.length < 50) break;
+      page++;
       await sleep(300);
     }
 
     await endSyncLog(logId, { status: 'success', records: totalCampaigns + totalMetrics, created: totalMetrics, lastDate: todayISO() });
-    console.log(`[Perfit] OK: ${totalCampaigns} campañas, ${totalMetrics} métricas`);
+    console.log(`[Perfit] ✓ ${totalCampaigns} campañas, ${totalMetrics} métricas`);
   } catch (e) {
     await endSyncLog(logId, { status: 'error', error: e.message });
     throw e;
@@ -458,93 +355,137 @@ export async function syncPerfit() {
 }
 
 // ============================================================
-// GOOGLE ADS vía GA4 CSV publicado
+// JOB 3: GOOGLE ADS (API oficial v18)
 // ============================================================
-export async function syncGoogleAdsFromGa4Csv() {
+export async function syncGoogleAds() {
   const source = 'google_ads';
   const logId = await startSyncLog(source);
   try {
-    const csvUrl = requireEnv('GA4_CSV_URL');
-    console.log('[Google Ads/GA4] Descargando CSV...');
+    const clientId      = requireEnv('GOOGLE_ADS_CLIENT_ID');
+    const clientSecret  = requireEnv('GOOGLE_ADS_CLIENT_SECRET');
+    const refreshToken  = requireEnv('GOOGLE_ADS_REFRESH_TOKEN');
+    const devToken      = requireEnv('GOOGLE_ADS_DEVELOPER_TOKEN');
+    const customerId    = requireEnv('GOOGLE_ADS_CUSTOMER_ID').replace(/-/g, '');
+    const loginCustId   = process.env.GOOGLE_ADS_LOGIN_CUSTOMER_ID?.replace(/-/g, '') || customerId;
+    const daysBack      = int(process.env.GOOGLE_ADS_DAYS_BACK || 30);
+    const apiVersion    = process.env.GOOGLE_ADS_API_VERSION || 'v18';
 
-    const res = await fetch(csvUrl);
-    if (!res.ok) throw new Error(`CSV error HTTP ${res.status}`);
+    const lastSync  = await getLastSync(source);
+    const dateFrom  = lastSync
+      ? new Date(new Date(lastSync) - 86400000).toISOString().split('T')[0]
+      : daysAgoISO(daysBack);
+    const dateTo    = todayISO();
 
-    const csv = await res.text();
-    const lines = csv.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
-    if (lines.length <= 1) {
-      await endSyncLog(logId, { status: 'success', records: 0, lastDate: todayISO() });
-      console.log('[Google Ads/GA4] CSV vacío');
-      return;
-    }
+    console.log(`[Google Ads] Sincronizando ${dateFrom} → ${dateTo} (customer: ${customerId})`);
 
-    const headers = parseCSVLine(lines.shift()).map((h) => h.toLowerCase().trim());
-    console.log('[Google Ads/GA4] Headers:', headers.join(' | '));
+    // Obtener access token via OAuth2
+    const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        client_id: clientId,
+        client_secret: clientSecret,
+        refresh_token: refreshToken,
+        grant_type: 'refresh_token',
+      }),
+    });
+    const tokenData = await tokenRes.json();
+    if (!tokenRes.ok) throw new Error(`OAuth2 error: ${JSON.stringify(tokenData)}`);
+    const accessToken = tokenData.access_token;
 
-    const idx = (names, fallback) => {
-      for (const name of names) {
-        const i = headers.indexOf(name.toLowerCase());
-        if (i >= 0) return i;
-      }
-      return fallback;
+    const headers = {
+      'Authorization': `Bearer ${accessToken}`,
+      'developer-token': devToken,
+      'Content-Type': 'application/json',
     };
+    if (loginCustId !== customerId) headers['login-customer-id'] = loginCustId;
 
-    const iDate = idx(['date', 'fecha'], 0);
-    const iSource = idx(['source', 'session source', 'sessionSource'], 1);
-    const iMedium = idx(['medium', 'session medium', 'sessionMedium'], 2);
-    const iCampaign = idx(['campaign', 'session campaign', 'sessionCampaignName', 'campaign name'], 3);
-    const iSessions = idx(['sessions', 'sesiones'], 4);
-    const iUsers = idx(['users', 'totalUsers', 'usuarios'], 5);
-    const iConversions = idx(['conversions', 'conversiones'], 6);
-    const iRevenue = idx(['revenue', 'purchaseRevenue', 'ingresos'], 7);
+    // Query GAQL: métricas por campaña por día
+    const query = `
+      SELECT
+        segments.date,
+        campaign.id,
+        campaign.name,
+        campaign.status,
+        campaign.advertising_channel_type,
+        metrics.cost_micros,
+        metrics.impressions,
+        metrics.clicks,
+        metrics.conversions,
+        metrics.conversions_value,
+        metrics.all_conversions,
+        metrics.view_through_conversions,
+        metrics.average_cpc,
+        metrics.average_cpm,
+        metrics.ctr,
+        metrics.search_impression_share,
+        metrics.absolute_top_impression_percentage,
+        metrics.top_impression_percentage
+      FROM campaign
+      WHERE segments.date BETWEEN '${dateFrom}' AND '${dateTo}'
+        AND campaign.status != 'REMOVED'
+      ORDER BY segments.date DESC, metrics.cost_micros DESC
+    `;
 
-    const channelId = await getOrCreateChannel('Google Ads', 'other', 'ga4_csv');
-    let processed = 0;
-    const skipped = { notGoogleAds: 0 };
+    const adsRes = await fetch(
+      `https://googleads.googleapis.com/${apiVersion}/customers/${customerId}/googleAds:searchStream`,
+      { method: 'POST', headers, body: JSON.stringify({ query }) }
+    );
 
-    for (const line of lines) {
-      const cols = parseCSVLine(line);
-      const sourceValue = String(cols[iSource] || '').toLowerCase();
-      const mediumValue = String(cols[iMedium] || '').toLowerCase();
-      const isGoogleAds = sourceValue.includes('google') && ['cpc', 'paid', 'paid_search', 'ppc'].some((m) => mediumValue.includes(m));
-      if (!isGoogleAds) {
-        skipped.notGoogleAds++;
-        continue;
-      }
-
-      const date = normalizeGa4Date(cols[iDate]);
-      const campaignName = cols[iCampaign] || 'Google Ads sin campaña';
-      const externalId = `ga4_google_ads_${campaignName}`.toLowerCase().replace(/[^a-z0-9]+/g, '_').slice(0, 180);
-      const sessions = int(cols[iSessions]);
-      const users = int(cols[iUsers]);
-      const conversions = num(cols[iConversions]);
-      const revenue = num(cols[iRevenue]);
-
-      const campaignId = await upsertCampaign({
-        external_id: externalId,
-        source,
-        channel_id: channelId,
-        name: campaignName,
-        status: 'active',
-        objective: 'ga4_attribution',
-      });
-
-      await upsertMetrics({
-        campaign_id: campaignId,
-        source,
-        date,
-        reach: users,
-        clicks: sessions,
-        conversions,
-        conv_value: revenue,
-        revenue_attr: revenue,
-        leads: Math.round(conversions),
-      });
-      processed++;
+    if (!adsRes.ok) {
+      const errText = await adsRes.text();
+      throw new Error(`Google Ads API ${adsRes.status}: ${errText.substring(0, 500)}`);
     }
 
-    await endSyncLog(logId, { status: 'success', records: processed, created: processed, lastDate: todayISO() });
-    console.log(`[Google Ads/GA4] OK: ${processed} filas. Omitidas no Google Ads: ${skipped.notGoogleAds}`);
+    const channelId = await getOrCreateChannel('Google Ads', 'other', customerId);
+    let totalMetrics = 0, campaignMap = new Map();
+
+    const adsData = await adsRes.json();
+    const batches = Array.isArray(adsData) ? adsData : [adsData];
+
+    for (const batch of batches) {
+      for (const item of (batch.results || [])) {
+        const camp   = item.campaign || {};
+        const seg    = item.segments || {};
+        const met    = item.metrics  || {};
+
+        // Upsert campaña
+        let campDbId = campaignMap.get(camp.id);
+        if (!campDbId) {
+          campDbId = await upsertCampaign({
+            external_id: String(camp.id || ''),
+            source, channel_id: channelId,
+            name: camp.name || `Campaign ${camp.id}`,
+            status: (camp.status || 'UNKNOWN').toLowerCase(),
+            objective: camp.advertisingChannelType || null,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          });
+          campaignMap.set(camp.id, campDbId);
+        }
+
+        const spend = num(met.costMicros || 0) / 1_000_000;
+        const clicks = int(met.clicks || 0);
+        const impressions = int(met.impressions || 0);
+        const conversions = num(met.conversions || 0);
+        const convValue = num(met.conversionsValue || 0);
+        const avgCpc = num(met.averageCpc || 0) / 1_000_000;
+        const avgCpm = num(met.averageCpm || 0) / 1_000_000;
+        const ctr = num(met.ctr || 0) * 100; // Google devuelve 0.02 = 2%
+
+        await upsertMetrics({
+          campaign_id: campDbId, source, date: seg.date,
+          impressions, clicks, spend,
+          cpm: avgCpm, cpc: avgCpc, ctr,
+          conversions, conv_value: convValue, leads: Math.round(conversions),
+          revenue_attr: convValue,
+        });
+        totalMetrics++;
+      }
+    }
+
+    await endSyncLog(logId, { status: 'success', records: totalMetrics, created: totalMetrics, lastDate: dateTo });
+    console.log(`[Google Ads] ✓ ${campaignMap.size} campañas, ${totalMetrics} métricas`);
   } catch (e) {
     await endSyncLog(logId, { status: 'error', error: e.message });
     throw e;
@@ -552,7 +493,7 @@ export async function syncGoogleAdsFromGa4Csv() {
 }
 
 // ============================================================
-// KOMMO
+// JOB 4: KOMMO CRM
 // ============================================================
 function kommoLeadStatus(lead) {
   const statusId = Number(lead.status_id || 0);
@@ -565,17 +506,20 @@ export async function syncKommo() {
   const source = 'kommo';
   const logId = await startSyncLog(source);
   try {
-    const subdomain = requireEnv('KOMMO_SUBDOMAIN').replace(/^https?:\/\//, '').replace('.kommo.com', '').replace(/\/$/, '');
+    const subdomain = requireEnv('KOMMO_SUBDOMAIN')
+      .replace(/^https?:\/\//, '').replace('.kommo.com', '').replace(/\/$/, '');
     const token = requireEnv('KOMMO_LONG_LIVED_TOKEN');
     const daysBack = int(process.env.KOMMO_DAYS_BACK || 30);
     const lastSync = await getLastSync(source);
-    const fromDate = lastSync ? new Date(new Date(lastSync) - 86400000) : new Date(Date.now() - 86400000 * daysBack);
+    const fromDate = lastSync
+      ? new Date(new Date(lastSync) - 86400000)
+      : new Date(Date.now() - 86400000 * daysBack);
     const toDate = new Date();
     const fromTs = Math.floor(fromDate.getTime() / 1000);
-    const toTs = Math.floor(toDate.getTime() / 1000);
-    const base = `https://${subdomain}.kommo.com`;
+    const toTs   = Math.floor(toDate.getTime() / 1000);
+    const base   = `https://${subdomain}.kommo.com`;
 
-    console.log(`[Kommo] Sincronizando updated_at ${fromDate.toISOString()} → ${toDate.toISOString()}`);
+    console.log(`[Kommo] Sincronizando desde ${fromDate.toISOString().slice(0,10)}`);
 
     const leads = [];
     for (let page = 1; page <= 50; page++) {
@@ -593,42 +537,33 @@ export async function syncKommo() {
     const byDay = new Map();
 
     for (const lead of leads) {
-      const status = kommoLeadStatus(lead);
+      const status    = kommoLeadStatus(lead);
       const createdAt = isoFromUnix(lead.created_at) || new Date().toISOString();
       const updatedAt = isoFromUnix(lead.updated_at) || createdAt;
-      const closedAt = isoFromUnix(lead.closed_at);
-      const date = createdAt.slice(0, 10);
-      const value = num(lead.price || 0);
+      const closedAt  = isoFromUnix(lead.closed_at);
+      const date      = createdAt.slice(0, 10);
+      const value     = num(lead.price || 0);
 
+      // Upsert en tabla leads
       await db.query(`
         INSERT INTO leads
-          (external_id,status,pipeline_id,pipeline_stage,name,estimated_value,assigned_to,campaign_source,tags,created_at,updated_at,converted_at,closed_at,synced_at)
+          (external_id,status,pipeline_id,pipeline_stage,name,estimated_value,
+           assigned_to,campaign_source,tags,created_at,updated_at,converted_at,closed_at,synced_at)
         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,NOW())
         ON CONFLICT (external_id) DO UPDATE SET
-          status=EXCLUDED.status,
-          pipeline_id=EXCLUDED.pipeline_id,
-          pipeline_stage=EXCLUDED.pipeline_stage,
-          name=EXCLUDED.name,
-          estimated_value=EXCLUDED.estimated_value,
-          assigned_to=EXCLUDED.assigned_to,
-          campaign_source=EXCLUDED.campaign_source,
-          tags=EXCLUDED.tags,
-          updated_at=EXCLUDED.updated_at,
-          converted_at=EXCLUDED.converted_at,
-          closed_at=EXCLUDED.closed_at,
-          synced_at=NOW()
+          status=EXCLUDED.status, pipeline_id=EXCLUDED.pipeline_id,
+          pipeline_stage=EXCLUDED.pipeline_stage, name=EXCLUDED.name,
+          estimated_value=EXCLUDED.estimated_value, assigned_to=EXCLUDED.assigned_to,
+          campaign_source=EXCLUDED.campaign_source, tags=EXCLUDED.tags,
+          updated_at=EXCLUDED.updated_at, converted_at=EXCLUDED.converted_at,
+          closed_at=EXCLUDED.closed_at, synced_at=NOW()
       `, [
-        String(lead.id),
-        status,
-        lead.pipeline_id || null,
-        String(lead.status_id || ''),
-        lead.name || `Lead ${lead.id}`,
-        value,
+        String(lead.id), status, lead.pipeline_id || null, String(lead.status_id || ''),
+        lead.name || `Lead ${lead.id}`, value,
         lead.responsible_user_id ? String(lead.responsible_user_id) : null,
         'kommo',
         (lead._embedded?.tags || []).map((t) => t.name).filter(Boolean),
-        createdAt,
-        updatedAt,
+        createdAt, updatedAt,
         status === 'won' ? (closedAt || updatedAt) : null,
         closedAt,
       ]);
@@ -636,71 +571,56 @@ export async function syncKommo() {
 
       const bucket = byDay.get(date) || { leads: 0, won: 0, revenue: 0, open: 0, lost: 0 };
       bucket.leads++;
-      if (status === 'won') {
-        bucket.won++;
-        bucket.revenue += value;
-      } else if (status === 'lost') {
-        bucket.lost++;
-      } else {
-        bucket.open++;
-      }
+      if (status === 'won') { bucket.won++; bucket.revenue += value; }
+      else if (status === 'lost') { bucket.lost++; }
+      else { bucket.open++; }
       byDay.set(date, bucket);
     }
 
+    // Guardar agregados diarios en marketing_metrics para el dashboard
     const channelId = await getOrCreateChannel('Kommo CRM', 'other', subdomain);
     const campaignId = await upsertCampaign({
-      external_id: 'kommo_crm_leads',
-      source,
-      channel_id: channelId,
-      name: 'Kommo CRM Leads',
-      status: 'active',
-      objective: 'crm',
+      external_id: 'kommo_crm_leads', source, channel_id: channelId,
+      name: 'Kommo CRM — Leads',
+      status: 'active', objective: 'crm',
     });
 
     for (const [date, b] of byDay.entries()) {
       await upsertMetrics({
-        campaign_id: campaignId,
-        source,
-        date,
-        leads: b.leads,
-        conversions: b.won,
-        conv_value: b.revenue,
-        revenue_attr: b.revenue,
+        campaign_id: campaignId, source, date,
+        leads: b.leads, conversions: b.won,
+        conv_value: b.revenue, revenue_attr: b.revenue,
       });
     }
 
     await endSyncLog(logId, { status: 'success', records: upserted, created: upserted, lastDate: toDate.toISOString() });
-    console.log(`[Kommo] OK: ${upserted} leads, ${byDay.size} días agregados`);
+    console.log(`[Kommo] ✓ ${upserted} leads, ${byDay.size} días`);
   } catch (e) {
     await endSyncLog(logId, { status: 'error', error: e.message });
     throw e;
   }
 }
 
+// ============================================================
+// ENTRYPOINT
+// ============================================================
 const job = process.argv[2];
-
 (async () => {
   try {
-    if (!process.env.DATABASE_URL) throw new Error('Falta DATABASE_URL');
-
-    if (job === 'meta' || job === 'meta_full') {
-      await syncMetaAds(int(process.env.META_DAYS_BACK || 30));
-    } else if (job === 'perfit') {
+    const daysBack = int(process.env.META_DAYS_BACK || 30);
+    if      (job === 'meta_full')  await syncMetaAds(daysBack);
+    else if (job === 'perfit')     await syncPerfit();
+    else if (job === 'google_ads') await syncGoogleAds();
+    else if (job === 'kommo')      await syncKommo();
+    else if (job === 'all') {
+      await syncMetaAds(daysBack);
       await syncPerfit();
-    } else if (job === 'google_ads' || job === 'ga4_google_ads') {
-      await syncGoogleAdsFromGa4Csv();
-    } else if (job === 'kommo') {
+      await syncGoogleAds();
       await syncKommo();
-    } else if (job === 'all') {
-      await syncMetaAds(int(process.env.META_DAYS_BACK || 30));
-      await syncPerfit();
-      await syncGoogleAdsFromGa4Csv();
-      await syncKommo();
-    } else {
-      throw new Error('Job desconocido. Usar: meta_full | perfit | google_ads | kommo | all');
     }
+    else console.error('Job desconocido. Usar: meta_full | perfit | google_ads | kommo | all');
   } catch (e) {
-    console.error(`[${job || 'sin_job'}] ERROR:`, e.message || e);
+    console.error(`[${job}] ERROR FATAL:`, e.message);
     process.exit(1);
   } finally {
     await db.end();
