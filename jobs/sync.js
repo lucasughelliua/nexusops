@@ -101,111 +101,245 @@ export async function syncVTEX() {
   const logId = await startSyncLog(source);
   const last = await getLastSync(source);
 
-  const account = process.env.VTEX_ACCOUNT;
-  const appKey = process.env.VTEX_APP_KEY;
-  const appToken = process.env.VTEX_APP_TOKEN;
-  const headers = { 'X-VTEX-API-AppKey': appKey, 'X-VTEX-API-AppToken': appToken };
+  const account = process.env.VTEX_ACCOUNT?.trim();
+  const appKey = process.env.VTEX_APP_KEY?.trim();
+  const appToken = process.env.VTEX_APP_TOKEN?.trim();
 
-  const { rows: [channel] } = await db.query(`SELECT id FROM channels WHERE type='vtex' LIMIT 1`);
-  if (!channel) throw new Error('Canal VTEX no configurado');
+  if (!account) throw new Error('Falta VTEX_ACCOUNT');
+  if (!appKey) throw new Error('Falta VTEX_APP_KEY');
+  if (!appToken) throw new Error('Falta VTEX_APP_TOKEN');
 
-  const daysBack = parseInt(process.env.VTEX_DAYS_BACK || '1');
-  const fromDate = last.last_date_synced
-    ? new Date(last.last_date_synced).toISOString()
-    : new Date(Date.now() - 86400000 * daysBack).toISOString();
+  const headers = {
+    'X-VTEX-API-AppKey': appKey,
+    'X-VTEX-API-AppToken': appToken,
+    'Accept': 'application/json',
+    'Content-Type': 'application/json'
+  };
 
-  let page = 1;
-  let totalProcessed = 0, totalCreated = 0, totalUpdated = 0;
-  let lastDate = fromDate;
+  let { rows: [channel] } = await db.query(`SELECT id FROM channels WHERE type='vtex' LIMIT 1`);
+  if (!channel) {
+    const created = await db.query(
+      `INSERT INTO channels(name,type,external_id,active) VALUES($1,'vtex',$2,true) RETURNING id`,
+      ['VTEX', account]
+    );
+    channel = created.rows[0];
+  }
 
-  console.log(`[VTEX] Sincronizando desde ${fromDate}`);
+  const firstSyncDays = parseInt(process.env.VTEX_DAYS_BACK || '365', 10);
+  const overlapMinutes = parseInt(process.env.VTEX_INCREMENTAL_OVERLAP_MINUTES || '90', 10);
+  const blockDays = parseInt(process.env.VTEX_BLOCK_DAYS || '7', 10);
+  const minBlockHours = parseInt(process.env.VTEX_MIN_BLOCK_HOURS || '6', 10);
+  const perPage = Math.min(parseInt(process.env.VTEX_PER_PAGE || '100', 10), 100);
+  const maxPages = 30; // VTEX OMS corta en page 30. Página 31 suele devolver 400.
 
-  // Helper con retry y backoff para manejar 429
-  async function vtexFetch(url, retries = 5) {
+  const now = new Date();
+  const firstFrom = new Date(now.getTime() - firstSyncDays * 86400000);
+  const forceFull = String(process.env.VTEX_FORCE_FULL || '').toLowerCase() === 'true';
+  const incrementalFrom = (!forceFull && last.last_date_synced)
+    ? new Date(new Date(last.last_date_synced).getTime() - overlapMinutes * 60000)
+    : firstFrom;
+  const syncFrom = incrementalFrom < firstFrom ? firstFrom : incrementalFrom;
+
+  let totalProcessed = 0;
+  let totalCreated = 0;
+  let totalUpdated = 0;
+  let totalSkippedDetails = 0;
+  let maxLastChange = syncFrom.toISOString();
+
+  console.log(`[VTEX] Sincronizando ${syncFrom.toISOString()} → ${now.toISOString()}`);
+  console.log(!forceFull && last.last_date_synced
+    ? `[VTEX] Modo incremental por lastChange con solape de ${overlapMinutes} min`
+    : `[VTEX] Modo histórico: ${firstSyncDays} días por bloques de ${blockDays} días`);
+
+  async function vtexFetchJson(url, retries = 6) {
+    let lastText = '';
     for (let i = 0; i <= retries; i++) {
       const res = await fetch(url, { headers });
-      if (res.status === 429) {
-        const wait = Math.min(60000, 5000 * Math.pow(2, i));
-        console.log(`[VTEX] Rate limit (429). Esperando ${wait/1000}s...`);
-        await new Promise(r => setTimeout(r, wait));
-        continue;
+      lastText = await res.text();
+      let data = {};
+      try { data = lastText ? JSON.parse(lastText) : {}; } catch { data = { raw: lastText }; }
+
+      if (res.status === 429 || res.status >= 500) {
+        if (i < retries) {
+          const retryAfter = Number(res.headers.get('retry-after') || 0);
+          const wait = retryAfter > 0 ? retryAfter * 1000 : Math.min(90000, 5000 * Math.pow(2, i));
+          console.log(`[VTEX] ${res.status}. Esperando ${Math.round(wait / 1000)}s...`);
+          await new Promise(r => setTimeout(r, wait));
+          continue;
+        }
       }
-      if (!res.ok) throw new Error(`VTEX API error: ${res.status}`);
-      return res.json();
+
+      if (!res.ok) {
+        const msg = data?.message || data?.error || data?.raw || lastText || `HTTP ${res.status}`;
+        throw new Error(`VTEX API error: ${res.status} - ${String(msg).slice(0, 500)}`);
+      }
+
+      return data;
     }
-    throw new Error('VTEX: demasiados reintentos por rate limit');
+    throw new Error(`VTEX API error: sin respuesta válida. Último body: ${lastText.slice(0, 500)}`);
   }
 
-  while (true) {
-    const url = `https://${account}.vtexcommercestable.com.br/api/oms/pvt/orders?` +
-      `f_createdIn=${encodeURIComponent(fromDate)}_${encodeURIComponent(new Date().toISOString())}` +
-      `&orderBy=createdIn,asc&page=${page}&per_page=50`;
+  function iso(d) {
+    return new Date(d).toISOString();
+  }
 
-    const data = await vtexFetch(url);
-    const orders = data.list || [];
-    if (!orders.length) break;
+  function vtexRangeParam(field, from, to) {
+    return `${field}:[${iso(from)} TO ${iso(to)}]`;
+  }
 
-    for (const o of orders) {
-      await new Promise(r => setTimeout(r, 600)); // 600ms entre requests de detalle
+  function makeBlocks(from, to, sizeDays) {
+    const blocks = [];
+    let cursor = new Date(from);
+    while (cursor < to) {
+      const end = new Date(Math.min(cursor.getTime() + sizeDays * 86400000, to.getTime()));
+      blocks.push([new Date(cursor), end]);
+      cursor = end;
+    }
+    return blocks;
+  }
 
-      let detail;
-      try {
-        detail = await vtexFetch(
-          `https://${account}.vtexcommercestable.com.br/api/oms/pvt/orders/${o.orderId}`
-        );
-      } catch (e) {
-        console.warn(`[VTEX] Error detalle orden ${o.orderId}:`, e.message);
-        continue;
-      }
+  function normalizeOrder(detail) {
+    const total = Number(detail.value || 0) / 100;
+    const discount = Math.abs(Number(detail.totals?.find(t => t.id === 'Discounts')?.value || 0)) / 100;
+    const shipping = Number(detail.totals?.find(t => t.id === 'Shipping')?.value || 0) / 100;
+    const firstName = detail.clientProfileData?.firstName || '';
+    const lastName = detail.clientProfileData?.lastName || '';
 
-      const normalized = {
-        external_id: detail.orderId,
-        channel_id: channel.id,
-        source: 'vtex',
+    return {
+      external_id: detail.orderId,
+      channel_id: channel.id,
+      source: 'vtex',
+      status: detail.status || 'unknown',
+      payment_status: detail.paymentData?.transactions?.[0]?.payments?.[0]?.status || null,
+      shipping_status: detail.packageAttachment?.packages?.[0]?.trackingIsDelivered ? 'delivered' : 'processing',
+      total_amount: total,
+      discount_amount: discount,
+      net_amount: total,
+      shipping_amount: shipping,
+      items_count: detail.items?.length || 0,
+      customer_name: `${firstName} ${lastName}`.trim() || null,
+      customer_email: detail.clientProfileData?.email || null,
+      customer_province: detail.shippingData?.address?.state || null,
+      customer_city: detail.shippingData?.address?.city || null,
+      is_canceled: detail.status === 'canceled',
+      is_returned: false,
+      created_at: detail.creationDate,
+      updated_at: detail.lastChange || detail.creationDate,
+      raw_data: {
         status: detail.status,
-        payment_status: detail.paymentData?.transactions?.[0]?.payments?.[0]?.status || null,
-        shipping_status: detail.packageAttachment?.packages?.[0]?.trackingIsDelivered ? 'delivered' : 'processing',
-        total_amount: detail.value / 100,
-        discount_amount: (detail.totals?.find(t => t.id === 'Discounts')?.value || 0) / -100,
-        net_amount: detail.value / 100,
-        shipping_amount: (detail.totals?.find(t => t.id === 'Shipping')?.value || 0) / 100,
-        items_count: detail.items?.length || 0,
-        customer_name: detail.clientProfileData?.firstName + ' ' + detail.clientProfileData?.lastName,
-        customer_email: detail.clientProfileData?.email,
-        customer_province: detail.shippingData?.address?.state,
-        customer_city: detail.shippingData?.address?.city,
-        is_canceled: detail.status === 'canceled',
-        created_at: detail.creationDate,
-        updated_at: detail.lastChange,
-        raw_data: { status: detail.status, origin: detail.origin },
-      };
-
-      const { id: orderId, is_insert } = await upsertOrder(normalized);
-
-      const items = (detail.items || []).map(item => ({
-        external_id: item.uniqueId,
-        sku: item.refId || item.id,
-        product_name: item.name,
-        category: item.additionalInfo?.categories?.[0]?.name,
-        quantity: item.quantity,
-        unit_price: item.price / 100,
-        total_price: (item.price * item.quantity) / 100,
-      }));
-      await upsertOrderItems(orderId, items);
-
-      if (is_insert) totalCreated++; else totalUpdated++;
-      totalProcessed++;
-      lastDate = detail.creationDate;
-    }
-
-    console.log(`[VTEX] Página ${page}: ${orders.length} órdenes (total: ${totalProcessed})`);
-    if (orders.length < 50 || page >= data.paging?.pages) break;
-    page++;
-    await new Promise(r => setTimeout(r, 1500)); // 1.5s entre páginas
+        origin: detail.origin,
+        sequence: detail.sequence,
+        marketplaceOrderId: detail.marketplaceOrderId || null
+      }
+    };
   }
 
-  await endSyncLog(logId, { status: 'success', records: totalProcessed, created: totalCreated, updated: totalUpdated, lastDate });
-  console.log(`[VTEX] ✓ ${totalProcessed} órdenes. Creadas: ${totalCreated}, Actualizadas: ${totalUpdated}`);
+  async function processOrderSummary(summary) {
+    await new Promise(r => setTimeout(r, Number(process.env.VTEX_DETAIL_DELAY_MS || 250)));
+
+    let detail;
+    try {
+      detail = await vtexFetchJson(
+        `https://${account}.vtexcommercestable.com.br/api/oms/pvt/orders/${encodeURIComponent(summary.orderId)}`
+      );
+    } catch (e) {
+      totalSkippedDetails++;
+      console.warn(`[VTEX] Error detalle orden ${summary.orderId}: ${e.message}`);
+      return;
+    }
+
+    const normalized = normalizeOrder(detail);
+    const { id: orderId, is_insert } = await upsertOrder(normalized);
+
+    await db.query(`DELETE FROM order_items WHERE order_id=$1`, [orderId]);
+    const items = (detail.items || []).map(item => ({
+      external_id: item.uniqueId || item.id,
+      sku: item.refId || item.id,
+      product_name: item.name || 'Producto sin nombre',
+      category: item.additionalInfo?.categories?.[0]?.name || null,
+      quantity: Number(item.quantity || 0),
+      unit_price: Number(item.price || 0) / 100,
+      total_price: (Number(item.price || 0) * Number(item.quantity || 0)) / 100
+    }));
+    await upsertOrderItems(orderId, items);
+
+    if (is_insert) totalCreated++; else totalUpdated++;
+    totalProcessed++;
+
+    const lc = normalized.updated_at || normalized.created_at;
+    if (lc && new Date(lc) > new Date(maxLastChange)) maxLastChange = new Date(lc).toISOString();
+  }
+
+  async function syncBlock(field, blockFrom, blockTo, depth = 0) {
+    const range = vtexRangeParam(field, blockFrom, blockTo);
+    console.log(`[VTEX] Bloque ${field}: ${iso(blockFrom)} → ${iso(blockTo)}`);
+
+    for (let page = 1; page <= maxPages; page++) {
+      const params = new URLSearchParams({
+        orderBy: `${field === 'lastChange' ? 'lastChange' : 'creationDate'},asc`,
+        page: String(page),
+        per_page: String(perPage)
+      });
+      params.set(field === 'lastChange' ? 'f_lastChange' : 'f_creationDate', range);
+
+      const url = `https://${account}.vtexcommercestable.com.br/api/oms/pvt/orders?${params.toString()}`;
+      const data = await vtexFetchJson(url);
+      const orders = data.list || [];
+
+      if (!orders.length) break;
+
+      for (const o of orders) await processOrderSummary(o);
+
+      console.log(`[VTEX] ${field} página ${page}: ${orders.length} órdenes (total ${totalProcessed})`);
+
+      const pagingPages = Number(data.paging?.pages || page);
+      if (orders.length < perPage || page >= pagingPages) break;
+
+      if (page === maxPages && pagingPages > maxPages) {
+        const blockMs = blockTo.getTime() - blockFrom.getTime();
+        const minMs = minBlockHours * 3600000;
+        if (blockMs <= minMs || depth >= 8) {
+          console.warn(`[VTEX] Bloque alcanzó página 30 y no se puede dividir más. Revisar rango ${iso(blockFrom)} → ${iso(blockTo)}.`);
+          break;
+        }
+        const mid = new Date(blockFrom.getTime() + Math.floor(blockMs / 2));
+        console.warn(`[VTEX] Bloque saturado (${pagingPages} páginas). Dividiendo rango.`);
+        await syncBlock(field, blockFrom, mid, depth + 1);
+        await syncBlock(field, mid, blockTo, depth + 1);
+        return;
+      }
+
+      await new Promise(r => setTimeout(r, Number(process.env.VTEX_PAGE_DELAY_MS || 700)));
+    }
+  }
+
+  try {
+    const field = (!forceFull && last.last_date_synced) ? 'lastChange' : 'creationDate';
+    for (const [from, to] of makeBlocks(syncFrom, now, blockDays)) {
+      await syncBlock(field, from, to);
+    }
+
+    await endSyncLog(logId, {
+      status: totalSkippedDetails ? 'partial' : 'success',
+      records: totalProcessed,
+      created: totalCreated,
+      updated: totalUpdated,
+      lastDate: maxLastChange,
+      error: totalSkippedDetails ? `Detalles omitidos: ${totalSkippedDetails}` : null
+    });
+
+    console.log(`[VTEX] ✓ ${totalProcessed} órdenes. Creadas: ${totalCreated}, Actualizadas: ${totalUpdated}, omitidas: ${totalSkippedDetails}`);
+  } catch (e) {
+    await endSyncLog(logId, {
+      status: totalProcessed > 0 ? 'partial' : 'error',
+      records: totalProcessed,
+      created: totalCreated,
+      updated: totalUpdated,
+      lastDate: maxLastChange,
+      error: e.message
+    });
+    throw e;
+  }
 }
 
 // ============================================================
@@ -353,7 +487,9 @@ export async function syncKommo() {
   const last = await getLastSync(source);
 
   const subdomain = process.env.KOMMO_SUBDOMAIN;
-  const token = process.env.KOMMO_ACCESS_TOKEN;
+  const token = process.env.KOMMO_LONG_LIVED_TOKEN || process.env.KOMMO_ACCESS_TOKEN;
+  if (!subdomain) throw new Error('Falta KOMMO_SUBDOMAIN');
+  if (!token) throw new Error('Falta KOMMO_LONG_LIVED_TOKEN o KOMMO_ACCESS_TOKEN');
   const headers = { Authorization: `Bearer ${token}` };
 
   const updatedSince = last.last_date_synced
