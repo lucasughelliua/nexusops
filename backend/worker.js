@@ -480,7 +480,7 @@ export default {
               FROM order_items oi
               JOIN orders o ON o.id = oi.order_id
               WHERE o.created_at >= ${dateFrom}::date AND o.created_at < (${dateTo}::date + INTERVAL '1 day')
-                AND NOT o.is_canceled
+                AND COALESCE(o.is_canceled,false) = false
                 AND o.source = ${channel}
               GROUP BY oi.product_name, o.source
               ORDER BY quantity DESC
@@ -497,7 +497,7 @@ export default {
               FROM order_items oi
               JOIN orders o ON o.id = oi.order_id
               WHERE o.created_at >= ${dateFrom}::date AND o.created_at < (${dateTo}::date + INTERVAL '1 day')
-                AND NOT o.is_canceled
+                AND COALESCE(o.is_canceled,false) = false
               GROUP BY oi.product_name, o.source
               ORDER BY quantity DESC
               LIMIT ${limit}
@@ -522,12 +522,12 @@ export default {
               COUNT(*)::int AS orders_count,
               COALESCE(AVG(o.total_amount), 0) AS avg_ticket,
               COALESCE(SUM(oi.quantity), 0) AS units_sold,
-              COUNT(*) FILTER (WHERE o.is_canceled)::int AS cancellations,
-              COUNT(*) FILTER (WHERE o.is_returned)::int AS returns
+              COUNT(*) FILTER (WHERE COALESCE(o.is_canceled,false))::int AS cancellations,
+              COUNT(*) FILTER (WHERE COALESCE(o.is_returned,false))::int AS returns
             FROM orders o
             LEFT JOIN order_items oi ON oi.order_id = o.id
             WHERE o.created_at >= ${dateFrom}::date AND o.created_at < (${dateTo}::date + INTERVAL '1 day')
-              AND NOT o.is_canceled
+              AND COALESCE(o.is_canceled,false) = false
           `;
           return json(rows[0] || {});
         } catch(e) {
@@ -546,7 +546,7 @@ export default {
                 COALESCE(AVG(total_amount), 0) AS ticket
               FROM orders
               WHERE created_at >= ${dateFrom}::date AND created_at < (${dateTo}::date + INTERVAL '1 day')
-                AND NOT is_canceled
+                AND COALESCE(is_canceled,false) = false
             ),
             previous AS (
               SELECT
@@ -556,7 +556,7 @@ export default {
               WHERE created_at::DATE BETWEEN
                 (${dateFrom}::date - (${dateTo}::date - ${dateFrom}::date + 1))
                 AND (${dateFrom}::date - 1)
-                AND NOT is_canceled
+                AND COALESCE(is_canceled,false) = false
             )
             SELECT
               c.revenue AS today_revenue,
@@ -584,11 +584,11 @@ export default {
               COALESCE(SUM(o.total_amount), 0) AS revenue,
               COUNT(*)::int AS orders_count,
               COALESCE(AVG(o.total_amount), 0) AS avg_ticket,
-              COUNT(*) FILTER (WHERE o.is_canceled)::int AS cancellations
+              COUNT(*) FILTER (WHERE COALESCE(o.is_canceled,false))::int AS cancellations
             FROM orders o
             LEFT JOIN channels c ON c.id = o.channel_id
             WHERE o.created_at >= ${dateFrom}::date AND o.created_at < (${dateTo}::date + INTERVAL '1 day')
-              AND NOT o.is_canceled
+              AND COALESCE(o.is_canceled,false) = false
             GROUP BY o.source, c.name
             ORDER BY revenue DESC
           `;
@@ -740,8 +740,8 @@ export default {
               COUNT(*)::int AS orders_count,
               COALESCE(AVG(fo.total_amount), 0) AS avg_ticket,
               (SELECT units_sold FROM item_units) AS units_sold,
-              COUNT(*) FILTER (WHERE fo.is_canceled)::int AS cancellations,
-              COUNT(*) FILTER (WHERE fo.is_returned)::int AS returns,
+              COUNT(*) FILTER (WHERE COALESCE(fo.is_canceled,false))::int AS cancellations,
+              COUNT(*) FILTER (WHERE COALESCE(fo.is_returned,false))::int AS returns,
               0 AS conversion_rate
             FROM filtered_orders fo
           `;
@@ -754,7 +754,7 @@ export default {
               SELECT o.id, o.source, o.channel_id, o.total_amount
               FROM orders o
               WHERE o.created_at >= ${dateFrom}::date AND o.created_at < (${dateTo}::date + INTERVAL '1 day')
-                AND NOT o.is_canceled
+                AND COALESCE(o.is_canceled,false) = false
                 AND (${f.channel} = 'all' OR o.source = ${f.channel} OR (${f.channel}='ml1' AND o.source IN ('meli_1','ml_1')) OR (${f.channel}='ml2' AND o.source IN ('meli_2','ml_2')))
             ), item_units AS (
               SELECT fo.source, COALESCE(SUM(oi.quantity),0)::int AS units_sold
@@ -789,7 +789,7 @@ export default {
             FROM orders o
             LEFT JOIN order_items oi ON oi.order_id = o.id
             WHERE o.created_at >= ${dateFrom}::date AND o.created_at < (${dateTo}::date + INTERVAL '1 day')
-              AND NOT o.is_canceled
+              AND COALESCE(o.is_canceled,false) = false
               AND (${f.channel} = 'all' OR o.source = ${f.channel} OR (${f.channel}='ml1' AND o.source IN ('meli_1','ml_1')) OR (${f.channel}='ml2' AND o.source IN ('meli_2','ml_2')))
             GROUP BY o.created_at::DATE, o.source
             ORDER BY date ASC, revenue DESC
@@ -811,7 +811,7 @@ export default {
             FROM order_items oi
             JOIN orders o ON o.id = oi.order_id
             WHERE o.created_at >= ${dateFrom}::date AND o.created_at < (${dateTo}::date + INTERVAL '1 day')
-              AND NOT o.is_canceled
+              AND COALESCE(o.is_canceled,false) = false
               AND (${f.channel} = 'all' OR o.source = ${f.channel} OR (${f.channel}='ml1' AND o.source IN ('meli_1','ml_1')) OR (${f.channel}='ml2' AND o.source IN ('meli_2','ml_2')))
               AND (${f.brand} = '' OR oi.brand ILIKE '%' || ${f.brand} || '%')
               AND (${f.category} = '' OR oi.category ILIKE '%' || ${f.category} || '%')
@@ -839,9 +839,9 @@ export default {
 
         if (path === '/api/v1/dashboard/tv') {
           const [summary, channels, top, recent, sync, kommo, marketing] = await Promise.all([
-            sql`SELECT COALESCE(SUM(total_amount),0) AS total_revenue, COUNT(*)::int AS orders_count, COALESCE(AVG(total_amount),0) AS avg_ticket, COALESCE(SUM(items_count),0)::int AS units_sold FROM orders WHERE created_at >= ${dateFrom}::date AND created_at < (${dateTo}::date + INTERVAL '1 day') AND NOT is_canceled`,
-            sql`SELECT source, COALESCE(SUM(total_amount),0) AS revenue, COUNT(*)::int AS orders_count FROM orders WHERE created_at >= ${dateFrom}::date AND created_at < (${dateTo}::date + INTERVAL '1 day') AND NOT is_canceled GROUP BY source ORDER BY revenue DESC`,
-            sql`SELECT oi.product_name, o.source, SUM(oi.quantity)::int AS quantity, SUM(oi.total_price) AS revenue FROM order_items oi JOIN orders o ON o.id=oi.order_id WHERE o.created_at >= ${dateFrom}::date AND o.created_at < (${dateTo}::date + INTERVAL '1 day') AND NOT o.is_canceled GROUP BY oi.product_name,o.source ORDER BY quantity DESC LIMIT 40`,
+            sql`SELECT COALESCE(SUM(total_amount),0) AS total_revenue, COUNT(*)::int AS orders_count, COALESCE(AVG(total_amount),0) AS avg_ticket, COALESCE(SUM(items_count),0)::int AS units_sold FROM orders WHERE created_at >= ${dateFrom}::date AND created_at < (${dateTo}::date + INTERVAL '1 day') AND COALESCE(is_canceled,false) = false`,
+            sql`SELECT source, COALESCE(SUM(total_amount),0) AS revenue, COUNT(*)::int AS orders_count FROM orders WHERE created_at >= ${dateFrom}::date AND created_at < (${dateTo}::date + INTERVAL '1 day') AND COALESCE(is_canceled,false) = false GROUP BY source ORDER BY revenue DESC`,
+            sql`SELECT oi.product_name, o.source, SUM(oi.quantity)::int AS quantity, SUM(oi.total_price) AS revenue FROM order_items oi JOIN orders o ON o.id=oi.order_id WHERE o.created_at >= ${dateFrom}::date AND o.created_at < (${dateTo}::date + INTERVAL '1 day') AND COALESCE(o.is_canceled,false) = false GROUP BY oi.product_name,o.source ORDER BY quantity DESC LIMIT 40`,
             sql`SELECT o.external_id,o.source,o.total_amount,o.status,o.payment_status,o.customer_province,o.created_at,COALESCE(c.name,o.source) AS channel_name, ARRAY_AGG(oi.product_name ORDER BY oi.total_price DESC NULLS LAST) AS products FROM orders o LEFT JOIN channels c ON c.id=o.channel_id LEFT JOIN order_items oi ON oi.order_id=o.id WHERE o.created_at >= ${dateFrom}::date AND o.created_at < (${dateTo}::date + INTERVAL '1 day') GROUP BY o.id,c.name ORDER BY o.created_at DESC LIMIT 10`,
             sql`SELECT DISTINCT ON (source) source, status, records_processed, last_date_synced, error_message, started_at, finished_at FROM sync_log ORDER BY source, started_at DESC`,
             sql`SELECT COUNT(*)::int AS total_leads, COUNT(*) FILTER (WHERE status='won')::int AS won_leads, COALESCE(SUM(estimated_value) FILTER (WHERE status='won'),0) AS won_revenue, COALESCE(SUM(estimated_value),0) AS pipeline_value FROM leads WHERE created_at >= ${dateFrom}::date AND created_at < (${dateTo}::date + INTERVAL '1 day')`,
