@@ -47,7 +47,7 @@ jobs:
           PERFIT_DAYS_BACK: '30'
 
   sync-google-ads:
-    name: Sync Google Ads
+    name: Sync Google Ads (via GA4 Sheet export)
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -61,13 +61,10 @@ jobs:
       - run: cd jobs && node sync-marketing.js google_ads
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          GOOGLE_ADS_CLIENT_ID: ${{ secrets.GOOGLE_ADS_CLIENT_ID }}
-          GOOGLE_ADS_CLIENT_SECRET: ${{ secrets.GOOGLE_ADS_CLIENT_SECRET }}
-          GOOGLE_ADS_REFRESH_TOKEN: ${{ secrets.GOOGLE_ADS_REFRESH_TOKEN }}
-          GOOGLE_ADS_DEVELOPER_TOKEN: ${{ secrets.GOOGLE_ADS_DEVELOPER_TOKEN }}
-          GOOGLE_ADS_CUSTOMER_ID: ${{ secrets.GOOGLE_ADS_CUSTOMER_ID }}
-          GOOGLE_ADS_LOGIN_CUSTOMER_ID: ${{ secrets.GOOGLE_ADS_LOGIN_CUSTOMER_ID }}
-          GOOGLE_ADS_DAYS_BACK: '30'
+          GA4_SPREADSHEET_ID: 1ldZHPTpoiN6OgyMy4zY2GYiYnNj9X6cgIk5Gqv8G40g
+          GA4_SHEET_NAME: ga4_marketing
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+          GOOGLE_ADS_DAYS_BACK: '90'
 
   sync-kommo:
     name: Sync Kommo CRM
