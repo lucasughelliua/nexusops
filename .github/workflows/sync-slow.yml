@@ -21,6 +21,7 @@ jobs:
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           KOMMO_SUBDOMAIN: ${{ secrets.KOMMO_SUBDOMAIN }}
+          KOMMO_LONG_LIVED_TOKEN: ${{ secrets.KOMMO_LONG_LIVED_TOKEN }}
           KOMMO_ACCESS_TOKEN: ${{ secrets.KOMMO_ACCESS_TOKEN }}
 
   sync-logistics:
