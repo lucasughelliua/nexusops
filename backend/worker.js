@@ -261,47 +261,45 @@ export default {
           GROUP BY source
         `;
 
-        const organic = await sql`
-          SELECT
-            source,
-            MAX(followers) AS followers,
-            MAX(fans) AS fans,
-            SUM(impressions) AS impressions,
-            SUM(reach) AS reach,
-            SUM(profile_views) AS profile_views,
-            SUM(website_clicks) AS website_clicks,
-            SUM(engagement) AS engagement,
-            SUM(interactions) AS interactions,
-            MAX(posts) AS posts
-          FROM meta_organic_daily
-          WHERE date BETWEEN ${dateFrom} AND ${dateTo}
-          GROUP BY source
-        `;
-
-        return json({ ok: true, date_from: dateFrom, date_to: dateTo, data: rows, organic });
+        // Meta orgánico/posts queda intencionalmente fuera del dashboard: solo campañas pagas.
+        return json({ ok: true, date_from: dateFrom, date_to: dateTo, data: rows, organic: [] });
       }
 
       // --------------------------------------------------------
       // META
       // --------------------------------------------------------
       if (path === '/api/v1/marketing/meta/campaigns' && req.method === 'GET') {
+        const { dateFrom, dateTo } = getDateRange(url);
+        const page = Math.max(parseInt(url.searchParams.get('page') || '1'), 1);
+        const perPage = Math.min(Math.max(parseInt(url.searchParams.get('per_page') || url.searchParams.get('limit') || '20'), 1), 100);
+        const offset = (page - 1) * perPage;
+        const countRows = await sql`
+          SELECT COUNT(*)::int AS total
+          FROM marketing_campaigns mc
+          WHERE mc.source='meta'
+        `;
         const rows = await sql`
           SELECT
-            mc.*,
+            mc.id, mc.external_id, mc.name, mc.status, mc.objective, mc.channel_id, mc.created_at, mc.synced_at,
             COALESCE(SUM(mm.spend),0) AS spend,
             COALESCE(SUM(mm.impressions),0) AS impressions,
             COALESCE(SUM(mm.clicks),0) AS clicks,
             COALESCE(SUM(mm.purchases),0) AS purchases,
             COALESCE(SUM(mm.purchase_value),0) AS purchase_value,
             COALESCE(SUM(mm.leads),0) AS leads,
+            CASE WHEN COALESCE(SUM(mm.impressions),0) > 0 THEN SUM(mm.clicks)::NUMERIC/SUM(mm.impressions)*100 ELSE 0 END AS ctr,
+            CASE WHEN COALESCE(SUM(mm.impressions),0) > 0 THEN SUM(mm.spend)::NUMERIC/SUM(mm.impressions)*1000 ELSE 0 END AS cpm,
+            CASE WHEN COALESCE(SUM(mm.clicks),0) > 0 THEN SUM(mm.spend)::NUMERIC/SUM(mm.clicks) ELSE 0 END AS cpc,
+            CASE WHEN COALESCE(SUM(mm.purchases),0) > 0 THEN SUM(mm.spend)::NUMERIC/SUM(mm.purchases) ELSE 0 END AS cpa,
             CASE WHEN COALESCE(SUM(mm.spend),0) > 0 THEN SUM(mm.purchase_value)/SUM(mm.spend) ELSE 0 END AS roas
           FROM marketing_campaigns mc
-          LEFT JOIN marketing_metrics mm ON mm.campaign_id=mc.id
+          LEFT JOIN marketing_metrics mm ON mm.campaign_id=mc.id AND mm.date BETWEEN ${dateFrom} AND ${dateTo}
           WHERE mc.source='meta'
           GROUP BY mc.id
-          ORDER BY mc.synced_at DESC
+          ORDER BY mc.synced_at DESC NULLS LAST, mc.created_at DESC NULLS LAST
+          LIMIT ${perPage} OFFSET ${offset}
         `;
-        return json({ ok: true, data: rows });
+        return json({ ok: true, page, per_page: perPage, total: countRows[0]?.total || 0, data: rows });
       }
 
       if (path === '/api/v1/marketing/meta/insights' && req.method === 'GET') {
@@ -375,9 +373,18 @@ export default {
       // PERFIT
       // --------------------------------------------------------
       if (path === '/api/v1/marketing/perfit/campaigns' && req.method === 'GET') {
+        const { dateFrom, dateTo } = getDateRange(url);
+        const page = Math.max(parseInt(url.searchParams.get('page') || '1'), 1);
+        const perPage = Math.min(Math.max(parseInt(url.searchParams.get('per_page') || url.searchParams.get('limit') || '20'), 1), 100);
+        const offset = (page - 1) * perPage;
+        const countRows = await sql`
+          SELECT COUNT(*)::int AS total
+          FROM marketing_campaigns mc
+          WHERE mc.source='perfit'
+        `;
         const rows = await sql`
           SELECT
-            mc.*,
+            mc.id, mc.external_id, mc.name, mc.status, mc.created_at, mc.synced_at,
             COALESCE(SUM(mm.sent),0) AS sent,
             COALESCE(SUM(mm.delivered),0) AS delivered,
             COALESCE(SUM(mm.unique_opens),0) AS unique_opens,
@@ -389,12 +396,13 @@ export default {
             CASE WHEN COALESCE(SUM(mm.delivered),0) > 0 THEN SUM(mm.unique_clicks_email)::NUMERIC / SUM(mm.delivered) * 100 ELSE 0 END AS click_rate,
             CASE WHEN COALESCE(SUM(mm.unique_opens),0) > 0 THEN SUM(mm.unique_clicks_email)::NUMERIC / SUM(mm.unique_opens) * 100 ELSE 0 END AS ctor
           FROM marketing_campaigns mc
-          LEFT JOIN marketing_metrics mm ON mm.campaign_id=mc.id
+          LEFT JOIN marketing_metrics mm ON mm.campaign_id=mc.id AND mm.date BETWEEN ${dateFrom} AND ${dateTo}
           WHERE mc.source='perfit'
           GROUP BY mc.id
-          ORDER BY mc.created_at DESC
+          ORDER BY mc.created_at DESC NULLS LAST, mc.synced_at DESC NULLS LAST
+          LIMIT ${perPage} OFFSET ${offset}
         `;
-        return json({ ok: true, data: rows });
+        return json({ ok: true, page, per_page: perPage, total: countRows[0]?.total || 0, data: rows });
       }
 
       if (path === '/api/v1/marketing/perfit/metrics' && req.method === 'GET') {
@@ -676,25 +684,34 @@ export default {
 
         if (path === '/api/v1/dashboard/summary') {
           const rows = await sql`
+            WITH filtered_orders AS (
+              SELECT DISTINCT o.*
+              FROM orders o
+              LEFT JOIN order_items oi ON oi.order_id = o.id
+              WHERE o.created_at::DATE BETWEEN ${dateFrom} AND ${dateTo}
+                AND (${f.channel} = 'all' OR o.source = ${f.channel} OR (${f.channel}='ml1' AND o.source IN ('meli_1','ml_1')) OR (${f.channel}='ml2' AND o.source IN ('meli_2','ml_2')))
+                AND (${f.province} = '' OR o.customer_province ILIKE '%' || ${f.province} || '%')
+                AND (${f.status} = '' OR o.status = ${f.status})
+                AND (${f.paymentStatus} = '' OR o.payment_status = ${f.paymentStatus})
+                AND (${f.brand} = '' OR oi.brand ILIKE '%' || ${f.brand} || '%')
+                AND (${f.category} = '' OR oi.category ILIKE '%' || ${f.category} || '%')
+                AND (${f.product} = '' OR oi.product_name ILIKE '%' || ${f.product} || '%')
+                AND (${f.sku} = '' OR oi.sku ILIKE '%' || ${f.sku} || '%')
+            ), item_units AS (
+              SELECT COALESCE(SUM(oi.quantity),0)::int AS units_sold
+              FROM order_items oi
+              JOIN filtered_orders fo ON fo.id = oi.order_id
+            )
             SELECT
-              COALESCE(SUM(o.total_amount), 0) AS total_revenue,
-              COALESCE(SUM(o.net_amount), 0) AS net_revenue,
-              COUNT(DISTINCT o.id)::int AS orders_count,
-              COALESCE(AVG(o.total_amount), 0) AS avg_ticket,
-              COALESCE(SUM(oi.quantity), 0)::int AS units_sold,
-              COUNT(DISTINCT o.id) FILTER (WHERE o.is_canceled)::int AS cancellations,
-              COUNT(DISTINCT o.id) FILTER (WHERE o.is_returned)::int AS returns
-            FROM orders o
-            LEFT JOIN order_items oi ON oi.order_id = o.id
-            WHERE o.created_at::DATE BETWEEN ${dateFrom} AND ${dateTo}
-              AND (${f.channel} = 'all' OR o.source = ${f.channel} OR (${f.channel}='ml1' AND o.source IN ('meli_1','ml_1')) OR (${f.channel}='ml2' AND o.source IN ('meli_2','ml_2')))
-              AND (${f.province} = '' OR o.customer_province ILIKE '%' || ${f.province} || '%')
-              AND (${f.status} = '' OR o.status = ${f.status})
-              AND (${f.paymentStatus} = '' OR o.payment_status = ${f.paymentStatus})
-              AND (${f.brand} = '' OR oi.brand ILIKE '%' || ${f.brand} || '%')
-              AND (${f.category} = '' OR oi.category ILIKE '%' || ${f.category} || '%')
-              AND (${f.product} = '' OR oi.product_name ILIKE '%' || ${f.product} || '%')
-              AND (${f.sku} = '' OR oi.sku ILIKE '%' || ${f.sku} || '%')
+              COALESCE(SUM(fo.total_amount), 0) AS total_revenue,
+              COALESCE(SUM(fo.net_amount), 0) AS net_revenue,
+              COUNT(*)::int AS orders_count,
+              COALESCE(AVG(fo.total_amount), 0) AS avg_ticket,
+              (SELECT units_sold FROM item_units) AS units_sold,
+              COUNT(*) FILTER (WHERE fo.is_canceled)::int AS cancellations,
+              COUNT(*) FILTER (WHERE fo.is_returned)::int AS returns,
+              0 AS conversion_rate
+            FROM filtered_orders fo
           `;
           return json({ ok: true, date_from: dateFrom, date_to: dateTo, data: rows[0] || {} });
         }
