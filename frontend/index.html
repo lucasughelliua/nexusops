@@ -1487,14 +1487,14 @@ function adminSave(){
 // API — conexión real a Cloudflare Worker
 // ============================================================
 const API_BASE = 'https://nexusops-api.lucasughelli.workers.dev/api/v1';
-const API_KEY = 'UA-KPI-ECOMMERCE';
+const API_KEY = localStorage.getItem('NEXUSOPS_API_KEY') || 'UA-KPI-ECOMMERCE';
 
 async function fetchAPI(path) {
   try {
     const res = await fetch(API_BASE + path, {
       headers: { 'x-api-key': API_KEY, 'cache-control': 'no-cache' }, cache: 'no-store'
     });
-    if (!res.ok) { console.error('API HTTP error', res.status, path, await res.text()); return null; }
+    if (!res.ok) { const txt = await res.text(); console.error('API HTTP error', res.status, path, txt); if (res.status === 401) console.error('NexusOps AUTH: el Worker rechazó la API key. Se corrigió en backend v5 permitiendo lecturas públicas.'); return null; }
     const payload = await res.json();
     if (payload && payload.ok === false) console.error('API payload error', path, payload.error);
     return payload;
