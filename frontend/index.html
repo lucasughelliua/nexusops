@@ -938,6 +938,7 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);min-height:1
             <tbody id="mktMetaTbody"></tbody>
           </table>
         </div>
+        <div id="mktMetaPager" style="display:flex;justify-content:flex-end;gap:8px;align-items:center;padding-top:10px;color:var(--text3);font-size:11px"></div>
       </div>
 
       <!-- PERFIT -->
@@ -973,6 +974,7 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);min-height:1
             <tbody id="mktPerfitTbody"></tbody>
           </table>
         </div>
+        <div id="mktPerfitPager" style="display:flex;justify-content:flex-end;gap:8px;align-items:center;padding-top:10px;color:var(--text3);font-size:11px"></div>
       </div>
 
       <!-- GOOGLE ADS -->
@@ -1881,7 +1883,7 @@ function productChannel(p) {
 
 async function renderExecutiveChannels() {
   // channels endpoint also uses date_from/date_to via execQuery()
-  let data = await fetchAPI('/metrics/channels?' + execQuery());
+  let data = await fetchAPI('/dashboard/channels?' + execQuery());
   let rows = Array.isArray(data) ? data : (data?.data || data?.channels || []);
 
   if (!rows.length) {
@@ -1896,9 +1898,19 @@ async function renderExecutiveChannels() {
 
   const colors = { 'VTEX':'#ef4444', 'MeLi #1':'#f59e0b', 'MeLi #2':'#14b8a6' };
   const totalRevenue = rows.reduce((a,r)=>a+Number(r.revenue || r.total_revenue || 0),0) || 1;
+  state.channels = { vtex:{revenue:0,orders:0,ticket:0,pct:0}, ml1:{revenue:0,orders:0,ticket:0,pct:0}, ml2:{revenue:0,orders:0,ticket:0,pct:0} };
+  rows.forEach(r => {
+    const name = normalizeChannelLabel(r.channel || r.channel_name || r.source || r.name);
+    const revenue = Number(r.revenue || r.total_revenue || 0);
+    const orders = Number(r.orders || r.orders_count || 0);
+    const ticket = Number(r.ticket || r.avg_ticket || (orders ? revenue / orders : 0));
+    const share = Number(r.pct || r.share || (revenue / totalRevenue * 100));
+    const key = name === 'VTEX' ? 'vtex' : name === 'MeLi #1' ? 'ml1' : name === 'MeLi #2' ? 'ml2' : null;
+    if(key) state.channels[key] = { revenue, orders, ticket, pct: Math.round(share) };
+  });
 
   document.getElementById('execChannelCards').innerHTML = rows.map(r => {
-    const name = normalizeChannelLabel(r.channel || r.source || r.name);
+    const name = normalizeChannelLabel(r.channel || r.channel_name || r.source || r.name);
     const revenue = Number(r.revenue || r.total_revenue || 0);
     const orders = Number(r.orders || r.orders_count || 0);
     const ticket = Number(r.ticket || r.avg_ticket || (orders ? revenue / orders : 0));
@@ -1924,7 +1936,7 @@ async function getTopProductsForExecutive() {
   if (execState.channel && execState.channel !== 'all') {
     params.set('channel', execState.channel);
   }
-  const data = await fetchAPI('/products/top?' + params.toString());
+  const data = await fetchAPI('/dashboard/top-products?' + params.toString());
   return Array.isArray(data) ? data : (data?.data || []);
 }
 
@@ -1964,33 +1976,35 @@ async function renderTopProductsByChannel() {
 async function renderKPIs() {
   // Cargar datos reales de la API — current period
   const { dateFrom, dateTo } = execPeriodDates();
-  const exec = await fetchAPI('/metrics/executive?' + execQuery());
+  const exec = await fetchAPI('/dashboard/summary?' + execQuery());
 
   // Compare period: only fetch if compare is ON
   let compare = null;
   if (execState.compare) {
-    compare = await fetchAPI('/metrics/executive?' + execQueryCompare());
+    compare = await fetchAPI('/dashboard/summary?' + execQueryCompare());
   }
 
   // Actualizar state con datos reales si llegaron
-  if (exec) {
-    state.revenue       = Number(exec.total_revenue || 0);
-    state.orders        = Number(exec.orders_count || 0);
-    state.ticket        = Number(exec.avg_ticket || 0);
-    state.units         = Number(exec.units_sold || 0);
-    state.cancellations = Number(exec.cancellations || 0);
-    state.returns       = Number(exec.returns || 0);
-    state.conversionRate = Number(exec.conversion_rate || 0);
+  const execData = exec?.data || exec || {};
+  if (execData) {
+    state.revenue       = Number(execData.total_revenue || 0);
+    state.orders        = Number(execData.orders_count || 0);
+    state.ticket        = Number(execData.avg_ticket || 0);
+    state.units         = Number(execData.units_sold || 0);
+    state.cancellations = Number(execData.cancellations || 0);
+    state.returns       = Number(execData.returns || 0);
+    state.conversionRate = Number(execData.conversion_rate || 0);
   }
 
   // Calcular deltas comparando período actual vs período de comparación
   let revDelta = '—', ordDelta = '—', tickDelta = '—';
   let revUp = true, ordUp = true, tickUp = true;
   if (compare && exec) {
-    const curRev = parseFloat(exec.total_revenue || 0);
-    const cmpRev = parseFloat(compare.total_revenue || 0);
-    const curOrd = parseInt(exec.orders_count || 0);
-    const cmpOrd = parseInt(compare.orders_count || 0);
+    const cmpData = compare?.data || compare || {};
+    const curRev = parseFloat(execData.total_revenue || 0);
+    const cmpRev = parseFloat(cmpData.total_revenue || 0);
+    const curOrd = parseInt(execData.orders_count || 0);
+    const cmpOrd = parseInt(cmpData.orders_count || 0);
     if (cmpRev > 0) {
       const rd = (curRev - cmpRev) / cmpRev * 100;
       revDelta = (rd>=0?'+':'')+rd.toFixed(1)+'%';
@@ -2075,16 +2089,18 @@ async function renderTopProducts() {
 
 async function renderCompareStats() {
   const [curr, prev] = await Promise.all([
-    fetchAPI('/metrics/executive?' + execQuery()),
-    execState.compare ? fetchAPI('/metrics/executive?' + execQueryCompare()) : Promise.resolve(null),
+    fetchAPI('/dashboard/summary?' + execQuery()),
+    execState.compare ? fetchAPI('/dashboard/summary?' + execQueryCompare()) : Promise.resolve(null),
   ]);
 
-  const curRev  = parseFloat(curr?.total_revenue || state.revenue);
-  const curOrd  = parseInt(curr?.orders_count || state.orders);
-  const curTick = parseFloat(curr?.avg_ticket || state.ticket);
-  const prevRev  = parseFloat(prev?.total_revenue || 0);
-  const prevOrd  = parseInt(prev?.orders_count || 0);
-  const prevTick = parseFloat(prev?.avg_ticket || 0);
+  const currData = curr?.data || curr || {};
+  const prevData = prev?.data || prev || {};
+  const curRev  = parseFloat(currData.total_revenue || state.revenue);
+  const curOrd  = parseInt(currData.orders_count || state.orders);
+  const curTick = parseFloat(currData.avg_ticket || state.ticket);
+  const prevRev  = parseFloat(prevData.total_revenue || 0);
+  const prevOrd  = parseInt(prevData.orders_count || 0);
+  const prevTick = parseFloat(prevData.avg_ticket || 0);
 
   const delta = (cur, pre) => {
     if (!execState.compare || pre === 0) return { d: '—', up: true };
@@ -2116,12 +2132,13 @@ function genOrder() { return null; }
 
 async function renderLivePage() {
   const today = new Date().toISOString().slice(0,10);
-  const exec = await fetchAPI('/metrics/executive?date_from=' + today + '&date_to=' + today);
-  if (exec) {
-    state.revenue = Number(exec.total_revenue || 0);
-    state.orders  = Number(exec.orders_count || 0);
-    state.ticket  = Number(exec.avg_ticket || 0);
-    state.units   = Number(exec.units_sold || 0);
+  const exec = await fetchAPI('/dashboard/summary?date_from=' + today + '&date_to=' + today);
+  const execLive = exec?.data || exec || {};
+  if (execLive) {
+    state.revenue = Number(execLive.total_revenue || 0);
+    state.orders  = Number(execLive.orders_count || 0);
+    state.ticket  = Number(execLive.avg_ticket || 0);
+    state.units   = Number(execLive.units_sold || 0);
   }
   const kpis = [
     { label: 'Revenue del día',  value: fmt(state.revenue), delta: 'hoy', up: true, color: '#3b82f6' },
@@ -2140,7 +2157,7 @@ async function renderLivePage() {
   await renderOrdersList();
 
   // Top productos reales
-  const topProds = await fetchAPI('/products/top?date_from=' + today + '&date_to=' + today + '&limit=10');
+  const topProds = await fetchAPI('/dashboard/top-products?date_from=' + today + '&date_to=' + today + '&limit=10');
   const prodList = Array.isArray(topProds) ? topProds : (topProds?.data || []);
   if (!prodList.length) {
     document.getElementById('liveRanking').innerHTML = emptyHTML();
@@ -2158,10 +2175,10 @@ async function renderLivePage() {
 }
 
 async function renderOrdersList() {
-  const data = await fetchAPI('/orders/live?limit=15');
+  const data = await fetchAPI('/dashboard/tv?date_from=' + new Date().toISOString().slice(0,10) + '&date_to=' + new Date().toISOString().slice(0,10));
   document.getElementById('orderTicker').textContent = state.orders + ' hoy';
 
-  const ordersToShow = (data && data.length) ? data : [];
+  const ordersToShow = Array.isArray(data) ? data : (data?.recent_orders || []);
   if (!ordersToShow.length) {
     document.getElementById('ordersList').innerHTML = emptyHTML();
     return;
@@ -2446,6 +2463,7 @@ function mktUpdateChannelVisibility(ch) {
 }
 
 function mktFilterMeta(f,el){
+  mktMetaPage = 1;
   mktState.metaFilter=f;
   el.parentElement.querySelectorAll('.period-tab').forEach(t=>t.classList.remove('active'));
   el.classList.add('active');
@@ -2466,6 +2484,8 @@ function getMktPerfitData(){
 
 
 let mktCharts={}, mktMetaData=null, mktPerfitData=null;
+let mktMetaPage = 1, mktPerfitPage = 1;
+const MKT_PAGE_SIZE = 20;
 let mktGoogleData=null, mktKommoData=null;
 let mktDataCacheKey = null; // tracks which period data was generated for
 
@@ -2480,10 +2500,11 @@ async function loadMktData() {
   mktKommoData = getKommoData();
 
   const qs = `date_from=${mktState.dateFrom}&date_to=${mktState.dateTo}`;
+  const qsPage20 = qs + '&per_page=100&limit=100';
   const [overview, metaCamps, perfitCamps, google, kommo] = await Promise.all([
     fetchAPI('/marketing/overview?' + qs),
-    fetchAPI('/marketing/meta/campaigns?' + qs),
-    fetchAPI('/marketing/perfit/campaigns?' + qs),
+    fetchAPI('/marketing/meta/campaigns?' + qsPage20),
+    fetchAPI('/marketing/perfit/campaigns?' + qsPage20),
     fetchAPI('/marketing/google-ads?' + qs),
     fetchAPI('/marketing/kommo?' + qs),
   ]);
@@ -2773,14 +2794,7 @@ async function renderMarketing() {
       <div style="font-size:10px;color:var(--text3);margin-top:2px;text-transform:uppercase;letter-spacing:.3px">${d.l}</div>
     </div>`).join('');
 
-    document.getElementById('mktPerfitCampCount').textContent=`(${p.camps.length} campañas)`;
-    document.getElementById('mktPerfitTbody').innerHTML=p.camps.map(c=>`
-      <tr>
-        <td style="text-align:left;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:500">${c.name}</td>
-        <td><span style="padding:2px 6px;border-radius:4px;font-size:10px;font-weight:600;${c.status==='active'?'background:rgba(16,185,129,.1);color:#10b981':'background:var(--bg3);color:var(--text3)'}">${c.status==='active'?'Activa':'Enviada'}</span></td>
-        <td>${numM(c.sent)}</td><td>${numM(c.delivered)}</td><td>${numM(c.opens)}</td>
-        <td>${c.openRate}%</td><td>${numM(c.clicks)}</td><td>${c.ctr}%</td><td>${c.unsubs}</td>
-      </tr>`).join('');
+    renderPerfitCampaignsTable();
   } else {
     document.getElementById('mktKpisPerfit').innerHTML='';
   }
@@ -2815,25 +2829,63 @@ async function renderMarketing() {
   renderMktCharts(meta, perfit, show);
 }
 
+function renderPager(elId, page, total, onClickName){
+  const el = document.getElementById(elId);
+  if(!el) return;
+  const pages = Math.max(1, Math.ceil(total / MKT_PAGE_SIZE));
+  el.innerHTML = `<button class="channel-btn" ${page<=1?'disabled style="opacity:.45"':''} onclick="${onClickName}(${page-1})">Anterior</button><span>Página ${page} de ${pages} · ${total} campañas</span><button class="channel-btn" ${page>=pages?'disabled style="opacity:.45"':''} onclick="${onClickName}(${page+1})">Siguiente</button>`;
+}
+function mktSetMetaPage(page){
+  const camps=mktState.metaFilter==='all'?mktMetaData.campaigns:mktMetaData.campaigns.filter(c=>c.status===mktState.metaFilter);
+  const pages=Math.max(1,Math.ceil(camps.length/MKT_PAGE_SIZE));
+  mktMetaPage=Math.min(Math.max(1,page),pages);
+  renderMetaCampaignsTable();
+}
+function mktSetPerfitPage(page){
+  const pages=Math.max(1,Math.ceil((mktPerfitData?.camps?.length||0)/MKT_PAGE_SIZE));
+  mktPerfitPage=Math.min(Math.max(1,page),pages);
+  renderPerfitCampaignsTable();
+}
 function renderMetaCampaignsTable(){
   if(!mktMetaData) return;
   const f=n=>'$'+Math.round(n||0).toLocaleString('es-AR');
   const camps=mktState.metaFilter==='all'?mktMetaData.campaigns:mktMetaData.campaigns.filter(c=>c.status===mktState.metaFilter);
+  const pages=Math.max(1,Math.ceil(camps.length/MKT_PAGE_SIZE));
+  if(mktMetaPage>pages) mktMetaPage=pages;
+  const pageItems=camps.slice((mktMetaPage-1)*MKT_PAGE_SIZE,mktMetaPage*MKT_PAGE_SIZE);
   document.getElementById('mktMetaCampCount').textContent=`(${camps.length} campañas)`;
-  document.getElementById('mktMetaTbody').innerHTML=camps.map(c=>`
+  document.getElementById('mktMetaTbody').innerHTML=pageItems.length ? pageItems.map(c=>`
     <tr>
       <td style="text-align:left;max-width:170px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:500">${c.name}</td>
       <td><span style="padding:2px 6px;border-radius:4px;font-size:10px;font-weight:600;${c.status==='ACTIVE'?'background:rgba(16,185,129,.1);color:#10b981':'background:rgba(245,158,11,.1);color:#f59e0b'}">${c.status==='ACTIVE'?'Activa':'Pausada'}</span></td>
       <td>${f(c.spend)}</td>
       <td>${c.impr>999?(c.impr/1000).toFixed(1)+'k':c.impr}</td>
       <td>${c.clicks>999?(c.clicks/1000).toFixed(1)+'k':c.clicks}</td>
-      <td>${c.ctr.toFixed(2)}%</td>
+      <td>${Number(c.ctr||0).toFixed(2)}%</td>
       <td>${f(c.cpm)}</td><td>${f(c.cpc)}</td>
       <td>${c.convs}</td>
       <td>${c.cpa>0?f(c.cpa):'—'}</td>
-      <td>${c.roas>0?c.roas+'x':'—'}</td>
-    </tr>`).join('');
+      <td>${c.roas>0?Number(c.roas).toFixed(2)+'x':'—'}</td>
+    </tr>`).join('') : `<tr><td colspan="11" style="text-align:center;padding:16px;color:var(--text3)">Sin campañas para este período.</td></tr>`;
+  renderPager('mktMetaPager',mktMetaPage,camps.length,'mktSetMetaPage');
 }
+function renderPerfitCampaignsTable(){
+  if(!mktPerfitData) return;
+  const camps=mktPerfitData.camps || [];
+  const pages=Math.max(1,Math.ceil(camps.length/MKT_PAGE_SIZE));
+  if(mktPerfitPage>pages) mktPerfitPage=pages;
+  const pageItems=camps.slice((mktPerfitPage-1)*MKT_PAGE_SIZE,mktPerfitPage*MKT_PAGE_SIZE);
+  document.getElementById('mktPerfitCampCount').textContent=`(${camps.length} campañas)`;
+  document.getElementById('mktPerfitTbody').innerHTML=pageItems.length ? pageItems.map(c=>`
+      <tr>
+        <td style="text-align:left;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:500">${c.name}</td>
+        <td><span style="padding:2px 6px;border-radius:4px;font-size:10px;font-weight:600;${String(c.status).toLowerCase()==='active'?'background:rgba(16,185,129,.1);color:#10b981':'background:var(--bg3);color:var(--text3)'}">${String(c.status).toLowerCase()==='active'?'Activa':'Enviada'}</span></td>
+        <td>${numM(c.sent)}</td><td>${numM(c.delivered)}</td><td>${numM(c.opens)}</td>
+        <td>${c.openRate}%</td><td>${numM(c.clicks)}</td><td>${c.ctr}%</td><td>${c.unsubs}</td>
+      </tr>`).join('') : `<tr><td colspan="9" style="text-align:center;padding:16px;color:var(--text3)">Sin campañas para este período.</td></tr>`;
+  renderPager('mktPerfitPager',mktPerfitPage,camps.length,'mktSetPerfitPage');
+}
+
 
 const MKT_CD={
   responsive:true,maintainAspectRatio:false,
@@ -3023,18 +3075,20 @@ function closeTV() {
 async function updateTV() {
   const tvToday = new Date().toISOString().slice(0,10);
   const [exec, channelsRes, topRes, liveRes, kommoRes, syncRes, mktRes] = await Promise.all([
-    fetchAPI('/metrics/executive?date_from=' + tvToday + '&date_to=' + tvToday),
-    fetchAPI('/metrics/channels?date_from=' + tvToday + '&date_to=' + tvToday),
-    fetchAPI('/products/top?date_from=' + tvToday + '&date_to=' + tvToday + '&limit=40'),
-    fetchAPI('/orders/live?limit=8'),
+    fetchAPI('/dashboard/tv?date_from=' + tvToday + '&date_to=' + tvToday),
+    fetchAPI('/dashboard/channels?date_from=' + tvToday + '&date_to=' + tvToday),
+    fetchAPI('/dashboard/top-products?date_from=' + tvToday + '&date_to=' + tvToday + '&limit=40'),
+    fetchAPI('/dashboard/tv?date_from=' + tvToday + '&date_to=' + tvToday),
     fetchAPI('/marketing/kommo?date_from=' + tvToday + '&date_to=' + tvToday),
-    fetchAPI('/sync/status'),
+    fetchAPI('/dashboard/tv?date_from=' + tvToday + '&date_to=' + tvToday),
     fetchAPI('/marketing/overview?date_from=' + tvToday + '&date_to=' + tvToday),
   ]);
-  const revenue = Number(exec?.total_revenue || 0);
-  const orders = Number(exec?.orders_count || 0);
-  const units = Number(exec?.units_sold || 0);
-  const ticket = Number(exec?.avg_ticket || 0);
+  const tvPayload = exec || {};
+  const execTv = tvPayload.summary || tvPayload.data || tvPayload || {};
+  const revenue = Number(execTv.total_revenue || 0);
+  const orders = Number(execTv.orders_count || 0);
+  const units = Number(execTv.units_sold || 0);
+  const ticket = Number(execTv.avg_ticket || 0);
   document.getElementById('tvRevenue').textContent = fmt(revenue);
   document.getElementById('tvOrders').textContent = orders;
   document.getElementById('tvTicket').textContent = fmt(ticket);
@@ -3042,7 +3096,7 @@ async function updateTV() {
   document.getElementById('tvDate').textContent = new Date().toLocaleString('es-AR',{weekday:'long',day:'numeric',month:'long',hour:'2-digit',minute:'2-digit'});
 
   const feed = document.getElementById('tvFeed');
-  const recent = Array.isArray(liveRes) ? liveRes : [];
+  const recent = Array.isArray(liveRes) ? liveRes : (liveRes?.recent_orders || []);
   feed.innerHTML = recent.length ? recent.map(o => {
     const name = o.products?.[0] || 'Orden';
     const ch = normalizeChannelLabel(o.channel_name || o.source);
@@ -3062,8 +3116,8 @@ async function updateTV() {
   const tvExtra = document.getElementById('tvExtraGrid');
   if (tvExtra) tvExtra.innerHTML = byChannel;
 
-  const channels = Array.isArray(channelsRes) ? channelsRes : (channelsRes?.data || []);
-  const mktRows = mktRes?.data || [];
+  const channels = Array.isArray(channelsRes) ? channelsRes : (channelsRes?.data || tvPayload.channels || []);
+  const mktRows = mktRes?.data || tvPayload.marketing || [];
   const spend = mktRows.reduce((a,r)=>a+Number(r.spend||0),0);
   const purchaseValue = mktRows.reduce((a,r)=>a+Number(r.purchase_value||r.conv_value||0),0);
   const roas = spend > 0 ? purchaseValue / spend : 0;
