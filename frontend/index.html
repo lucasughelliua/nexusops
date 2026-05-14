@@ -2039,12 +2039,17 @@ function mktPreset(val, el) {
   }
   const f=d=>new Date(d+'T12:00').toLocaleDateString('es-AR',{day:'2-digit',month:'short'});
   document.getElementById('mktDateLabel').textContent=`${f(mktState.dateFrom)} — ${f(mktState.dateTo)}`;
+  mktDataCacheKey = null; // Invalidate cache — period changed
   renderMarketing();
 }
 
 function mktApplyCustom(){
   const from=document.getElementById('mktFrom').value, to=document.getElementById('mktTo').value;
-  if(from&&to&&from<=to){ mktState.dateFrom=from; mktState.dateTo=to; renderMarketing(); }
+  if(from&&to&&from<=to){
+    mktState.dateFrom=from; mktState.dateTo=to;
+    mktDataCacheKey = null; // Invalidate cache
+    renderMarketing();
+  }
 }
 
 function mktToggleCompare(e){
@@ -2116,7 +2121,8 @@ function applyCompare(label, from, to) {
   document.getElementById('mktCompareLabel').textContent    = `${label} · ${f(from)} — ${f(to)}`;
   document.getElementById('mktComparePicker').classList.remove('open');
   document.getElementById('compareRangeInfo').textContent  = `Período: ${f(from)} → ${f(to)}`;
-  renderMarketing();
+  // Compare only updates UI labels — data stays the same, NO regeneration
+  renderMktKPIsOnly();
 }
 
 function mktClearCompare() {
@@ -2128,7 +2134,35 @@ function mktClearCompare() {
   btn.style.borderColor = 'var(--border2)';
   btn.style.color       = 'var(--text3)';
   document.getElementById('mktCompareBanner').style.display = 'none';
-  renderMarketing();
+  renderMktKPIsOnly(); // Only re-render KPI cards (compare badges), not charts
+}
+
+// Lightweight re-render: only KPI cards, no charts, no data regeneration
+function renderMktKPIsOnly() {
+  if(!mktMetaData || !mktPerfitData) return;
+  const meta=mktMetaData, perfit=mktPerfitData;
+  const fmtM=n=>'$'+Math.round(n||0).toLocaleString('es-AR');
+  const numM=n=>Math.round(n||0).toLocaleString('es-AR');
+  const compare=mktState.compareOn;
+  const t=meta.totals;
+  const totalSpend=t.spend, totalRev=t.revenue+287500;
+  const roas=totalSpend>0?(totalRev/totalSpend).toFixed(1):'—';
+  const cpa=t.convs>0?totalSpend/t.convs:0;
+  const kpisComb=[
+    {l:'Inversión total',v:fmtM(totalSpend),d:'+12.4%',up:true,c:'#1877f2'},
+    {l:'Revenue atribuido',v:fmtM(totalRev),d:'+19.2%',up:true,c:'#10b981'},
+    {l:'ROAS combinado',v:roas+'x',d:'+0.4x',up:true,c:'#8b5cf6'},
+    {l:'Total leads',v:numM(t.leads+563),d:'+22.1%',up:true,c:'#f59e0b'},
+    {l:'CPA Meta',v:fmtM(cpa),d:'-8.3%',up:true,c:'#14b8a6'},
+    {l:'Conv. rate',v:(t.convs/(t.clicks||1)*100).toFixed(2)+'%',d:'+0.3pp',up:true,c:'#ec4899'},
+  ];
+  document.getElementById('mktKpisCombined').innerHTML=kpisComb.map(k=>`
+    <div class="metric-card" style="--accent-color:${k.c}">
+      <div class="metric-label">${k.l}</div>
+      <div class="metric-value">${k.v}</div>
+      ${compare?'<div style="font-size:10.5px;color:var(--text3);margin-bottom:2px">Ant: —</div>':''}
+      <div class="metric-delta ${k.up?'delta-up':'delta-down'}">${k.up?'↑':'↓'} ${k.d}</div>
+    </div>`).join('');
 }
 
 // Close compare picker on outside click
@@ -2144,21 +2178,28 @@ function mktSetChannel(ch, el){
   mktState.channel=ch;
   document.querySelectorAll('.channel-btn').forEach(b=>b.className='channel-btn');
   el.classList.add(`active-${ch}`);
-  // Show/hide sections based on channel
+  // Only update section visibility — data does NOT change, do NOT regenerate
+  mktUpdateChannelVisibility(ch);
+}
+
+function mktUpdateChannelVisibility(ch) {
   const showAll = ch === 'all';
-  const sections = {
-    meta: document.getElementById('mktKpisMeta'),
-    perfit: document.getElementById('mktKpisPerfit'),
-    google_ads: document.getElementById('sectionGoogleAds'),
-    kommo: document.getElementById('sectionKommo'),
+  // Section containers to show/hide
+  const sectionMap = {
+    meta:       ['mktKpisMeta', 'sectionMetaCharts', 'sectionMetaCampaigns'],
+    perfit:     ['mktKpisPerfit', 'sectionPerfitCharts', 'sectionPerfitCampaigns'],
+    google_ads: ['sectionGoogleAds'],
+    kommo:      ['sectionKommo'],
   };
-  Object.keys(sections).forEach(k => {
-    if(sections[k]) {
-      const parent = sections[k].closest ? sections[k] : sections[k];
-      if(parent) parent.style.display = (showAll || ch === k) ? '' : 'none';
-    }
+  // Toggle each section
+  Object.entries(sectionMap).forEach(([key, ids]) => {
+    const visible = showAll || ch === key;
+    ids.forEach(id => {
+      // Find the element or its closest section wrapper
+      let el = document.getElementById(id);
+      if (el) el.style.display = visible ? '' : 'none';
+    });
   });
-  renderMarketing();
 }
 
 function mktFilterMeta(f,el){
@@ -2210,6 +2251,22 @@ function getMktPerfitData(){
 }
 
 let mktCharts={}, mktMetaData=null, mktPerfitData=null;
+let mktGoogleData=null, mktKommoData=null;
+let mktDataCacheKey = null; // tracks which period data was generated for
+
+// Generate all marketing data for current period ONCE and cache it
+function loadMktData() {
+  const cacheKey = `${mktState.dateFrom}|${mktState.dateTo}`;
+  if (mktDataCacheKey === cacheKey && mktMetaData && mktPerfitData && mktGoogleData && mktKommoData) {
+    return; // Data already generated for this period — do NOT regenerate
+  }
+  // Generate fresh data for new period
+  mktMetaData   = getMktMetaData();
+  mktPerfitData = getMktPerfitData();
+  mktGoogleData = getGoogleData();
+  mktKommoData  = getKommoData();
+  mktDataCacheKey = cacheKey;
+}
 
 function mktMkChart(id,type,data,opts){
   if(mktCharts[id]) mktCharts[id].destroy();
@@ -2218,9 +2275,177 @@ function mktMkChart(id,type,data,opts){
   mktCharts[id]=new Chart(ctx,{type,data,options:opts});
 }
 
+
+// ============================================================
+// GOOGLE ADS RENDER
+// ============================================================
+function getGoogleData(){
+  const n = mktState.days || 30;
+  const days = Array.from({length:n},(_,i)=>{
+    const d=new Date(mktState.dateFrom+'T12:00'); d.setDate(d.getDate()+i);
+    return d.toLocaleDateString('es-AR',{day:'2-digit',month:'2-digit'});
+  });
+  const spend = Array.from({length:n},()=>Math.floor(Math.random()*8000+2000));
+  const clicks = spend.map(v=>Math.floor(v*0.8+Math.random()*50));
+  const convs  = clicks.map(v=>Math.floor(v*0.04+Math.random()*2));
+  const revenue= convs.map(v=>v*Math.floor(Math.random()*12000+8000));
+  return {
+    days, spend, clicks, convs, revenue,
+    totals:{
+      spend:spend.reduce((a,b)=>a+b,0),
+      clicks:clicks.reduce((a,b)=>a+b,0),
+      impressions:Math.floor(Math.random()*500000+200000),
+      convs:convs.reduce((a,b)=>a+b,0),
+      revenue:revenue.reduce((a,b)=>a+b,0),
+    },
+    campaigns:[
+      {name:'Marca | Exact',spend:142000,clicks:8400,ctr:4.8,convs:210,cpa:676,roas:5.2},
+      {name:'Competencia | Broad',spend:98000,clicks:5200,ctr:2.1,convs:84,cpa:1167,roas:3.1},
+      {name:'Shopping | Calzado',spend:76000,clicks:3800,ctr:1.8,convs:68,cpa:1118,roas:3.8},
+      {name:'Display | Retargeting',spend:54000,clicks:1200,ctr:0.4,convs:32,cpa:1688,roas:2.4},
+      {name:'Performance Max',spend:210000,clicks:9800,ctr:3.2,convs:340,cpa:618,roas:6.1},
+    ],
+  };
+}
+
+function renderGoogleAds(g){
+  const fmtM=n=>'$'+Math.round(n||0).toLocaleString('es-AR');
+  const t=g.totals;
+  const roas=(t.spend>0?t.revenue/t.spend:0).toFixed(1);
+  const cpa=(t.convs>0?t.spend/t.convs:0);
+  const ctr=(t.clicks/(t.impressions||1)*100).toFixed(2);
+
+  const kpis=[
+    {l:'Inversión Google',v:fmtM(t.spend),d:'+9.4%',up:true,c:'#4285f4'},
+    {l:'Clics',v:Math.round(t.clicks).toLocaleString('es-AR'),d:'+7.2%',up:true,c:'#7baaf7'},
+    {l:'Impresiones',v:(t.impressions/1000).toFixed(0)+'k',d:'+4.1%',up:true,c:'#34a853'},
+    {l:'CTR',v:ctr+'%',d:'+0.3pp',up:true,c:'#14b8a6'},
+    {l:'Conversiones',v:Math.round(t.convs).toLocaleString('es-AR'),d:'+12.8%',up:true,c:'#10b981'},
+    {l:'ROAS',v:roas+'x',d:'+0.5x',up:true,c:'#8b5cf6'},
+    {l:'CPA',v:fmtM(cpa),d:'-6.3%',up:true,c:'#f59e0b'},
+    {l:'Revenue Google',v:fmtM(t.revenue),d:'+18.2%',up:true,c:'#ec4899'},
+  ];
+  document.getElementById('mktKpisGoogle').innerHTML=kpis.map(k=>`
+    <div class="metric-card" style="--accent-color:${k.c}">
+      <div class="metric-label">${k.l}</div><div class="metric-value">${k.v}</div>
+      <div class="metric-delta ${k.up?'delta-up':'delta-down'}">${k.up?'↑':'↓'} ${k.d}</div>
+    </div>`).join('');
+
+  // Campañas table
+  document.getElementById('mktGoogleTbody').innerHTML=g.campaigns.map(c=>`
+    <tr>
+      <td style="text-align:left;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:500">${c.name}</td>
+      <td>${fmtM(c.spend)}</td>
+      <td>${c.clicks.toLocaleString('es-AR')}</td>
+      <td>${c.ctr}%</td>
+      <td>${c.convs}</td>
+      <td>${fmtM(c.cpa)}</td>
+      <td>${c.roas}x</td>
+    </tr>`).join('');
+
+  // Chart
+  mktMkChart('mktGoogleChart','bar',{
+    labels:g.days,
+    datasets:[{data:g.spend,backgroundColor:'rgba(66,133,244,.4)',borderColor:'#4285f4',borderWidth:1,borderRadius:3}]
+  },{...MKT_CD,scales:{...MKT_CD.scales,y:{...MKT_CD.scales.y,ticks:{...MKT_CD.scales.y.ticks,callback:v=>'$'+Math.round(v/1000)+'k'}}}});
+}
+
+
+
+// ============================================================
+// KOMMO CRM RENDER
+// ============================================================
+function getKommoData(){
+  const n = mktState.days || 30;
+  const days = Array.from({length:n},(_,i)=>{
+    const d=new Date(mktState.dateFrom+'T12:00'); d.setDate(d.getDate()+i);
+    return d.toLocaleDateString('es-AR',{day:'2-digit',month:'2-digit'});
+  });
+  const newLeads = Array.from({length:n},()=>Math.floor(Math.random()*12+2));
+  const wonLeads = newLeads.map(v=>Math.floor(v*(0.15+Math.random()*0.1)));
+  return {
+    days, newLeads, wonLeads,
+    totals:{
+      newLeads:newLeads.reduce((a,b)=>a+b,0),
+      wonLeads:wonLeads.reduce((a,b)=>a+b,0),
+      openLeads:Math.floor(Math.random()*80+40),
+      revenue:wonLeads.reduce((a,b)=>a+b,0)*Math.floor(Math.random()*15000+8000),
+    },
+    funnel:[
+      {l:'Nuevos leads',n:0,pct:100,c:'#e8622a'},
+      {l:'Contactados',n:0,pct:78,c:'#f59e0b'},
+      {l:'En seguimiento',n:0,pct:54,c:'#3b82f6'},
+      {l:'Propuesta enviada',n:0,pct:32,c:'#8b5cf6'},
+      {l:'Negociación',n:0,pct:20,c:'#14b8a6'},
+      {l:'Ganados',n:0,pct:0,c:'#10b981'},
+    ],
+  };
+}
+
+function renderKommo(k){
+  const fmtM=n=>'$'+Math.round(n||0).toLocaleString('es-AR');
+  const t=k.totals;
+  const convRate=(t.wonLeads/(t.newLeads||1)*100).toFixed(1);
+
+  // Set actual numbers in funnel
+  k.funnel[0].n=t.newLeads;
+  k.funnel[1].n=Math.floor(t.newLeads*0.78);
+  k.funnel[2].n=Math.floor(t.newLeads*0.54);
+  k.funnel[3].n=Math.floor(t.newLeads*0.32);
+  k.funnel[4].n=Math.floor(t.newLeads*0.20);
+  k.funnel[5].n=t.wonLeads;
+  k.funnel[5].pct=(t.wonLeads/(t.newLeads||1)*100).toFixed(1);
+
+  const kpis=[
+    {l:'Nuevos leads',v:t.newLeads,d:'+14.2%',up:true,c:'#e8622a'},
+    {l:'Leads abiertos',v:t.openLeads,d:t.openLeads,up:true,c:'#f59e0b'},
+    {l:'Leads ganados',v:t.wonLeads,d:'+8.1%',up:true,c:'#10b981'},
+    {l:'Tasa de conv.',v:convRate+'%',d:'+1.2pp',up:true,c:'#3b82f6'},
+    {l:'Revenue CRM',v:fmtM(t.revenue),d:'+19.4%',up:true,c:'#8b5cf6'},
+    {l:'Revenue/lead',v:fmtM(t.wonLeads>0?t.revenue/t.wonLeads:0),d:'prom.',up:true,c:'#14b8a6'},
+  ];
+  document.getElementById('mktKpisKommo').innerHTML=kpis.map(k2=>`
+    <div class="metric-card" style="--accent-color:${k2.c}">
+      <div class="metric-label">${k2.l}</div><div class="metric-value">${k2.v}</div>
+      <div class="metric-delta ${k2.up?'delta-up':'delta-neutral'}">${k2.up?'↑':'→'} ${k2.d}</div>
+    </div>`).join('');
+
+  // Funnel
+  document.getElementById('mktKommoFunnel').innerHTML=k.funnel.map(f=>`
+    <div class="funnel-step">
+      <div class="funnel-label">${f.l}</div>
+      <div class="funnel-bar-wrap">
+        <div class="funnel-bar-fill" style="width:${Math.min(100,Number(f.pct))}%;background:${f.c}20;border-left:3px solid ${f.c}">
+          <span class="funnel-bar-label" style="color:${f.c};font-size:10px">${Number(f.pct).toFixed(1)}%</span>
+        </div>
+      </div>
+      <div class="funnel-count">${f.n.toLocaleString('es-AR')}</div>
+    </div>`).join('');
+
+  // Stats
+  document.getElementById('mktKommoStats').innerHTML=[
+    ['Tiempo prom. cierre','8.4 días'],
+    ['Ticket prom. CRM',fmtM(t.wonLeads>0?t.revenue/t.wonLeads:0)],
+    ['Revenue pipeline',fmtM(t.revenue*2.4)],
+    ['Leads perdidos',Math.floor(t.newLeads*0.2)],
+  ].map(([l,v])=>`<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border)">
+    <span style="font-size:11.5px;color:var(--text3)">${l}</span>
+    <span style="font-size:12.5px;font-family:var(--mono);font-weight:500">${v}</span>
+  </div>`).join('');
+
+  // Chart
+  mktMkChart('mktKommoChart','bar',{
+    labels:k.days,
+    datasets:[
+      {label:'Nuevos leads',data:k.newLeads,backgroundColor:'rgba(232,98,42,.4)',borderColor:'#e8622a',borderWidth:1,borderRadius:2},
+      {label:'Ganados',data:k.wonLeads,backgroundColor:'rgba(16,185,129,.5)',borderColor:'#10b981',borderWidth:1,borderRadius:2},
+    ]
+  },{...MKT_CD,plugins:{...MKT_CD.plugins,legend:{display:true,labels:{color:'#8b92a8',font:{size:11},boxWidth:12,boxHeight:4}}}});
+}
+
+
 function renderMarketing() {
-  mktMetaData=getMktMetaData();
-  mktPerfitData=getMktPerfitData();
+  loadMktData(); // Load data once per period — uses cache if period unchanged
   const meta=mktMetaData, perfit=mktPerfitData;
   const show=mktState.channel;
   const fmtM=n=>'$'+Math.round(n||0).toLocaleString('es-AR');
@@ -2340,11 +2565,10 @@ function renderMarketing() {
   }
 
   // ---- Google Ads ----
-  mktGoogleData=getGoogleData();
   renderGoogleAds(mktGoogleData);
 
   // ---- Kommo ----
-  const kommoData=getKommoData();
+  const kommoData=mktKommoData;
   renderKommo(kommoData);
 
   // ---- Canal eficiencia ----
@@ -2463,81 +2687,6 @@ function renderMktCharts(meta, perfit, show){
     scales:{...MKT_CD.scales,y:{...MKT_CD.scales.y,ticks:{...MKT_CD.scales.y.ticks,callback:v=>'$'+Math.round(v/1000)+'k'}}}});
 }
 
-// ============================================================
-// GOOGLE ADS RENDER
-// ============================================================
-function getGoogleData(){
-  const n = mktState.days || 30;
-  const days = Array.from({length:n},(_,i)=>{
-    const d=new Date(mktState.dateFrom+'T12:00'); d.setDate(d.getDate()+i);
-    return d.toLocaleDateString('es-AR',{day:'2-digit',month:'2-digit'});
-  });
-  const spend = Array.from({length:n},()=>Math.floor(Math.random()*8000+2000));
-  const clicks = spend.map(v=>Math.floor(v*0.8+Math.random()*50));
-  const convs  = clicks.map(v=>Math.floor(v*0.04+Math.random()*2));
-  const revenue= convs.map(v=>v*Math.floor(Math.random()*12000+8000));
-  return {
-    days, spend, clicks, convs, revenue,
-    totals:{
-      spend:spend.reduce((a,b)=>a+b,0),
-      clicks:clicks.reduce((a,b)=>a+b,0),
-      impressions:Math.floor(Math.random()*500000+200000),
-      convs:convs.reduce((a,b)=>a+b,0),
-      revenue:revenue.reduce((a,b)=>a+b,0),
-    },
-    campaigns:[
-      {name:'Marca | Exact',spend:142000,clicks:8400,ctr:4.8,convs:210,cpa:676,roas:5.2},
-      {name:'Competencia | Broad',spend:98000,clicks:5200,ctr:2.1,convs:84,cpa:1167,roas:3.1},
-      {name:'Shopping | Calzado',spend:76000,clicks:3800,ctr:1.8,convs:68,cpa:1118,roas:3.8},
-      {name:'Display | Retargeting',spend:54000,clicks:1200,ctr:0.4,convs:32,cpa:1688,roas:2.4},
-      {name:'Performance Max',spend:210000,clicks:9800,ctr:3.2,convs:340,cpa:618,roas:6.1},
-    ],
-  };
-}
-
-function renderGoogleAds(g){
-  const fmtM=n=>'$'+Math.round(n||0).toLocaleString('es-AR');
-  const t=g.totals;
-  const roas=(t.spend>0?t.revenue/t.spend:0).toFixed(1);
-  const cpa=(t.convs>0?t.spend/t.convs:0);
-  const ctr=(t.clicks/(t.impressions||1)*100).toFixed(2);
-
-  const kpis=[
-    {l:'Inversión Google',v:fmtM(t.spend),d:'+9.4%',up:true,c:'#4285f4'},
-    {l:'Clics',v:Math.round(t.clicks).toLocaleString('es-AR'),d:'+7.2%',up:true,c:'#7baaf7'},
-    {l:'Impresiones',v:(t.impressions/1000).toFixed(0)+'k',d:'+4.1%',up:true,c:'#34a853'},
-    {l:'CTR',v:ctr+'%',d:'+0.3pp',up:true,c:'#14b8a6'},
-    {l:'Conversiones',v:Math.round(t.convs).toLocaleString('es-AR'),d:'+12.8%',up:true,c:'#10b981'},
-    {l:'ROAS',v:roas+'x',d:'+0.5x',up:true,c:'#8b5cf6'},
-    {l:'CPA',v:fmtM(cpa),d:'-6.3%',up:true,c:'#f59e0b'},
-    {l:'Revenue Google',v:fmtM(t.revenue),d:'+18.2%',up:true,c:'#ec4899'},
-  ];
-  document.getElementById('mktKpisGoogle').innerHTML=kpis.map(k=>`
-    <div class="metric-card" style="--accent-color:${k.c}">
-      <div class="metric-label">${k.l}</div><div class="metric-value">${k.v}</div>
-      <div class="metric-delta ${k.up?'delta-up':'delta-down'}">${k.up?'↑':'↓'} ${k.d}</div>
-    </div>`).join('');
-
-  // Campañas table
-  document.getElementById('mktGoogleTbody').innerHTML=g.campaigns.map(c=>`
-    <tr>
-      <td style="text-align:left;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:500">${c.name}</td>
-      <td>${fmtM(c.spend)}</td>
-      <td>${c.clicks.toLocaleString('es-AR')}</td>
-      <td>${c.ctr}%</td>
-      <td>${c.convs}</td>
-      <td>${fmtM(c.cpa)}</td>
-      <td>${c.roas}x</td>
-    </tr>`).join('');
-
-  // Chart
-  mktMkChart('mktGoogleChart','bar',{
-    labels:g.days,
-    datasets:[{data:g.spend,backgroundColor:'rgba(66,133,244,.4)',borderColor:'#4285f4',borderWidth:1,borderRadius:3}]
-  },{...MKT_CD,scales:{...MKT_CD.scales,y:{...MKT_CD.scales.y,ticks:{...MKT_CD.scales.y.ticks,callback:v=>'$'+Math.round(v/1000)+'k'}}}});
-}
-
-let mktGoogleData=null;
 function mktSwitchGoogleChart(type,el){
   el.parentElement.querySelectorAll('.period-tab').forEach(t=>t.classList.remove('active'));
   el.classList.add('active');
@@ -2556,103 +2705,12 @@ function mktSwitchGoogleChart(type,el){
   mktCharts['mktGoogleChart'].update();
 }
 
-// ============================================================
-// KOMMO CRM RENDER
-// ============================================================
-function getKommoData(){
-  const n = mktState.days || 30;
-  const days = Array.from({length:n},(_,i)=>{
-    const d=new Date(mktState.dateFrom+'T12:00'); d.setDate(d.getDate()+i);
-    return d.toLocaleDateString('es-AR',{day:'2-digit',month:'2-digit'});
-  });
-  const newLeads = Array.from({length:n},()=>Math.floor(Math.random()*12+2));
-  const wonLeads = newLeads.map(v=>Math.floor(v*(0.15+Math.random()*0.1)));
-  return {
-    days, newLeads, wonLeads,
-    totals:{
-      newLeads:newLeads.reduce((a,b)=>a+b,0),
-      wonLeads:wonLeads.reduce((a,b)=>a+b,0),
-      openLeads:Math.floor(Math.random()*80+40),
-      revenue:wonLeads.reduce((a,b)=>a+b,0)*Math.floor(Math.random()*15000+8000),
-    },
-    funnel:[
-      {l:'Nuevos leads',n:0,pct:100,c:'#e8622a'},
-      {l:'Contactados',n:0,pct:78,c:'#f59e0b'},
-      {l:'En seguimiento',n:0,pct:54,c:'#3b82f6'},
-      {l:'Propuesta enviada',n:0,pct:32,c:'#8b5cf6'},
-      {l:'Negociación',n:0,pct:20,c:'#14b8a6'},
-      {l:'Ganados',n:0,pct:0,c:'#10b981'},
-    ],
-  };
-}
-
-function renderKommo(k){
-  const fmtM=n=>'$'+Math.round(n||0).toLocaleString('es-AR');
-  const t=k.totals;
-  const convRate=(t.wonLeads/(t.newLeads||1)*100).toFixed(1);
-
-  // Set actual numbers in funnel
-  k.funnel[0].n=t.newLeads;
-  k.funnel[1].n=Math.floor(t.newLeads*0.78);
-  k.funnel[2].n=Math.floor(t.newLeads*0.54);
-  k.funnel[3].n=Math.floor(t.newLeads*0.32);
-  k.funnel[4].n=Math.floor(t.newLeads*0.20);
-  k.funnel[5].n=t.wonLeads;
-  k.funnel[5].pct=(t.wonLeads/(t.newLeads||1)*100).toFixed(1);
-
-  const kpis=[
-    {l:'Nuevos leads',v:t.newLeads,d:'+14.2%',up:true,c:'#e8622a'},
-    {l:'Leads abiertos',v:t.openLeads,d:t.openLeads,up:true,c:'#f59e0b'},
-    {l:'Leads ganados',v:t.wonLeads,d:'+8.1%',up:true,c:'#10b981'},
-    {l:'Tasa de conv.',v:convRate+'%',d:'+1.2pp',up:true,c:'#3b82f6'},
-    {l:'Revenue CRM',v:fmtM(t.revenue),d:'+19.4%',up:true,c:'#8b5cf6'},
-    {l:'Revenue/lead',v:fmtM(t.wonLeads>0?t.revenue/t.wonLeads:0),d:'prom.',up:true,c:'#14b8a6'},
-  ];
-  document.getElementById('mktKpisKommo').innerHTML=kpis.map(k2=>`
-    <div class="metric-card" style="--accent-color:${k2.c}">
-      <div class="metric-label">${k2.l}</div><div class="metric-value">${k2.v}</div>
-      <div class="metric-delta ${k2.up?'delta-up':'delta-neutral'}">${k2.up?'↑':'→'} ${k2.d}</div>
-    </div>`).join('');
-
-  // Funnel
-  document.getElementById('mktKommoFunnel').innerHTML=k.funnel.map(f=>`
-    <div class="funnel-step">
-      <div class="funnel-label">${f.l}</div>
-      <div class="funnel-bar-wrap">
-        <div class="funnel-bar-fill" style="width:${Math.min(100,Number(f.pct))}%;background:${f.c}20;border-left:3px solid ${f.c}">
-          <span class="funnel-bar-label" style="color:${f.c};font-size:10px">${Number(f.pct).toFixed(1)}%</span>
-        </div>
-      </div>
-      <div class="funnel-count">${f.n.toLocaleString('es-AR')}</div>
-    </div>`).join('');
-
-  // Stats
-  document.getElementById('mktKommoStats').innerHTML=[
-    ['Tiempo prom. cierre','8.4 días'],
-    ['Ticket prom. CRM',fmtM(t.wonLeads>0?t.revenue/t.wonLeads:0)],
-    ['Revenue pipeline',fmtM(t.revenue*2.4)],
-    ['Leads perdidos',Math.floor(t.newLeads*0.2)],
-  ].map(([l,v])=>`<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border)">
-    <span style="font-size:11.5px;color:var(--text3)">${l}</span>
-    <span style="font-size:12.5px;font-family:var(--mono);font-weight:500">${v}</span>
-  </div>`).join('');
-
-  // Chart
-  mktMkChart('mktKommoChart','bar',{
-    labels:k.days,
-    datasets:[
-      {label:'Nuevos leads',data:k.newLeads,backgroundColor:'rgba(232,98,42,.4)',borderColor:'#e8622a',borderWidth:1,borderRadius:2},
-      {label:'Ganados',data:k.wonLeads,backgroundColor:'rgba(16,185,129,.5)',borderColor:'#10b981',borderWidth:1,borderRadius:2},
-    ]
-  },{...MKT_CD,plugins:{...MKT_CD.plugins,legend:{display:true,labels:{color:'#8b92a8',font:{size:11},boxWidth:12,boxHeight:4}}}});
-}
-
 function mktSwitchChart(type, el){
   el.parentElement.querySelectorAll('.period-tab').forEach(t=>t.classList.remove('active'));
   el.classList.add('active');
   if(!mktCharts['mktCombChart']||!mktMetaData) return;
   const m=mktMetaData;
-  const map={revenue:{data:m.revenue,color:'#10b981'},spend:{data:m.spend,color:'#1877f2'},leads:{data:Array.from({length:m.days.length},()=>Math.floor(Math.random()*60+20)),color:'#8b5cf6'}};
+  const map={revenue:{data:m.revenue,color:'#10b981'},spend:{data:m.spend,color:'#1877f2'},leads:{data:m.days.map((_,i)=>Math.round((mktMetaData.totals.leads||300)/m.days.length*(0.7+0.3*Math.sin(i*0.8))+1)),color:'#8b5cf6'}};
   const d=map[type];
   mktCharts['mktCombChart'].data.datasets=[{label:type,data:d.data,backgroundColor:d.color+'44',borderColor:d.color,borderWidth:1.5,borderRadius:2,fill:true,tension:.4,pointRadius:0,type:'line'}];
   mktCharts['mktCombChart'].update();
