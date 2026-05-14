@@ -601,6 +601,148 @@ export async function syncKommo() {
   }
 }
 
+
+// ============================================================
+// JOB: GOOGLE ADS desde Google Analytics (Sheet export)
+// Sheet ID: 1ldZHPTpoiN6OgyMy4zY2GYiYnNj9X6cgIk5Gqv8G40g
+// Hoja: ga4_marketing
+// Columnas: date, source, medium, campaign, sessions, users, conversions, revenue
+// ============================================================
+export async function syncGoogleAdsFromSheets() {
+  const source = 'google_ads';
+  const logId  = await startSyncLog(source);
+  try {
+    const spreadsheetId = requireEnv('GA4_SPREADSHEET_ID');
+    const sheetName     = process.env.GA4_SHEET_NAME || 'ga4_marketing';
+    const lastSync      = await getLastSync(source);
+    const daysBack      = int(process.env.GOOGLE_ADS_DAYS_BACK || 90);
+    const dateFrom      = lastSync
+      ? new Date(new Date(lastSync) - 86400000).toISOString().split('T')[0]
+      : daysAgoISO(daysBack);
+
+    console.log(`[GA4 Sheets] Sincronizando desde ${dateFrom}`);
+    console.log(`[GA4 Sheets] Sheet: ${spreadsheetId} / ${sheetName}`);
+
+    // Fetch via Google Sheets API using Service Account
+    const { GoogleAuth } = await import('google-auth-library');
+    const { google }     = await import('googleapis');
+
+    const serviceAccountJson = process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
+    if (!serviceAccountJson) throw new Error('Falta GOOGLE_SERVICE_ACCOUNT_JSON');
+
+    const auth = new GoogleAuth({
+      credentials: JSON.parse(serviceAccountJson),
+      scopes: ['https://www.googleapis.com/auth/spreadsheets.readonly'],
+    });
+    const sheets = google.sheets({ version: 'v4', auth });
+
+    // Read header row
+    const headerRes = await sheets.spreadsheets.values.get({
+      spreadsheetId,
+      range: `${sheetName}!A1:Z1`,
+    });
+    const headers = (headerRes.data.values?.[0] || []).map(h => h.toLowerCase().trim());
+    console.log('[GA4 Sheets] Headers:', headers.join(' | '));
+
+    // Column mapping (flexible)
+    const col = (...names) => {
+      for (const n of names) {
+        const i = headers.indexOf(n.toLowerCase());
+        if (i >= 0) return i;
+      }
+      return -1;
+    };
+
+    const iDate       = col('date');
+    const iSource     = col('source', 'session source');
+    const iMedium     = col('medium', 'session medium');
+    const iCampaign   = col('campaign', 'campaign name', 'session campaign');
+    const iSessions   = col('sessions', 'sesiones');
+    const iUsers      = col('users', 'total users', 'usuarios');
+    const iConv       = col('conversions', 'conversiones');
+    const iRevenue    = col('revenue', 'purchase revenue', 'ingresos');
+
+    if (iDate < 0) throw new Error('No se encontró columna "date" en el sheet');
+
+    // Read all data in batches of 1000
+    const channelId = await getOrCreateChannel('Google Ads', 'other', 'ga4_sheets');
+    let processed = 0, skipped = 0, startRow = 2;
+
+    while (true) {
+      const range = `${sheetName}!A${startRow}:Z${startRow + 999}`;
+      const res   = await sheets.spreadsheets.values.get({ spreadsheetId, range });
+      const rows  = res.data.values || [];
+      if (!rows.length) break;
+
+      for (const row of rows) {
+        if (!row[iDate]) continue;
+
+        // Parse date: YYYYMMDD → YYYY-MM-DD
+        const rawDate = String(row[iDate] || '').trim();
+        let date;
+        if (/^\d{8}$/.test(rawDate)) {
+          date = `${rawDate.slice(0,4)}-${rawDate.slice(4,6)}-${rawDate.slice(6,8)}`;
+        } else if (/^\d{4}-\d{2}-\d{2}$/.test(rawDate)) {
+          date = rawDate;
+        } else {
+          skipped++;
+          continue;
+        }
+
+        if (date < dateFrom) { skipped++; continue; }
+
+        // Only include Google Ads traffic (source=google, medium=cpc/paid)
+        const srcVal = iSource >= 0 ? String(row[iSource] || '').toLowerCase() : '';
+        const medVal = iMedium >= 0 ? String(row[iMedium] || '').toLowerCase() : '';
+        const isGAds = srcVal.includes('google') && ['cpc','paid','paid_search','ppc','paidsearch'].some(m => medVal.includes(m));
+        if (!isGAds) { skipped++; continue; }
+
+        const campaignName = iCampaign >= 0 ? (row[iCampaign] || 'Google Ads sin campaña') : 'Google Ads';
+        const externalId   = `ga4_${campaignName}`.toLowerCase().replace(/[^a-z0-9_]+/g, '_').slice(0, 200);
+        const sessions     = int(row[iSessions] || 0);
+        const users        = int(row[iUsers]    || 0);
+        const conversions  = num(row[iConv]     || 0);
+        const revenue      = num(row[iRevenue]  || 0);
+
+        // Negative revenue (returns) — keep as-is
+        const campaignId = await upsertCampaign({
+          external_id: externalId,
+          source,
+          channel_id: channelId,
+          name: campaignName,
+          status: 'active',
+          objective: 'ga4_attribution',
+          created_at: new Date(date).toISOString(),
+          updated_at: new Date().toISOString(),
+        });
+
+        await upsertMetrics({
+          campaign_id: campaignId,
+          source,
+          date,
+          reach: users,
+          clicks: sessions,
+          conversions,
+          conv_value: Math.max(0, revenue), // ignore negative for value
+          revenue_attr: Math.max(0, revenue),
+          leads: Math.round(conversions),
+        });
+        processed++;
+      }
+
+      console.log(`[GA4 Sheets] Filas ${startRow}-${startRow+rows.length-1}: ${processed} procesadas, ${skipped} omitidas`);
+      startRow += 1000;
+      if (rows.length < 1000) break;
+    }
+
+    await endSyncLog(logId, { status: 'success', records: processed, created: processed, lastDate: todayISO() });
+    console.log(`[GA4 Sheets] ✓ ${processed} registros. Omitidos: ${skipped}`);
+  } catch (e) {
+    await endSyncLog(logId, { status: 'error', error: e.message });
+    throw e;
+  }
+}
+
 // ============================================================
 // ENTRYPOINT
 // ============================================================
@@ -610,7 +752,7 @@ const job = process.argv[2];
     const daysBack = int(process.env.META_DAYS_BACK || 30);
     if      (job === 'meta_full')  await syncMetaAds(daysBack);
     else if (job === 'perfit')     await syncPerfit();
-    else if (job === 'google_ads') await syncGoogleAds();
+    else if (job === 'google_ads') await syncGoogleAdsFromSheets(); // Uses GA4 Sheet export
     else if (job === 'kommo')      await syncKommo();
     else if (job === 'all') {
       await syncMetaAds(daysBack);
