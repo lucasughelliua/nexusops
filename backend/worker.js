@@ -5239,7 +5239,7 @@ function json(data, status = 200) {
     headers: {
       "Content-Type": "application/json",
       "Access-Control-Allow-Origin": "*",
-      "Access-Control-Allow-Headers": "Content-Type, x-api-key, x-session-token",
+      "Access-Control-Allow-Headers": "Content-Type, x-api-key, x-session-token, authorization, cache-control, pragma",
       "Access-Control-Allow-Methods": "GET,POST,PATCH,DELETE,OPTIONS"
     }
   });
@@ -5254,7 +5254,7 @@ function requireApiKey(req, env) {
 }
 function isPublicReadEndpoint(path, method) {
   if (method !== "GET") return false;
-  return path === "/api/v1/debug/data-health" || path === "/api/v1/sync/status" || path === "/api/v1/orders/live" || path.startsWith("/api/v1/dashboard/") || path.startsWith("/api/v1/metrics/") || path.startsWith("/api/v1/products/") || path.startsWith("/api/v1/marketing/");
+  return path === "/api/v1/debug/data-health" || path === "/api/v1/debug/dashboard-smoke" || path === "/api/v1/sync/status" || path === "/api/v1/orders/live" || path.startsWith("/api/v1/dashboard/") || path.startsWith("/api/v1/metrics/") || path.startsWith("/api/v1/products/") || path.startsWith("/api/v1/marketing/");
 }
 async function bodyJson(req) {
   try {
@@ -5847,8 +5847,8 @@ var worker_default = {
         const limit = Math.min(parseInt(url.searchParams.get("limit") || "50"), 200);
         if (path === "/api/v1/dashboard/summary") {
           const rows = await sql`
-            WITH filtered_orders AS (
-              SELECT DISTINCT o.*
+            WITH matched_order_ids AS (
+              SELECT DISTINCT o.id
               FROM orders o
               LEFT JOIN order_items oi ON oi.order_id = o.id
               WHERE o.created_at >= ${dateFrom}::date AND o.created_at < (${dateTo}::date + INTERVAL '1 day')
@@ -5860,6 +5860,10 @@ var worker_default = {
                 AND (${f.category} = '' OR oi.category ILIKE '%' || ${f.category} || '%')
                 AND (${f.product} = '' OR oi.product_name ILIKE '%' || ${f.product} || '%')
                 AND (${f.sku} = '' OR oi.sku ILIKE '%' || ${f.sku} || '%')
+            ), filtered_orders AS (
+              SELECT o.id, o.source, o.channel_id, o.status, o.payment_status, o.total_amount, o.net_amount, o.items_count, o.customer_province, COALESCE(o.is_canceled,false) AS is_canceled, COALESCE(o.is_returned,false) AS is_returned, o.created_at
+              FROM orders o
+              JOIN matched_order_ids mo ON mo.id = o.id
             ), item_units AS (
               SELECT COALESCE(SUM(oi.quantity),0)::int AS units_sold
               FROM order_items oi
@@ -5909,19 +5913,28 @@ var worker_default = {
         }
         if (path === "/api/v1/dashboard/timeseries") {
           const rows = await sql`
+            WITH filtered_orders AS (
+              SELECT id, created_at::DATE AS date, source, total_amount
+              FROM orders
+              WHERE created_at >= ${dateFrom}::date AND created_at < (${dateTo}::date + INTERVAL '1 day')
+                AND COALESCE(is_canceled,false) = false
+                AND (${f.channel} = 'all' OR source = ${f.channel} OR (${f.channel}='ml1' AND source IN ('meli_1','ml_1')) OR (${f.channel}='ml2' AND source IN ('meli_2','ml_2')))
+            ), item_units AS (
+              SELECT fo.date, fo.source, COALESCE(SUM(oi.quantity),0)::int AS units_sold
+              FROM filtered_orders fo
+              LEFT JOIN order_items oi ON oi.order_id = fo.id
+              GROUP BY fo.date, fo.source
+            )
             SELECT
-              o.created_at::DATE AS date,
-              o.source,
-              COALESCE(SUM(o.total_amount),0) AS revenue,
-              COUNT(DISTINCT o.id)::int AS orders_count,
-              COALESCE(SUM(oi.quantity),0)::int AS units_sold
-            FROM orders o
-            LEFT JOIN order_items oi ON oi.order_id = o.id
-            WHERE o.created_at >= ${dateFrom}::date AND o.created_at < (${dateTo}::date + INTERVAL '1 day')
-              AND COALESCE(o.is_canceled,false) = false
-              AND (${f.channel} = 'all' OR o.source = ${f.channel} OR (${f.channel}='ml1' AND o.source IN ('meli_1','ml_1')) OR (${f.channel}='ml2' AND o.source IN ('meli_2','ml_2')))
-            GROUP BY o.created_at::DATE, o.source
-            ORDER BY date ASC, revenue DESC
+              fo.date,
+              fo.source,
+              COALESCE(SUM(fo.total_amount),0) AS revenue,
+              COUNT(*)::int AS orders_count,
+              COALESCE(MAX(iu.units_sold),0)::int AS units_sold
+            FROM filtered_orders fo
+            LEFT JOIN item_units iu ON iu.date = fo.date AND iu.source = fo.source
+            GROUP BY fo.date, fo.source
+            ORDER BY fo.date ASC, revenue DESC
           `;
           return json({ ok: true, data: rows });
         }
@@ -5974,6 +5987,19 @@ var worker_default = {
             sql`SELECT source, COALESCE(SUM(spend),0) AS spend, COALESCE(SUM(conv_value),0) AS revenue, COALESCE(SUM(conversions),0) AS conversions, COALESCE(SUM(leads),0) AS leads FROM marketing_metrics WHERE date >= ${dateFrom}::date AND date <= ${dateTo}::date GROUP BY source`
           ]);
           return json({ ok: true, date_from: dateFrom, date_to: dateTo, summary: summary[0], channels, top_products: top, recent_orders: recent, sync, kommo: kommo[0], marketing });
+        }
+      }
+      if (path === "/api/v1/debug/dashboard-smoke" && req.method === "GET") {
+        try {
+          const { dateFrom, dateTo } = getDateRange(url);
+          const [summary, channels, top] = await Promise.all([
+            sql`SELECT COALESCE(SUM(total_amount),0) AS total_revenue, COUNT(*)::int AS orders_count, COALESCE(AVG(total_amount),0) AS avg_ticket, COALESCE(SUM(items_count),0)::int AS units_sold FROM orders WHERE created_at >= ${dateFrom}::date AND created_at < (${dateTo}::date + INTERVAL '1 day') AND COALESCE(is_canceled,false) = false`,
+            sql`SELECT source, COALESCE(SUM(total_amount),0) AS revenue, COUNT(*)::int AS orders_count FROM orders WHERE created_at >= ${dateFrom}::date AND created_at < (${dateTo}::date + INTERVAL '1 day') AND COALESCE(is_canceled,false) = false GROUP BY source ORDER BY revenue DESC`,
+            sql`SELECT oi.product_name, o.source, SUM(oi.quantity)::int AS quantity, SUM(oi.total_price) AS revenue FROM order_items oi JOIN orders o ON o.id=oi.order_id WHERE o.created_at >= ${dateFrom}::date AND o.created_at < (${dateTo}::date + INTERVAL '1 day') AND COALESCE(o.is_canceled,false)=false GROUP BY oi.product_name,o.source ORDER BY quantity DESC LIMIT 10`
+          ]);
+          return json({ ok: true, date_from: dateFrom, date_to: dateTo, summary: summary[0], channels, top_products: top });
+        } catch (e) {
+          return json({ ok: false, error: e.message }, 500);
         }
       }
       if (path === "/api/v1/debug/data-health" && req.method === "GET") {
