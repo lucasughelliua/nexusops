@@ -393,6 +393,254 @@ export default {
         return json({ ok: true, data: rows });
       }
 
+
+      // --------------------------------------------------------
+      // PRODUCTOS TOP (desde order_items reales)
+      // --------------------------------------------------------
+      if ((path === '/api/v1/products/top' || path === '/api/v1/products/top-by-channel') && req.method === 'GET') {
+        const { dateFrom, dateTo } = getDateRange(url);
+        const channel = url.searchParams.get('channel') || 'all';
+        const limit   = parseInt(url.searchParams.get('limit') || '30');
+        const byChannel = path.includes('top-by-channel');
+
+        let rows;
+        try {
+          if (channel !== 'all') {
+            rows = await sql`
+              SELECT
+                oi.product_name,
+                o.source AS source,
+                SUM(oi.quantity) AS quantity,
+                SUM(oi.total_price) AS revenue,
+                COUNT(DISTINCT o.id) AS order_count
+              FROM order_items oi
+              JOIN orders o ON o.id = oi.order_id
+              WHERE o.created_at::DATE BETWEEN ${dateFrom} AND ${dateTo}
+                AND NOT o.is_canceled
+                AND o.source = ${channel}
+              GROUP BY oi.product_name, o.source
+              ORDER BY quantity DESC
+              LIMIT ${limit}
+            `;
+          } else {
+            rows = await sql`
+              SELECT
+                oi.product_name,
+                o.source AS source,
+                SUM(oi.quantity) AS quantity,
+                SUM(oi.total_price) AS revenue,
+                COUNT(DISTINCT o.id) AS order_count
+              FROM order_items oi
+              JOIN orders o ON o.id = oi.order_id
+              WHERE o.created_at::DATE BETWEEN ${dateFrom} AND ${dateTo}
+                AND NOT o.is_canceled
+              GROUP BY oi.product_name, o.source
+              ORDER BY quantity DESC
+              LIMIT ${limit}
+            `;
+          }
+        } catch(e) {
+          return json({ ok: false, error: e.message, data: [] });
+        }
+        return json({ ok: true, data: rows || [] });
+      }
+
+      // --------------------------------------------------------
+      // MÉTRICAS EJECUTIVAS (órdenes históricas + hoy)
+      // --------------------------------------------------------
+      if (path === '/api/v1/metrics/executive' && req.method === 'GET') {
+        const { dateFrom, dateTo } = getDateRange(url);
+        try {
+          const rows = await sql`
+            SELECT
+              COALESCE(SUM(o.total_amount), 0) AS total_revenue,
+              COALESCE(SUM(o.net_amount), 0) AS net_revenue,
+              COUNT(*)::int AS orders_count,
+              COALESCE(AVG(o.total_amount), 0) AS avg_ticket,
+              COALESCE(SUM(oi.quantity), 0) AS units_sold,
+              COUNT(*) FILTER (WHERE o.is_canceled)::int AS cancellations,
+              COUNT(*) FILTER (WHERE o.is_returned)::int AS returns
+            FROM orders o
+            LEFT JOIN order_items oi ON oi.order_id = o.id
+            WHERE o.created_at::DATE BETWEEN ${dateFrom} AND ${dateTo}
+              AND NOT o.is_canceled
+          `;
+          return json(rows[0] || {});
+        } catch(e) {
+          return json({ error: e.message }, 500);
+        }
+      }
+
+      if (path === '/api/v1/metrics/executive/compare' && req.method === 'GET') {
+        const { dateFrom, dateTo } = getDateRange(url);
+        try {
+          const rows = await sql`
+            WITH current AS (
+              SELECT
+                COALESCE(SUM(total_amount), 0) AS revenue,
+                COUNT(*)::int AS orders,
+                COALESCE(AVG(total_amount), 0) AS ticket
+              FROM orders
+              WHERE created_at::DATE BETWEEN ${dateFrom} AND ${dateTo}
+                AND NOT is_canceled
+            ),
+            previous AS (
+              SELECT
+                COALESCE(SUM(total_amount), 0) AS revenue,
+                COUNT(*)::int AS orders
+              FROM orders
+              WHERE created_at::DATE BETWEEN
+                (${dateFrom}::date - (${dateTo}::date - ${dateFrom}::date + 1))
+                AND (${dateFrom}::date - 1)
+                AND NOT is_canceled
+            )
+            SELECT
+              c.revenue AS today_revenue,
+              c.orders AS today_orders,
+              c.ticket AS today_ticket,
+              p.revenue AS yesterday_revenue,
+              p.orders AS yesterday_orders,
+              CASE WHEN p.revenue > 0 THEN ROUND((c.revenue - p.revenue) / p.revenue * 100, 2) ELSE 0 END AS revenue_delta_pct,
+              CASE WHEN p.orders > 0 THEN ROUND((c.orders - p.orders)::NUMERIC / p.orders * 100, 2) ELSE 0 END AS orders_delta_pct
+            FROM current c, previous p
+          `;
+          return json(rows[0] || {});
+        } catch(e) {
+          return json({ error: e.message }, 500);
+        }
+      }
+
+      if (path === '/api/v1/metrics/channels' && req.method === 'GET') {
+        const { dateFrom, dateTo } = getDateRange(url);
+        try {
+          const rows = await sql`
+            SELECT
+              o.source,
+              c.name AS channel_name,
+              COALESCE(SUM(o.total_amount), 0) AS revenue,
+              COUNT(*)::int AS orders_count,
+              COALESCE(AVG(o.total_amount), 0) AS avg_ticket,
+              COUNT(*) FILTER (WHERE o.is_canceled)::int AS cancellations
+            FROM orders o
+            LEFT JOIN channels c ON c.id = o.channel_id
+            WHERE o.created_at::DATE BETWEEN ${dateFrom} AND ${dateTo}
+              AND NOT o.is_canceled
+            GROUP BY o.source, c.name
+            ORDER BY revenue DESC
+          `;
+          return json({ ok: true, data: rows });
+        } catch(e) {
+          return json({ ok: false, error: e.message, data: [] });
+        }
+      }
+
+      if (path === '/api/v1/orders/live' && req.method === 'GET') {
+        const limit = Math.min(parseInt(url.searchParams.get('limit') || '20'), 50);
+        try {
+          const rows = await sql`
+            SELECT
+              o.external_id,
+              o.source,
+              o.total_amount,
+              o.status,
+              o.payment_status,
+              o.customer_province,
+              o.created_at,
+              c.name AS channel_name,
+              ARRAY_AGG(oi.product_name ORDER BY oi.total_price DESC NULLS LAST) AS products
+            FROM orders o
+            LEFT JOIN channels c ON c.id = o.channel_id
+            LEFT JOIN order_items oi ON oi.order_id = o.id
+            WHERE o.created_at >= NOW() - INTERVAL '7 days'
+            GROUP BY o.id, c.name
+            ORDER BY o.created_at DESC
+            LIMIT ${limit}
+          `;
+          return json(rows);
+        } catch(e) {
+          return json([]);
+        }
+      }
+
+      if (path === '/api/v1/sync/status' && req.method === 'GET') {
+        try {
+          const rows = await sql`
+            SELECT DISTINCT ON (source)
+              source, started_at, finished_at, records_processed,
+              last_date_synced, status, error_message
+            FROM sync_log
+            ORDER BY source, started_at DESC
+          `;
+          return json(rows);
+        } catch(e) {
+          return json([]);
+        }
+      }
+
+      // --------------------------------------------------------
+      // GOOGLE ADS desde Google Sheets (GA4 export)
+      // --------------------------------------------------------
+      if (path === '/api/v1/marketing/google-ads' && req.method === 'GET') {
+        const { dateFrom, dateTo } = getDateRange(url);
+        try {
+          const rows = await sql`
+            SELECT
+              mc.name AS campaign_name,
+              mc.status,
+              SUM(mm.clicks) AS clicks,
+              SUM(mm.reach) AS sessions,
+              SUM(mm.conversions) AS conversions,
+              SUM(mm.conv_value) AS revenue,
+              SUM(mm.spend) AS spend,
+              CASE WHEN SUM(mm.spend) > 0 THEN SUM(mm.conv_value)/SUM(mm.spend) ELSE 0 END AS roas,
+              CASE WHEN SUM(mm.clicks) > 0 THEN SUM(mm.conversions)/SUM(mm.clicks)*100 ELSE 0 END AS conv_rate
+            FROM marketing_campaigns mc
+            JOIN marketing_metrics mm ON mm.campaign_id = mc.id
+            WHERE mc.source = 'google_ads'
+              AND mm.date BETWEEN ${dateFrom} AND ${dateTo}
+            GROUP BY mc.id, mc.name, mc.status
+            ORDER BY revenue DESC
+          `;
+          return json({ ok: true, data: rows });
+        } catch(e) {
+          return json({ ok: false, error: e.message, data: [] });
+        }
+      }
+
+      // --------------------------------------------------------
+      // KOMMO CRM metrics
+      // --------------------------------------------------------
+      if (path === '/api/v1/marketing/kommo' && req.method === 'GET') {
+        const { dateFrom, dateTo } = getDateRange(url);
+        try {
+          const summary = await sql`
+            SELECT
+              COUNT(*) FILTER (WHERE status = 'open')::int AS open_leads,
+              COUNT(*) FILTER (WHERE status = 'won')::int AS won_leads,
+              COUNT(*) FILTER (WHERE status = 'lost')::int AS lost_leads,
+              COUNT(*)::int AS total_leads,
+              COALESCE(SUM(estimated_value) FILTER (WHERE status = 'won'), 0) AS won_revenue,
+              COALESCE(SUM(estimated_value), 0) AS pipeline_value
+            FROM leads
+            WHERE created_at::DATE BETWEEN ${dateFrom} AND ${dateTo}
+          `;
+          const byDay = await sql`
+            SELECT
+              created_at::DATE AS date,
+              COUNT(*)::int AS new_leads,
+              COUNT(*) FILTER (WHERE status = 'won')::int AS won_leads,
+              COALESCE(SUM(estimated_value) FILTER (WHERE status = 'won'), 0) AS revenue
+            FROM leads
+            WHERE created_at::DATE BETWEEN ${dateFrom} AND ${dateTo}
+            GROUP BY created_at::DATE
+            ORDER BY date ASC
+          `;
+          return json({ ok: true, summary: summary[0], by_day: byDay });
+        } catch(e) {
+          return json({ ok: false, error: e.message });
+        }
+      }
+
       return bad('Not found', 404);
     } catch (e) {
       return bad(e.message, 500);
