@@ -5263,9 +5263,21 @@ async function bodyJson(req) {
     return {};
   }
 }
+const DASHBOARD_TZ = "America/Argentina/Buenos_Aires";
+function localIsoDate(d = /* @__PURE__ */ new Date()) {
+  const parts = new Intl.DateTimeFormat("en-CA", { timeZone: DASHBOARD_TZ, year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(d);
+  const v = Object.fromEntries(parts.map((p) => [p.type, p.value]));
+  return `${v.year}-${v.month}-${v.day}`;
+}
+function localAddDays(dateStr, days) {
+  const d = new Date(`${dateStr}T12:00:00`);
+  d.setDate(d.getDate() + days);
+  return localIsoDate(d);
+}
 function getDateRange(url) {
-  const dateFrom = url.searchParams.get("date_from") || url.searchParams.get("dateFrom") || new Date(Date.now() - 864e5 * 30).toISOString().split("T")[0];
-  const dateTo = url.searchParams.get("date_to") || url.searchParams.get("dateTo") || (/* @__PURE__ */ new Date()).toISOString().split("T")[0];
+  const todayLocal = localIsoDate();
+  const dateFrom = url.searchParams.get("date_from") || url.searchParams.get("dateFrom") || localAddDays(todayLocal, -30);
+  const dateTo = url.searchParams.get("date_to") || url.searchParams.get("dateTo") || todayLocal;
   return { dateFrom, dateTo };
 }
 function getDashboardFilters(url) {
@@ -5632,7 +5644,7 @@ var worker_default = {
                 COUNT(DISTINCT o.id) AS order_count
               FROM order_items oi
               JOIN orders o ON o.id = oi.order_id
-              WHERE o.created_at >= ${dateFrom}::date AND o.created_at < (${dateTo}::date + INTERVAL '1 day')
+              WHERE (o.created_at AT TIME ZONE 'America/Argentina/Buenos_Aires')::date >= ${dateFrom}::date AND (o.created_at AT TIME ZONE 'America/Argentina/Buenos_Aires')::date <= ${dateTo}::date
                 AND COALESCE(o.is_canceled,false) = false
                 AND o.source = ${channel}
               GROUP BY oi.product_name, o.source
@@ -5649,7 +5661,7 @@ var worker_default = {
                 COUNT(DISTINCT o.id) AS order_count
               FROM order_items oi
               JOIN orders o ON o.id = oi.order_id
-              WHERE o.created_at >= ${dateFrom}::date AND o.created_at < (${dateTo}::date + INTERVAL '1 day')
+              WHERE (o.created_at AT TIME ZONE 'America/Argentina/Buenos_Aires')::date >= ${dateFrom}::date AND (o.created_at AT TIME ZONE 'America/Argentina/Buenos_Aires')::date <= ${dateTo}::date
                 AND COALESCE(o.is_canceled,false) = false
               GROUP BY oi.product_name, o.source
               ORDER BY quantity DESC
@@ -5675,7 +5687,7 @@ var worker_default = {
               COUNT(*) FILTER (WHERE COALESCE(o.is_returned,false))::int AS returns
             FROM orders o
             LEFT JOIN order_items oi ON oi.order_id = o.id
-            WHERE o.created_at >= ${dateFrom}::date AND o.created_at < (${dateTo}::date + INTERVAL '1 day')
+            WHERE (o.created_at AT TIME ZONE 'America/Argentina/Buenos_Aires')::date >= ${dateFrom}::date AND (o.created_at AT TIME ZONE 'America/Argentina/Buenos_Aires')::date <= ${dateTo}::date
               AND COALESCE(o.is_canceled,false) = false
           `;
           return json(rows[0] || {});
@@ -5693,7 +5705,7 @@ var worker_default = {
                 COUNT(*)::int AS orders,
                 COALESCE(AVG(total_amount), 0) AS ticket
               FROM orders
-              WHERE created_at >= ${dateFrom}::date AND created_at < (${dateTo}::date + INTERVAL '1 day')
+              WHERE (created_at AT TIME ZONE 'America/Argentina/Buenos_Aires')::date >= ${dateFrom}::date AND (created_at AT TIME ZONE 'America/Argentina/Buenos_Aires')::date <= ${dateTo}::date
                 AND COALESCE(is_canceled,false) = false
             ),
             previous AS (
@@ -5701,7 +5713,7 @@ var worker_default = {
                 COALESCE(SUM(total_amount), 0) AS revenue,
                 COUNT(*)::int AS orders
               FROM orders
-              WHERE created_at::DATE BETWEEN
+              WHERE (created_at AT TIME ZONE 'America/Argentina/Buenos_Aires')::date BETWEEN
                 (${dateFrom}::date - (${dateTo}::date - ${dateFrom}::date + 1))
                 AND (${dateFrom}::date - 1)
                 AND COALESCE(is_canceled,false) = false
@@ -5734,7 +5746,7 @@ var worker_default = {
               COUNT(*) FILTER (WHERE COALESCE(o.is_canceled,false))::int AS cancellations
             FROM orders o
             LEFT JOIN channels c ON c.id = o.channel_id
-            WHERE o.created_at >= ${dateFrom}::date AND o.created_at < (${dateTo}::date + INTERVAL '1 day')
+            WHERE (o.created_at AT TIME ZONE 'America/Argentina/Buenos_Aires')::date >= ${dateFrom}::date AND (o.created_at AT TIME ZONE 'America/Argentina/Buenos_Aires')::date <= ${dateTo}::date
               AND COALESCE(o.is_canceled,false) = false
             GROUP BY o.source, c.name
             ORDER BY revenue DESC
@@ -5823,17 +5835,17 @@ var worker_default = {
               COALESCE(SUM(estimated_value) FILTER (WHERE status = 'won'), 0) AS won_revenue,
               COALESCE(SUM(estimated_value), 0) AS pipeline_value
             FROM leads
-            WHERE created_at >= ${dateFrom}::date AND created_at < (${dateTo}::date + INTERVAL '1 day')
+            WHERE (created_at AT TIME ZONE 'America/Argentina/Buenos_Aires')::date >= ${dateFrom}::date AND (created_at AT TIME ZONE 'America/Argentina/Buenos_Aires')::date <= ${dateTo}::date
           `;
           const byDay = await sql`
             SELECT
-              created_at::DATE AS date,
+              (created_at AT TIME ZONE 'America/Argentina/Buenos_Aires')::date AS date,
               COUNT(*)::int AS new_leads,
               COUNT(*) FILTER (WHERE status = 'won')::int AS won_leads,
               COALESCE(SUM(estimated_value) FILTER (WHERE status = 'won'), 0) AS revenue
             FROM leads
-            WHERE created_at >= ${dateFrom}::date AND created_at < (${dateTo}::date + INTERVAL '1 day')
-            GROUP BY created_at::DATE
+            WHERE (created_at AT TIME ZONE 'America/Argentina/Buenos_Aires')::date >= ${dateFrom}::date AND (created_at AT TIME ZONE 'America/Argentina/Buenos_Aires')::date <= ${dateTo}::date
+            GROUP BY (created_at AT TIME ZONE 'America/Argentina/Buenos_Aires')::date
             ORDER BY date ASC
           `;
           return json({ ok: true, summary: summary[0], by_day: byDay });
@@ -5851,7 +5863,7 @@ var worker_default = {
               SELECT DISTINCT o.id
               FROM orders o
               LEFT JOIN order_items oi ON oi.order_id = o.id
-              WHERE o.created_at >= ${dateFrom}::date AND o.created_at < (${dateTo}::date + INTERVAL '1 day')
+              WHERE (o.created_at AT TIME ZONE 'America/Argentina/Buenos_Aires')::date >= ${dateFrom}::date AND (o.created_at AT TIME ZONE 'America/Argentina/Buenos_Aires')::date <= ${dateTo}::date
                 AND (${f.channel} = 'all' OR o.source = ${f.channel} OR (${f.channel}='ml1' AND o.source IN ('meli_1','ml_1')) OR (${f.channel}='ml2' AND o.source IN ('meli_2','ml_2')))
                 AND (${f.province} = '' OR o.customer_province ILIKE '%' || ${f.province} || '%')
                 AND (${f.status} = '' OR o.status = ${f.status})
@@ -5887,7 +5899,7 @@ var worker_default = {
             WITH filtered_orders AS (
               SELECT o.id, o.source, o.channel_id, o.total_amount
               FROM orders o
-              WHERE o.created_at >= ${dateFrom}::date AND o.created_at < (${dateTo}::date + INTERVAL '1 day')
+              WHERE (o.created_at AT TIME ZONE 'America/Argentina/Buenos_Aires')::date >= ${dateFrom}::date AND (o.created_at AT TIME ZONE 'America/Argentina/Buenos_Aires')::date <= ${dateTo}::date
                 AND COALESCE(o.is_canceled,false) = false
                 AND (${f.channel} = 'all' OR o.source = ${f.channel} OR (${f.channel}='ml1' AND o.source IN ('meli_1','ml_1')) OR (${f.channel}='ml2' AND o.source IN ('meli_2','ml_2')))
             ), item_units AS (
@@ -5914,9 +5926,9 @@ var worker_default = {
         if (path === "/api/v1/dashboard/timeseries") {
           const rows = await sql`
             WITH filtered_orders AS (
-              SELECT id, created_at::DATE AS date, source, total_amount
+              SELECT id, (created_at AT TIME ZONE 'America/Argentina/Buenos_Aires')::date AS date, source, total_amount
               FROM orders
-              WHERE created_at >= ${dateFrom}::date AND created_at < (${dateTo}::date + INTERVAL '1 day')
+              WHERE (created_at AT TIME ZONE 'America/Argentina/Buenos_Aires')::date >= ${dateFrom}::date AND (created_at AT TIME ZONE 'America/Argentina/Buenos_Aires')::date <= ${dateTo}::date
                 AND COALESCE(is_canceled,false) = false
                 AND (${f.channel} = 'all' OR source = ${f.channel} OR (${f.channel}='ml1' AND source IN ('meli_1','ml_1')) OR (${f.channel}='ml2' AND source IN ('meli_2','ml_2')))
             ), item_units AS (
@@ -5951,7 +5963,7 @@ var worker_default = {
               COUNT(DISTINCT o.id)::int AS order_count
             FROM order_items oi
             JOIN orders o ON o.id = oi.order_id
-            WHERE o.created_at >= ${dateFrom}::date AND o.created_at < (${dateTo}::date + INTERVAL '1 day')
+            WHERE (o.created_at AT TIME ZONE 'America/Argentina/Buenos_Aires')::date >= ${dateFrom}::date AND (o.created_at AT TIME ZONE 'America/Argentina/Buenos_Aires')::date <= ${dateTo}::date
               AND COALESCE(o.is_canceled,false) = false
               AND (${f.channel} = 'all' OR o.source = ${f.channel} OR (${f.channel}='ml1' AND o.source IN ('meli_1','ml_1')) OR (${f.channel}='ml2' AND o.source IN ('meli_2','ml_2')))
               AND (${f.brand} = '' OR oi.brand ILIKE '%' || ${f.brand} || '%')
@@ -5978,12 +5990,12 @@ var worker_default = {
         }
         if (path === "/api/v1/dashboard/tv") {
           const [summary, channels, top, recent, sync, kommo, marketing] = await Promise.all([
-            sql`SELECT COALESCE(SUM(total_amount),0) AS total_revenue, COUNT(*)::int AS orders_count, COALESCE(AVG(total_amount),0) AS avg_ticket, COALESCE(SUM(items_count),0)::int AS units_sold FROM orders WHERE created_at >= ${dateFrom}::date AND created_at < (${dateTo}::date + INTERVAL '1 day') AND COALESCE(is_canceled,false) = false`,
-            sql`SELECT source, COALESCE(SUM(total_amount),0) AS revenue, COUNT(*)::int AS orders_count FROM orders WHERE created_at >= ${dateFrom}::date AND created_at < (${dateTo}::date + INTERVAL '1 day') AND COALESCE(is_canceled,false) = false GROUP BY source ORDER BY revenue DESC`,
-            sql`SELECT oi.product_name, o.source, SUM(oi.quantity)::int AS quantity, SUM(oi.total_price) AS revenue FROM order_items oi JOIN orders o ON o.id=oi.order_id WHERE o.created_at >= ${dateFrom}::date AND o.created_at < (${dateTo}::date + INTERVAL '1 day') AND COALESCE(o.is_canceled,false) = false GROUP BY oi.product_name,o.source ORDER BY quantity DESC LIMIT 40`,
-            sql`SELECT o.external_id,o.source,o.total_amount,o.status,o.payment_status,o.customer_province,o.created_at,COALESCE(c.name,o.source) AS channel_name, ARRAY_AGG(oi.product_name ORDER BY oi.total_price DESC NULLS LAST) AS products FROM orders o LEFT JOIN channels c ON c.id=o.channel_id LEFT JOIN order_items oi ON oi.order_id=o.id WHERE o.created_at >= ${dateFrom}::date AND o.created_at < (${dateTo}::date + INTERVAL '1 day') GROUP BY o.id,c.name ORDER BY o.created_at DESC LIMIT 10`,
+            sql`SELECT COALESCE(SUM(total_amount),0) AS total_revenue, COUNT(*)::int AS orders_count, COALESCE(AVG(total_amount),0) AS avg_ticket, COALESCE(SUM(items_count),0)::int AS units_sold FROM orders WHERE (created_at AT TIME ZONE 'America/Argentina/Buenos_Aires')::date >= ${dateFrom}::date AND (created_at AT TIME ZONE 'America/Argentina/Buenos_Aires')::date <= ${dateTo}::date AND COALESCE(is_canceled,false) = false`,
+            sql`SELECT source, COALESCE(SUM(total_amount),0) AS revenue, COUNT(*)::int AS orders_count FROM orders WHERE (created_at AT TIME ZONE 'America/Argentina/Buenos_Aires')::date >= ${dateFrom}::date AND (created_at AT TIME ZONE 'America/Argentina/Buenos_Aires')::date <= ${dateTo}::date AND COALESCE(is_canceled,false) = false GROUP BY source ORDER BY revenue DESC`,
+            sql`SELECT oi.product_name, o.source, SUM(oi.quantity)::int AS quantity, SUM(oi.total_price) AS revenue FROM order_items oi JOIN orders o ON o.id=oi.order_id WHERE (o.created_at AT TIME ZONE 'America/Argentina/Buenos_Aires')::date >= ${dateFrom}::date AND (o.created_at AT TIME ZONE 'America/Argentina/Buenos_Aires')::date <= ${dateTo}::date AND COALESCE(o.is_canceled,false) = false GROUP BY oi.product_name,o.source ORDER BY quantity DESC LIMIT 40`,
+            sql`SELECT o.external_id,o.source,o.total_amount,o.status,o.payment_status,o.customer_province,o.created_at,COALESCE(c.name,o.source) AS channel_name, ARRAY_AGG(oi.product_name ORDER BY oi.total_price DESC NULLS LAST) AS products FROM orders o LEFT JOIN channels c ON c.id=o.channel_id LEFT JOIN order_items oi ON oi.order_id=o.id WHERE (o.created_at AT TIME ZONE 'America/Argentina/Buenos_Aires')::date >= ${dateFrom}::date AND (o.created_at AT TIME ZONE 'America/Argentina/Buenos_Aires')::date <= ${dateTo}::date GROUP BY o.id,c.name ORDER BY o.created_at DESC LIMIT 10`,
             sql`SELECT DISTINCT ON (source) source, status, records_processed, last_date_synced, error_message, started_at, finished_at FROM sync_log ORDER BY source, started_at DESC`,
-            sql`SELECT COUNT(*)::int AS total_leads, COUNT(*) FILTER (WHERE status='won')::int AS won_leads, COALESCE(SUM(estimated_value) FILTER (WHERE status='won'),0) AS won_revenue, COALESCE(SUM(estimated_value),0) AS pipeline_value FROM leads WHERE created_at >= ${dateFrom}::date AND created_at < (${dateTo}::date + INTERVAL '1 day')`,
+            sql`SELECT COUNT(*)::int AS total_leads, COUNT(*) FILTER (WHERE status='won')::int AS won_leads, COALESCE(SUM(estimated_value) FILTER (WHERE status='won'),0) AS won_revenue, COALESCE(SUM(estimated_value),0) AS pipeline_value FROM leads WHERE (created_at AT TIME ZONE 'America/Argentina/Buenos_Aires')::date >= ${dateFrom}::date AND (created_at AT TIME ZONE 'America/Argentina/Buenos_Aires')::date <= ${dateTo}::date`,
             sql`SELECT source, COALESCE(SUM(spend),0) AS spend, COALESCE(SUM(conv_value),0) AS revenue, COALESCE(SUM(conversions),0) AS conversions, COALESCE(SUM(leads),0) AS leads FROM marketing_metrics WHERE date >= ${dateFrom}::date AND date <= ${dateTo}::date GROUP BY source`
           ]);
           return json({ ok: true, date_from: dateFrom, date_to: dateTo, summary: summary[0], channels, top_products: top, recent_orders: recent, sync, kommo: kommo[0], marketing });
@@ -5993,11 +6005,11 @@ var worker_default = {
         try {
           const { dateFrom, dateTo } = getDateRange(url);
           const [summary, channels, top] = await Promise.all([
-            sql`SELECT COALESCE(SUM(total_amount),0) AS total_revenue, COUNT(*)::int AS orders_count, COALESCE(AVG(total_amount),0) AS avg_ticket, COALESCE(SUM(items_count),0)::int AS units_sold FROM orders WHERE created_at >= ${dateFrom}::date AND created_at < (${dateTo}::date + INTERVAL '1 day') AND COALESCE(is_canceled,false) = false`,
-            sql`SELECT source, COALESCE(SUM(total_amount),0) AS revenue, COUNT(*)::int AS orders_count FROM orders WHERE created_at >= ${dateFrom}::date AND created_at < (${dateTo}::date + INTERVAL '1 day') AND COALESCE(is_canceled,false) = false GROUP BY source ORDER BY revenue DESC`,
-            sql`SELECT oi.product_name, o.source, SUM(oi.quantity)::int AS quantity, SUM(oi.total_price) AS revenue FROM order_items oi JOIN orders o ON o.id=oi.order_id WHERE o.created_at >= ${dateFrom}::date AND o.created_at < (${dateTo}::date + INTERVAL '1 day') AND COALESCE(o.is_canceled,false)=false GROUP BY oi.product_name,o.source ORDER BY quantity DESC LIMIT 10`
+            sql`SELECT COALESCE(SUM(total_amount),0) AS total_revenue, COUNT(*)::int AS orders_count, COALESCE(AVG(total_amount),0) AS avg_ticket, COALESCE(SUM(items_count),0)::int AS units_sold FROM orders WHERE (created_at AT TIME ZONE 'America/Argentina/Buenos_Aires')::date >= ${dateFrom}::date AND (created_at AT TIME ZONE 'America/Argentina/Buenos_Aires')::date <= ${dateTo}::date AND COALESCE(is_canceled,false) = false`,
+            sql`SELECT source, COALESCE(SUM(total_amount),0) AS revenue, COUNT(*)::int AS orders_count FROM orders WHERE (created_at AT TIME ZONE 'America/Argentina/Buenos_Aires')::date >= ${dateFrom}::date AND (created_at AT TIME ZONE 'America/Argentina/Buenos_Aires')::date <= ${dateTo}::date AND COALESCE(is_canceled,false) = false GROUP BY source ORDER BY revenue DESC`,
+            sql`SELECT oi.product_name, o.source, SUM(oi.quantity)::int AS quantity, SUM(oi.total_price) AS revenue FROM order_items oi JOIN orders o ON o.id=oi.order_id WHERE (o.created_at AT TIME ZONE 'America/Argentina/Buenos_Aires')::date >= ${dateFrom}::date AND (o.created_at AT TIME ZONE 'America/Argentina/Buenos_Aires')::date <= ${dateTo}::date AND COALESCE(o.is_canceled,false)=false GROUP BY oi.product_name,o.source ORDER BY quantity DESC LIMIT 10`
           ]);
-          return json({ ok: true, date_from: dateFrom, date_to: dateTo, summary: summary[0], channels, top_products: top });
+          return json({ ok: true, timezone: DASHBOARD_TZ, date_from: dateFrom, date_to: dateTo, summary: summary[0], channels, top_products: top });
         } catch (e) {
           return json({ ok: false, error: e.message }, 500);
         }
@@ -6005,7 +6017,7 @@ var worker_default = {
       if (path === "/api/v1/debug/data-health" && req.method === "GET") {
         try {
           const [orders, orderItems, marketing, campaigns, leads, sync] = await Promise.all([
-            sql`SELECT COUNT(*)::int AS count, MIN(created_at) AS min_date, MAX(created_at) AS max_date, COUNT(*) FILTER (WHERE created_at::date = CURRENT_DATE)::int AS today_count FROM orders`,
+            sql`SELECT COUNT(*)::int AS count, MIN(created_at) AS min_date, MAX(created_at) AS max_date, COUNT(*) FILTER (WHERE (created_at AT TIME ZONE 'America/Argentina/Buenos_Aires')::date = (NOW() AT TIME ZONE 'America/Argentina/Buenos_Aires')::date)::int AS today_count FROM orders`,
             sql`SELECT COUNT(*)::int AS count FROM order_items`,
             sql`SELECT source, COUNT(*)::int AS rows, MIN(date) AS min_date, MAX(date) AS max_date, COALESCE(SUM(spend),0) AS spend, COALESCE(SUM(impressions),0) AS impressions, COALESCE(SUM(clicks),0) AS clicks FROM marketing_metrics GROUP BY source ORDER BY source`,
             sql`SELECT source, COUNT(*)::int AS count FROM marketing_campaigns GROUP BY source ORDER BY source`,
