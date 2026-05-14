@@ -359,6 +359,70 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);min-height:1
 .btn-secondary:hover{background:var(--bg3);color:var(--text)}
 .badge-new{display:inline-flex;align-items:center;padding:2px 8px;border-radius:20px;font-size:10px;font-weight:600;background:rgba(16,185,129,.12);color:var(--green);margin-left:6px}
 
+/* ---- LOGIN ---- */
+.login-screen{
+  display:none;position:fixed;inset:0;z-index:9999;
+  background:var(--bg);align-items:center;justify-content:center;padding:20px;
+}
+.login-screen.active{display:flex}
+.login-card{
+  width:100%;max-width:400px;
+  background:var(--card);border:1px solid var(--border2);
+  border-radius:16px;padding:36px 32px;
+  box-shadow:0 24px 80px rgba(0,0,0,.5);
+}
+.login-logo{display:flex;align-items:center;gap:10px;margin-bottom:28px}
+.login-logo-icon{width:40px;height:40px;border-radius:10px;background:var(--accent);display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:700;color:#fff}
+.login-logo-name{font-size:18px;font-weight:600;letter-spacing:-.3px}
+.login-logo-tag{font-size:11px;color:var(--text3);letter-spacing:.5px;text-transform:uppercase}
+.login-title{font-size:22px;font-weight:600;letter-spacing:-.5px;margin-bottom:6px}
+.login-sub{font-size:13px;color:var(--text3);margin-bottom:28px}
+.login-field{margin-bottom:14px}
+.login-label{font-size:12px;font-weight:500;color:var(--text2);margin-bottom:6px;display:block}
+.login-input{
+  width:100%;background:var(--bg3);border:1px solid var(--border2);
+  border-radius:var(--radius2);padding:10px 14px;font-size:14px;
+  color:var(--text);font-family:var(--font);outline:none;transition:border-color .15s;
+}
+.login-input:focus{border-color:var(--accent)}
+.login-btn{
+  width:100%;padding:11px;background:var(--accent);border:none;
+  border-radius:var(--radius2);color:#fff;font-size:14px;font-weight:600;
+  cursor:pointer;font-family:var(--font);transition:background .15s;margin-top:6px;
+}
+.login-btn:hover{background:var(--accent2)}
+.login-error{font-size:12px;color:var(--red);margin-top:10px;text-align:center;min-height:18px}
+.login-users{margin-top:24px;padding-top:20px;border-top:1px solid var(--border)}
+.login-users-label{font-size:11px;color:var(--text3);margin-bottom:10px;letter-spacing:.5px;text-transform:uppercase}
+.login-user-pill{
+  display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:var(--radius2);
+  cursor:pointer;transition:background .15s;border:1px solid transparent;
+}
+.login-user-pill:hover{background:var(--bg3);border-color:var(--border)}
+.login-user-av{width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#fff;flex-shrink:0}
+.login-user-name{font-size:13px;font-weight:500}
+.login-user-role{font-size:11px;color:var(--text3)}
+
+/* ---- COMPARE DATE PICKER ---- */
+.compare-picker{
+  display:none;padding:14px;background:var(--card2);border:1px solid var(--border2);
+  border-radius:var(--radius);box-shadow:0 8px 32px rgba(0,0,0,.4);
+  position:absolute;right:0;top:calc(100% + 6px);z-index:200;min-width:320px;
+}
+.compare-picker.open{display:block;animation:fadeIn .15s ease}
+.compare-picker-title{font-size:12px;font-weight:600;color:var(--text2);margin-bottom:10px}
+.compare-picker-presets{display:flex;flex-direction:column;gap:4px;margin-bottom:12px}
+.compare-preset{
+  display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:var(--radius2);
+  cursor:pointer;font-size:12.5px;color:var(--text2);transition:all .15s;border:1px solid transparent;
+}
+.compare-preset:hover{background:var(--bg3);border-color:var(--border)}
+.compare-preset.active{background:rgba(139,92,246,.1);border-color:var(--purple);color:#a78bfa}
+.compare-preset-label{font-size:11px;color:var(--text3);margin-left:auto;font-family:var(--mono)}
+.compare-divider{height:1px;background:var(--border);margin:10px 0}
+.compare-custom-label{font-size:11px;color:var(--text3);margin-bottom:6px;font-weight:500}
+.compare-custom-row{display:flex;align-items:center;gap:8px}
+
 /* SCROLLBAR */
 ::-webkit-scrollbar{width:4px;height:4px}
 ::-webkit-scrollbar-track{background:transparent}
@@ -397,6 +461,35 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);min-height:1
 </style>
 </head>
 <body>
+
+<!-- ===== LOGIN SCREEN ===== -->
+<div class="login-screen active" id="loginScreen">
+  <div class="login-card">
+    <div class="login-logo">
+      <div class="login-logo-icon">NO</div>
+      <div><div class="login-logo-name">NexusOps</div><div class="login-logo-tag">eCommerce Hub</div></div>
+    </div>
+    <div class="login-title">Bienvenido</div>
+    <div class="login-sub">Ingresá con tu email y PIN para continuar</div>
+    <div class="login-field">
+      <label class="login-label">Email</label>
+      <input class="login-input" type="email" id="loginEmail" placeholder="tu@empresa.com" onkeydown="if(event.key==='Enter')loginSubmit()">
+    </div>
+    <div class="login-field">
+      <label class="login-label">PIN</label>
+      <input class="login-input" type="password" id="loginPin" placeholder="••••" maxlength="6" onkeydown="if(event.key==='Enter')loginSubmit()">
+    </div>
+    <button class="login-btn" onclick="loginSubmit()">Ingresar al dashboard</button>
+    <div class="login-error" id="loginError"></div>
+    <div class="login-users">
+      <div class="login-users-label">Acceso rápido (demo)</div>
+      <div id="loginUsersList"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== DASHBOARD (oculto hasta login) ===== -->
+<div id="dashboardApp" style="display:none">
 
 <!-- Sidebar overlay (mobile) -->
 <div class="sidebar-overlay" id="sidebarOverlay" onclick="closeSidebar()"></div>
@@ -660,15 +753,30 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);min-height:1
             <span style="color:var(--text3);font-size:11px">→</span>
             <input type="date" id="mktTo" style="background:var(--bg3);border:1px solid var(--border2);border-radius:var(--radius2);padding:5px 8px;font-size:11px;color:var(--text);font-family:var(--mono);outline:none" onchange="mktApplyCustom()">
           </div>
-          <button id="mktCompareBtn" onclick="mktToggleCompare()" style="display:flex;align-items:center;gap:5px;font-size:11.5px;padding:5px 10px;border-radius:var(--radius2);border:1px solid var(--border2);background:transparent;color:var(--text3);cursor:pointer;font-family:var(--font);transition:all .15s">
-            ⇄ Comparar
-          </button>
+          <div style="position:relative">
+            <button id="mktCompareBtn" onclick="mktToggleCompare(event)" style="display:flex;align-items:center;gap:5px;font-size:11.5px;padding:5px 10px;border-radius:var(--radius2);border:1px solid var(--border2);background:transparent;color:var(--text3);cursor:pointer;font-family:var(--font);transition:all .15s">
+              ⇄ Comparar período
+            </button>
+            <div class="compare-picker" id="mktComparePicker">
+              <div class="compare-picker-title">Comparar con</div>
+              <div class="compare-picker-presets" id="comparePresets"></div>
+              <div class="compare-divider"></div>
+              <div class="compare-custom-label">Fechas personalizadas</div>
+              <div class="compare-custom-row">
+                <input type="date" id="cmpFrom" style="background:var(--bg3);border:1px solid var(--border2);border-radius:var(--radius2);padding:5px 8px;font-size:11px;color:var(--text);font-family:var(--mono);outline:none;flex:1" onchange="mktApplyCompareCustom()">
+                <span style="color:var(--text3);font-size:11px">→</span>
+                <input type="date" id="cmpTo" style="background:var(--bg3);border:1px solid var(--border2);border-radius:var(--radius2);padding:5px 8px;font-size:11px;color:var(--text);font-family:var(--mono);outline:none;flex:1" onchange="mktApplyCompareCustom()">
+              </div>
+              <div style="margin-top:8px;font-size:11px;color:var(--text3)" id="compareRangeInfo"></div>
+            </div>
+          </div>
         </div>
       </div>
 
       <!-- COMPARE BANNER -->
       <div id="mktCompareBanner" style="display:none;align-items:center;gap:8px;padding:9px 14px;background:rgba(139,92,246,.07);border:1px solid rgba(139,92,246,.2);border-radius:var(--radius2);margin-bottom:14px;font-size:12px;color:var(--text2)">
-        ⏱ Comparando con: <strong id="mktCompareLabel" style="color:var(--text)">período anterior</strong>
+        ⏱ Comparando: <strong id="mktCompareLabel" style="color:var(--text)">período anterior</strong>
+        <button onclick="mktClearCompare()" style="margin-left:auto;background:transparent;border:none;cursor:pointer;color:var(--text3);font-size:12px;padding:0">✕ Quitar</button>
       </div>
 
       <!-- CHANNEL FILTER -->
@@ -991,15 +1099,58 @@ function initUserSession() {
   document.getElementById('ddUserName').textContent = currentUser.name + ' ' + currentUser.lastName;
   document.getElementById('ddUserEmail').textContent = currentUser.email;
   if(currentUser.role === 'admin') document.getElementById('adminBadge').style.display = 'inline-flex';
+  else document.getElementById('adminBadge').style.display = 'none';
 }
 function roleLabel(r){return {admin:'Administrador',gerente:'Gerente',marketing:'Marketing',ops:'Operaciones',viewer:'Solo lectura'}[r]||r}
 function roleClass(r){return {admin:'role-admin',gerente:'role-gerente',marketing:'role-marketing',ops:'role-ops',viewer:'role-viewer'}[r]||'role-viewer'}
 
-function toggleUserDropdown(){document.getElementById('userDropdown').classList.toggle('open')}
-function closeUserDropdown(){document.getElementById('userDropdown').classList.remove('open')}
-function logoutUser(){
+// ---- LOGIN ----
+const USER_PINS = { 'martin@empresa.com':'1234', 'laura@empresa.com':'2345', 'diego@empresa.com':'3456', 'sofia@empresa.com':'4567', 'carlos@empresa.com':'5678' };
+
+function renderLoginUsers() {
+  document.getElementById('loginUsersList').innerHTML = USERS.filter(u=>u.active).map(u=>`
+    <div class="login-user-pill" onclick="quickLogin('${u.email}')">
+      <div class="login-user-av" style="background:${u.color}">${u.initials}</div>
+      <div>
+        <div class="login-user-name">${u.name} ${u.lastName}</div>
+        <div class="login-user-role">${roleLabel(u.role)} · PIN: ${USER_PINS[u.email]||'1234'}</div>
+      </div>
+    </div>`).join('');
+}
+
+function quickLogin(email) {
+  document.getElementById('loginEmail').value = email;
+  document.getElementById('loginPin').value = USER_PINS[email] || '1234';
+  loginSubmit();
+}
+
+function loginSubmit() {
+  const email = document.getElementById('loginEmail').value.trim().toLowerCase();
+  const pin   = document.getElementById('loginPin').value.trim();
+  const errEl = document.getElementById('loginError');
+  errEl.textContent = '';
+
+  const user = USERS.find(u => u.email.toLowerCase() === email && u.active);
+  if (!user) { errEl.textContent = 'Email no encontrado o usuario inactivo.'; return; }
+  if (USER_PINS[user.email] !== pin) { errEl.textContent = 'PIN incorrecto.'; return; }
+
+  currentUser = user;
+  document.getElementById('loginScreen').classList.remove('active');
+  document.getElementById('dashboardApp').style.display = '';
+  initUserSession();
+  bootDashboard();
+}
+
+function logoutUser() {
   closeUserDropdown();
-  if(confirm('¿Cerrar sesión?')){alert('Sesión cerrada. En producción redirige al login.');}
+  currentUser = null;
+  sessionStorage.removeItem('nexusops_user');
+  document.getElementById('dashboardApp').style.display = 'none';
+  document.getElementById('loginScreen').classList.add('active');
+  document.getElementById('loginEmail').value = '';
+  document.getElementById('loginPin').value = '';
+  document.getElementById('loginError').textContent = '';
+  renderLoginUsers();
 }
 document.addEventListener('click',e=>{
   const pill=document.getElementById('userPill'), dd=document.getElementById('userDropdown');
@@ -1574,21 +1725,98 @@ function mktApplyCustom(){
   if(from&&to&&from<=to){ mktState.dateFrom=from; mktState.dateTo=to; renderMarketing(); }
 }
 
-function mktToggleCompare(){
-  mktState.compareOn=!mktState.compareOn;
-  const btn=document.getElementById('mktCompareBtn');
-  const banner=document.getElementById('mktCompareBanner');
-  btn.style.background=mktState.compareOn?'rgba(139,92,246,.12)':'transparent';
-  btn.style.borderColor=mktState.compareOn?'#8b5cf6':'var(--border2)';
-  btn.style.color=mktState.compareOn?'#a78bfa':'var(--text3)';
-  banner.style.display=mktState.compareOn?'flex':'none';
-  if(mktState.compareOn){
-    const cFrom=mktDaysAgo(mktState.days*2), cTo=new Date(new Date(mktState.dateFrom)-86400000).toISOString().split('T')[0];
-    const f=d=>new Date(d+'T12:00').toLocaleDateString('es-AR',{day:'2-digit',month:'short'});
-    document.getElementById('mktCompareLabel').textContent=`${f(cFrom)} — ${f(cTo)}`;
+function mktToggleCompare(e){
+  if(e) e.stopPropagation();
+  const picker = document.getElementById('mktComparePicker');
+  const isOpen = picker.classList.contains('open');
+  picker.classList.toggle('open');
+  if(!isOpen) renderComparePresets();
+}
+
+function renderComparePresets() {
+  const days = mktState.days || 30;
+  const from = mktState.dateFrom, to = mktState.dateTo;
+  const f = d => new Date(d+'T12:00').toLocaleDateString('es-AR',{day:'2-digit',month:'short'});
+
+  const prevTo   = new Date(new Date(from+'T12:00') - 86400000).toISOString().split('T')[0];
+  const prevFrom = new Date(new Date(from+'T12:00') - 86400000*(days+1)).toISOString().split('T')[0];
+  const lastMonthTo   = new Date(new Date(from+'T12:00').setDate(0)).toISOString().split('T')[0];
+  const lastMonthFrom = new Date(new Date(lastMonthTo+'T12:00').setDate(1)).toISOString().split('T')[0];
+
+  const presets = [
+    { label:'Período anterior', sub:`${f(prevFrom)} — ${f(prevTo)}`, from:prevFrom, to:prevTo },
+    { label:'Mismo período año pasado', sub:`${f(prevFrom.replace(/\d{4}/,y=>y-1))} — ${f(prevTo.replace(/\d{4}/,y=>y-1))}`,
+      from:prevFrom.replace(/(\d{4})/,y=>y-1), to:prevTo.replace(/(\d{4})/,y=>y-1) },
+    { label:'Mes anterior', sub:`${f(lastMonthFrom)} — ${f(lastMonthTo)}`, from:lastMonthFrom, to:lastMonthTo },
+  ];
+
+  document.getElementById('comparePresets').innerHTML = presets.map((p,i) => `
+    <div class="compare-preset ${mktState.compareFrom===p.from?'active':''}" onclick="mktSetComparePreset('${p.from}','${p.to}','${p.label}',this)">
+      <div>
+        <div style="font-size:12.5px;font-weight:500">${p.label}</div>
+        <div style="font-size:10.5px;color:var(--text3);margin-top:1px">${p.sub}</div>
+      </div>
+    </div>`).join('');
+
+  document.getElementById('cmpFrom').value = mktState.compareFrom || prevFrom;
+  document.getElementById('cmpTo').value   = mktState.compareTo   || prevTo;
+}
+
+function mktSetComparePreset(from, to, label, el) {
+  mktState.compareFrom = from;
+  mktState.compareTo   = to;
+  mktState.compareLabel= label;
+  mktState.compareOn   = true;
+  document.querySelectorAll('.compare-preset').forEach(p=>p.classList.remove('active'));
+  el.classList.add('active');
+  applyCompare(label, from, to);
+}
+
+function mktApplyCompareCustom() {
+  const from = document.getElementById('cmpFrom').value;
+  const to   = document.getElementById('cmpTo').value;
+  if(from && to && from <= to) {
+    mktState.compareFrom = from;
+    mktState.compareTo   = to;
+    mktState.compareOn   = true;
+    const f = d => new Date(d+'T12:00').toLocaleDateString('es-AR',{day:'2-digit',month:'short'});
+    applyCompare(`${f(from)} — ${f(to)}`, from, to);
   }
+}
+
+function applyCompare(label, from, to) {
+  const f = d => new Date(d+'T12:00').toLocaleDateString('es-AR',{day:'2-digit',month:'short'});
+  const btn = document.getElementById('mktCompareBtn');
+  btn.style.background   = 'rgba(139,92,246,.12)';
+  btn.style.borderColor  = '#8b5cf6';
+  btn.style.color        = '#a78bfa';
+  document.getElementById('mktCompareBanner').style.display = 'flex';
+  document.getElementById('mktCompareLabel').textContent    = `${label} · ${f(from)} — ${f(to)}`;
+  document.getElementById('mktComparePicker').classList.remove('open');
+  document.getElementById('compareRangeInfo').textContent  = `Período: ${f(from)} → ${f(to)}`;
   renderMarketing();
 }
+
+function mktClearCompare() {
+  mktState.compareOn = false;
+  mktState.compareFrom = null;
+  mktState.compareTo   = null;
+  const btn = document.getElementById('mktCompareBtn');
+  btn.style.background  = 'transparent';
+  btn.style.borderColor = 'var(--border2)';
+  btn.style.color       = 'var(--text3)';
+  document.getElementById('mktCompareBanner').style.display = 'none';
+  renderMarketing();
+}
+
+// Close compare picker on outside click
+document.addEventListener('click', e => {
+  const picker = document.getElementById('mktComparePicker');
+  const btn    = document.getElementById('mktCompareBtn');
+  if(picker && !picker.contains(e.target) && !btn?.contains(e.target)) {
+    picker.classList.remove('open');
+  }
+});
 
 function mktSetChannel(ch, el){
   mktState.channel=ch;
@@ -2038,11 +2266,35 @@ function triggerSync() {
 // INIT
 // ============================================================
 document.addEventListener('DOMContentLoaded', async () => {
-  initUserSession();
+  // Show login screen first
+  renderLoginUsers();
+
+  // Check if already logged in (session storage)
+  const savedUser = sessionStorage.getItem('nexusops_user');
+  if(savedUser) {
+    try {
+      const u = USERS.find(x => x.email === savedUser);
+      if(u && u.active) {
+        currentUser = u;
+        document.getElementById('loginScreen').classList.remove('active');
+        document.getElementById('dashboardApp').style.display = '';
+        initUserSession();
+        await bootDashboard();
+        return;
+      }
+    } catch(e) {}
+  }
+
+  // Wait for login — bootDashboard called after successful login
+});
+
+async function bootDashboard() {
+  // Save session
+  sessionStorage.setItem('nexusops_user', currentUser.email);
+
   const d = new Date();
   document.getElementById('execDate').textContent = d.toLocaleDateString('es-AR',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
 
-  // Cargar datos reales en paralelo
   await Promise.all([
     renderKPIs(),
     renderTopProducts(),
@@ -2050,14 +2302,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     renderLivePage(),
   ]);
 
-  // Estos usan datos demo por ahora (hasta conectar sus APIs)
   renderChannels();
   renderMarketing();
   renderLogistics();
   renderAlerts();
   initCharts();
 
-  // Period tabs
   document.querySelectorAll('.period-tab').forEach(t => {
     t.addEventListener('click', function() {
       document.querySelectorAll('.period-tab').forEach(x => x.classList.remove('active'));
@@ -2065,7 +2315,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   });
 
-  // Auto-refresh real cada 60 segundos
   setInterval(async () => {
     await renderKPIs();
     if(document.getElementById('page-live').classList.contains('active')) {
@@ -2074,7 +2323,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     document.getElementById('lastUpdate').textContent = new Date().toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit'});
     updateTV();
   }, 60000);
-});
+}
 </script>
+</div><!-- /dashboardApp -->
 </body>
 </html>
