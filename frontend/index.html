@@ -789,7 +789,7 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);min-height:1
             <button id="mktCompareBtn" onclick="mktToggleCompare(event)" style="display:flex;align-items:center;gap:5px;font-size:11.5px;padding:5px 10px;border-radius:var(--radius2);border:1px solid var(--border2);background:transparent;color:var(--text3);cursor:pointer;font-family:var(--font);transition:all .15s">
               ⇄ Comparar período
             </button>
-            <div class="compare-picker" id="mktComparePicker">
+            <div class="compare-picker" id="mktComparePicker" onclick="event.stopPropagation()">
               <div class="compare-picker-title">Comparar con</div>
               <div class="compare-picker-presets" id="comparePresets"></div>
               <div class="compare-divider"></div>
@@ -1133,7 +1133,7 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);min-height:1
           <div style="font-size:13px;font-weight:600;margin-bottom:12px">Meta diaria de ventas</div>
           <div class="form-row">
             <label class="form-label">Objetivo de revenue diario ($)</label>
-            <input type="number" class="form-input" id="settingGoal" value="4500000" placeholder="4500000">
+            <input type="number" class="form-input" id="settingGoal" placeholder="4500000">
           </div>
         </div>
         <div style="margin-bottom:20px">
@@ -1163,12 +1163,39 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);min-height:1
 // ============================================================
 // USER SYSTEM
 // ============================================================
-const USERS = [
+// ---- USERS — persisted in localStorage ----
+const DEFAULT_USERS = [
   { id:1, username:'lucasughelli', name:'Lucas U.', lastName:'Ughelli', email:'lucasughelli', role:'admin',
     color:'#1d4ed8', initials:'LU', active:true,
     perms:['executive','live','channels','marketing','logistics','alerts'] },
 ];
-const USER_PINS = { 'lucasughelli': '1785' };
+const DEFAULT_PINS = { 'lucasughelli': '1785' };
+
+function loadUsers() {
+  try {
+    const saved = localStorage.getItem('nexusops_users');
+    if (saved) return JSON.parse(saved);
+  } catch(_) {}
+  return JSON.parse(JSON.stringify(DEFAULT_USERS)); // deep copy
+}
+
+function loadPins() {
+  try {
+    const saved = localStorage.getItem('nexusops_pins');
+    if (saved) return JSON.parse(saved);
+  } catch(_) {}
+  return { ...DEFAULT_PINS };
+}
+
+function saveUsers() {
+  try {
+    localStorage.setItem('nexusops_users', JSON.stringify(USERS));
+    localStorage.setItem('nexusops_pins', JSON.stringify(USER_PINS));
+  } catch(_) {}
+}
+
+const USERS = loadUsers();
+const USER_PINS = loadPins();
 
 let currentUser = null;
 
@@ -1244,6 +1271,9 @@ function openAdmin(){
   document.getElementById('adminModal').classList.add('open');
   document.body.style.overflow='hidden';
   renderUsersGrid(); renderPermGrid(); renderNotifSettings();
+  // Pre-fill settings with current values
+  const goalEl = document.getElementById('settingGoal');
+  if (goalEl) goalEl.value = state.revenueGoal;
   document.querySelectorAll('.admin-tab')[0].click();
 }
 function closeAdmin(){document.getElementById('adminModal').classList.remove('open');document.body.style.overflow='';}
@@ -1341,6 +1371,7 @@ function updateUser(id) {
   u.initials= name.split(' ').map(w=>w[0]).join('').substring(0,2).toUpperCase();
   if(pin) USER_PINS[u.username] = pin;
 
+  saveUsers(); // Persist to localStorage
   document.querySelectorAll('.admin-tab')[0].click();
   renderUsersGrid();
   document.getElementById('adminSaveBtn').onclick = adminSave;
@@ -1381,6 +1412,7 @@ function adminSave(){
     USERS.push({ id:Date.now(), username, name, lastName:'', email:username, role,
       color: colors[USERS.length % colors.length], initials, active:true, perms });
     USER_PINS[username] = newPin;
+    saveUsers(); // Persist to localStorage
 
     document.querySelectorAll('.admin-tab')[0].click();
     renderUsersGrid();
@@ -1393,7 +1425,11 @@ function adminSave(){
 
   if(activeTab === 'admin-settings'){
     const goal = parseInt(document.getElementById('settingGoal').value);
-    if(goal > 0){ state.revenueGoal = goal; renderKPIs(); }
+    if(goal > 0){
+      state.revenueGoal = goal;
+      savePersistentState(); // Persist across page reloads
+      renderKPIs();
+    }
     alert('✓ Configuración guardada.');
     closeAdmin();
   }
@@ -1424,9 +1460,31 @@ async function fetchAPI(path) {
 const fmt = n => '$' + Math.round(n).toLocaleString('es-AR');
 const pct = n => (n >= 0 ? '+' : '') + n.toFixed(1) + '%';
 
+// ---- PERSISTENT STATE (localStorage) ----
+function loadPersistentState() {
+  try {
+    const saved = localStorage.getItem('nexusops_state');
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      return parsed;
+    }
+  } catch(_) {}
+  return {};
+}
+
+function savePersistentState() {
+  try {
+    localStorage.setItem('nexusops_state', JSON.stringify({
+      revenueGoal: state.revenueGoal,
+    }));
+  } catch(_) {}
+}
+
+const _savedState = loadPersistentState();
+
 let state = {
   revenue: 2847500,
-  revenueGoal: 4500000,
+  revenueGoal: _savedState.revenueGoal || 4500000,
   orders: 184,
   ticket: 15475,
   units: 312,
@@ -1738,18 +1796,29 @@ async function renderExecutiveChannels() {
 }
 
 async function getTopProductsForExecutive() {
-  const candidates = [
-    '/products/top-by-channel?' + execQuery({ metric:'quantity', limit:'30' }),
-    '/products/top?' + execQuery({ metric:'quantity', limit:'30' }),
-    '/products/top?period=' + execPeriodParam()
-  ];
-
-  for (const path of candidates) {
-    const data = await fetchAPI(path);
-    const rows = Array.isArray(data) ? data : (data?.data || data?.products || []);
-    if (rows.length) return rows;
+  // Build date range from current exec period
+  const today = new Date().toISOString().split('T')[0];
+  let dateFrom;
+  if (execState.period === 'today') {
+    dateFrom = today;
+  } else if (execState.period === 'mtd') {
+    const n = new Date();
+    dateFrom = `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,'0')}-01`;
+  } else if (execState.period === 'ytd') {
+    dateFrom = `${new Date().getFullYear()}-01-01`;
+  } else {
+    // Default: last 30 days to ensure historical data shows
+    dateFrom = new Date(Date.now() - 86400000*30).toISOString().split('T')[0];
   }
-  return products.map(p => ({ ...p, quantity: p.quantity || Math.max(1, Math.round((p.revenue || 0) / 15000)) }));
+
+  const params = new URLSearchParams({ date_from: dateFrom, date_to: today, limit: '30' });
+  if (execState.channel && execState.channel !== 'all') {
+    params.set('channel', execState.channel);
+  }
+
+  const data = await fetchAPI('/products/top?' + params.toString());
+  const rows = Array.isArray(data) ? data : (data?.data || []);
+  return rows; // Return empty array if no data — no mock fallback
 }
 
 async function renderTopProductsByChannel() {
@@ -1845,26 +1914,40 @@ async function renderKPIs() {
 
 async function renderTopProducts() {
   const tbody = document.querySelector('#topProdsTable tbody');
+  if (!tbody) return;
+
+  tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;padding:16px;color:var(--text3);font-size:12px">Cargando...</td></tr>';
+
   const list = await getTopProductsForExecutive();
+
+  if (!list || list.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;padding:16px;color:var(--text3);font-size:12px">Sin datos para el período seleccionado</td></tr>';
+    return;
+  }
+
   const filtered = execState.channel === 'all'
     ? list
-    : list.filter(p => productChannel(p) === normalizeChannelLabel(execState.channel));
+    : list.filter(p => {
+        const ch = (p.source || p.channel || '').toLowerCase();
+        return ch.includes(execState.channel) || execState.channel.includes(ch);
+      });
 
-  tbody.innerHTML = filtered
+  const display = (filtered.length > 0 ? filtered : list)
     .sort((a,b) => productQty(b) - productQty(a))
-    .slice(0,10)
-    .map((p,i) => {
-      const name    = p.product_name || p.name || p.sku_name || 'Producto';
-      const channel = productChannel(p);
-      const qty     = productQty(p);
-      const cls     = channelClass(channel);
-      return `<tr>
-        <td><span class="rank-num">${i+1}</span></td>
-        <td>${name}</td>
-        <td><span class="channel-pill ${cls}">${channel}</span></td>
-        <td>${qty.toLocaleString('es-AR')}</td>
-      </tr>`;
-    }).join('');
+    .slice(0, 10);
+
+  tbody.innerHTML = display.map((p,i) => {
+    const name    = p.product_name || p.name || p.sku_name || 'Producto';
+    const channel = productChannel(p);
+    const qty     = productQty(p);
+    const cls     = channelClass(channel);
+    return `<tr>
+      <td><span class="rank-num">${i+1}</span></td>
+      <td>${name}</td>
+      <td><span class="channel-pill ${cls}">${channel}</span></td>
+      <td>${qty.toLocaleString('es-AR')}</td>
+    </tr>`;
+  }).join('');
 }
 
 async function renderCompareStats() {
@@ -2178,8 +2261,33 @@ function mktSetChannel(ch, el){
   mktState.channel=ch;
   document.querySelectorAll('.channel-btn').forEach(b=>b.className='channel-btn');
   el.classList.add(`active-${ch}`);
-  // Only update section visibility — data does NOT change, do NOT regenerate
   mktUpdateChannelVisibility(ch);
+  // Redraw charts with same data (no regeneration) filtered by channel
+  mktRedrawChartsForChannel(ch);
+}
+
+function mktRedrawChartsForChannel(ch) {
+  if (!mktMetaData || !mktPerfitData) return;
+  // Show/hide top-level section containers based on channel
+  const showMeta  = ch === 'all' || ch === 'meta';
+  const showPerfit= ch === 'all' || ch === 'perfit';
+  const showGoogle= ch === 'all' || ch === 'google_ads';
+  const showKommo = ch === 'all' || ch === 'kommo';
+
+  // Update chart data for combined chart based on channel selection
+  if (!mktCharts['mktCombChart']) return;
+  const meta   = mktMetaData;
+  const google = mktGoogleData;
+
+  let datasets = [];
+  if (showMeta)   datasets.push({label:'Meta Ads',  data:meta.spend,    backgroundColor:'rgba(24,119,242,.35)',borderColor:'#1877f2',borderWidth:1,borderRadius:2});
+  if (showGoogle && google) datasets.push({label:'Google Ads',data:google.spend,  backgroundColor:'rgba(66,133,244,.35)',borderColor:'#4285f4',borderWidth:1,borderRadius:2});
+  if (showPerfit) datasets.push({label:'Revenue',   data:meta.revenue,  backgroundColor:'rgba(16,185,129,.15)',borderColor:'#10b981',borderWidth:1.5,borderRadius:2,type:'line',fill:true,tension:.4,pointRadius:0});
+
+  if (datasets.length === 0) datasets = [{label:'Meta Ads',data:meta.spend,backgroundColor:'rgba(24,119,242,.35)',borderColor:'#1877f2',borderWidth:1,borderRadius:2}];
+
+  mktCharts['mktCombChart'].data.datasets = datasets;
+  mktCharts['mktCombChart'].update('none'); // 'none' = no animation = instant, prevents visual glitch
 }
 
 function mktUpdateChannelVisibility(ch) {
