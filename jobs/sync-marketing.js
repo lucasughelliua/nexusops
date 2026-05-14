@@ -1,7 +1,7 @@
 /**
  * NexusOps — sync-marketing.js
- * Sincronización de Meta Ads + Perfit
- * Correr con: node sync-marketing.js [meta|meta_full|perfit]
+ * Sincronización de Meta Ads + Perfit + Google Ads
+ * Correr con: node sync-marketing.js [meta|meta_full|perfit|google_ads|all]
  */
 
 import { Pool } from 'pg';
@@ -373,6 +373,144 @@ export async function syncPerfit() {
   console.log(`[Perfit] ✓ ${totalCampaigns} campañas, ${totalMetrics} métricas`);
 }
 
+
+
+// ============================================================
+// JOB: GOOGLE ADS
+// Usa REST searchStream. Versión por defecto v24; podés cambiarla con GOOGLE_ADS_API_VERSION.
+// ============================================================
+export async function syncGoogleAds() {
+  const source = 'google_ads';
+  const logId = await startSyncLog(source);
+
+  const clientId = process.env.GOOGLE_ADS_CLIENT_ID?.trim();
+  const clientSecret = process.env.GOOGLE_ADS_CLIENT_SECRET?.trim();
+  const refreshToken = process.env.GOOGLE_ADS_REFRESH_TOKEN?.trim();
+  const developerToken = process.env.GOOGLE_ADS_DEVELOPER_TOKEN?.trim();
+  const customerId = String(process.env.GOOGLE_ADS_CUSTOMER_ID || '').replace(/-/g, '').trim();
+  const loginCustomerId = String(process.env.GOOGLE_ADS_LOGIN_CUSTOMER_ID || '').replace(/-/g, '').trim();
+  const apiVersion = process.env.GOOGLE_ADS_API_VERSION || 'v24';
+
+  if (!clientId) throw new Error('Falta GOOGLE_ADS_CLIENT_ID');
+  if (!clientSecret) throw new Error('Falta GOOGLE_ADS_CLIENT_SECRET');
+  if (!refreshToken) throw new Error('Falta GOOGLE_ADS_REFRESH_TOKEN');
+  if (!developerToken) throw new Error('Falta GOOGLE_ADS_DEVELOPER_TOKEN');
+  if (!customerId) throw new Error('Falta GOOGLE_ADS_CUSTOMER_ID');
+
+  const lastSync = await getLastSync(source);
+  const daysBack = parseInt(process.env.GOOGLE_ADS_DAYS_BACK || '30', 10);
+  const dateFrom = lastSync
+    ? new Date(new Date(lastSync) - 86400000).toISOString().split('T')[0]
+    : daysAgoISO(daysBack);
+  const dateTo = todayISO();
+
+  console.log(`[Google Ads] Sincronizando ${dateFrom} → ${dateTo} (${apiVersion})`);
+  const channelId = await getOrCreateChannel('Google Ads', 'other');
+
+  const tokenData = await fetchJson('https://oauth2.googleapis.com/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      client_id: clientId,
+      client_secret: clientSecret,
+      refresh_token: refreshToken,
+      grant_type: 'refresh_token'
+    })
+  });
+
+  const query = `
+    SELECT
+      segments.date,
+      campaign.id,
+      campaign.name,
+      campaign.status,
+      campaign.advertising_channel_type,
+      metrics.cost_micros,
+      metrics.impressions,
+      metrics.clicks,
+      metrics.conversions,
+      metrics.conversions_value,
+      metrics.ctr,
+      metrics.average_cpc,
+      metrics.average_cpm
+    FROM campaign
+    WHERE segments.date BETWEEN '${dateFrom}' AND '${dateTo}'
+    ORDER BY segments.date ASC
+  `;
+
+  const headers = {
+    Authorization: `Bearer ${tokenData.access_token}`,
+    'developer-token': developerToken,
+    'Content-Type': 'application/json'
+  };
+  if (loginCustomerId) headers['login-customer-id'] = loginCustomerId;
+
+  const data = await fetchJson(
+    `https://googleads.googleapis.com/${apiVersion}/customers/${customerId}/googleAds:searchStream`,
+    { method: 'POST', headers, body: JSON.stringify({ query }) },
+    4
+  );
+
+  let totalCampaigns = 0;
+  let totalMetrics = 0;
+  const batches = Array.isArray(data) ? data : [];
+
+  for (const batch of batches) {
+    for (const row of (batch.results || [])) {
+      const date = row.segments?.date;
+      const campaign = row.campaign || {};
+      const metrics = row.metrics || {};
+      if (!date || !campaign.id) continue;
+
+      const campaignDbId = await upsertCampaign({
+        external_id: String(campaign.id),
+        source,
+        channel_id: channelId,
+        name: campaign.name || `Google Campaign ${campaign.id}`,
+        status: campaign.status || 'unknown',
+        objective: campaign.advertisingChannelType || null,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      });
+      totalCampaigns++;
+
+      const spend = num(metrics.costMicros) / 1000000;
+      const clicks = int(metrics.clicks);
+      const impressions = int(metrics.impressions);
+      const conversions = num(metrics.conversions);
+      const convValue = num(metrics.conversionsValue);
+
+      await upsertMetrics({
+        campaign_id: campaignDbId,
+        source,
+        date,
+        impressions,
+        reach: 0,
+        clicks,
+        spend,
+        cpm: num(metrics.averageCpm) / 1000000,
+        cpc: num(metrics.averageCpc) / 1000000,
+        ctr: num(metrics.ctr),
+        conversions,
+        conv_value: convValue,
+        leads: Math.round(conversions),
+        revenue_attr: convValue
+      });
+      totalMetrics++;
+    }
+  }
+
+  await endSyncLog(logId, {
+    status: 'success',
+    records: totalCampaigns + totalMetrics,
+    created: totalMetrics,
+    updated: 0,
+    lastDate: dateTo
+  });
+
+  console.log(`[Google Ads] ✓ ${totalCampaigns} campañas/muestras, ${totalMetrics} métricas`);
+}
+
 // ENTRYPOINT
 const job = process.argv[2];
 (async () => {
@@ -380,7 +518,9 @@ const job = process.argv[2];
     const daysBack = parseInt(process.env.META_DAYS_BACK || '30', 10);
     if (job === 'meta' || job === 'meta_full') await syncMetaAds(daysBack);
     else if (job === 'perfit') await syncPerfit();
-    else console.error('Job desconocido. Usar: meta | perfit');
+    else if (job === 'google_ads') await syncGoogleAds();
+    else if (job === 'all') { await syncMetaAds(daysBack); await syncPerfit(); await syncGoogleAds(); }
+    else console.error('Job desconocido. Usar: meta | perfit | google_ads | all');
   } catch (e) {
     console.error(`[${job}] ERROR:`, e.message);
     process.exit(1);
