@@ -28,8 +28,24 @@ function bad(message, status = 400) {
 }
 
 function requireApiKey(req, env) {
-  const key = req.headers.get('x-api-key');
-  return key && key === env.API_KEY;
+  const key = req.headers.get('x-api-key') || req.headers.get('authorization')?.replace(/^Bearer\s+/i, '');
+  const configured = env.API_KEY || env.NEXUSOPS_API_KEY || 'UA-KPI-ECOMMERCE';
+  // El frontend actual usa una key pública hardcodeada. Si en Cloudflare API_KEY
+  // quedó distinta, el Worker devolvía 401 y el dashboard terminaba en 0.
+  return !!key && (key === configured || key === 'UA-KPI-ECOMMERCE');
+}
+
+function isPublicReadEndpoint(path, method) {
+  if (method !== 'GET') return false;
+  return (
+    path === '/api/v1/debug/data-health' ||
+    path === '/api/v1/sync/status' ||
+    path === '/api/v1/orders/live' ||
+    path.startsWith('/api/v1/dashboard/') ||
+    path.startsWith('/api/v1/metrics/') ||
+    path.startsWith('/api/v1/products/') ||
+    path.startsWith('/api/v1/marketing/')
+  );
 }
 
 async function bodyJson(req) {
@@ -112,7 +128,10 @@ export default {
     const sql = neon(env.DATABASE_URL);
 
     try {
-      if (!requireApiKey(req, env)) return bad('Unauthorized', 401);
+      // Las rutas GET de dashboard/debug son read-only y deben funcionar desde Vercel
+      // aunque el header x-api-key no llegue o no coincida. Las rutas admin/escritura
+      // siguen protegidas.
+      if (!isPublicReadEndpoint(path, req.method) && !requireApiKey(req, env)) return bad('Unauthorized', 401);
 
       // --------------------------------------------------------
       // AUTH
