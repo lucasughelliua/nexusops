@@ -1,7 +1,3 @@
-import dotenv from "dotenv";
-
-dotenv.config();
-
 const CF_MARKETING_SYNC_URL = process.env.CF_MARKETING_SYNC_URL;
 const SYNC_SECRET = process.env.SYNC_SECRET;
 const GA4_CSV_URL = process.env.GA4_CSV_URL;
@@ -57,7 +53,7 @@ async function syncGA4GoogleAdsOnly() {
   for (const line of lines) {
     const cols = parseCSVLine(line);
 
-    const row = {
+    rows.push({
       date: cols[0] || "",
       source: cols[1] || "",
       medium: cols[2] || "",
@@ -66,9 +62,7 @@ async function syncGA4GoogleAdsOnly() {
       users: Number(cols[5] || 0),
       conversions: Number(cols[6] || 0),
       revenue: Number(cols[7] || 0)
-    };
-
-    rows.push(row);
+    });
   }
 
   console.log(`[GA4] ${rows.length} filas encontradas`);
