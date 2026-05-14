@@ -249,3 +249,63 @@ ALTER TABLE metrics_snapshots ADD COLUMN tenant_id UUID REFERENCES tenants(id);
 -- RLS (descomentar al activar multi-tenant)
 -- ALTER TABLE orders ENABLE ROW LEVEL SECURITY;
 -- CREATE POLICY orders_tenant ON orders USING (tenant_id = current_setting('app.tenant_id')::UUID);
+
+-- ============================================================
+-- MARKETING / ADS / EMAIL
+-- Tablas requeridas por jobs/sync-marketing.js
+-- ============================================================
+CREATE TABLE IF NOT EXISTS marketing_campaigns (
+  id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  external_id     VARCHAR(255) NOT NULL,
+  source          VARCHAR(50) NOT NULL,
+  channel_id      UUID REFERENCES channels(id),
+  name            VARCHAR(500) NOT NULL,
+  status          VARCHAR(100),
+  objective       VARCHAR(255),
+  daily_budget    NUMERIC(14,2),
+  lifetime_budget NUMERIC(14,2),
+  start_date      DATE,
+  end_date        DATE,
+  created_at      TIMESTAMPTZ DEFAULT NOW(),
+  updated_at      TIMESTAMPTZ DEFAULT NOW(),
+  synced_at       TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE(external_id, source)
+);
+
+CREATE INDEX IF NOT EXISTS idx_marketing_campaigns_source ON marketing_campaigns(source);
+CREATE INDEX IF NOT EXISTS idx_marketing_campaigns_channel ON marketing_campaigns(channel_id);
+
+CREATE TABLE IF NOT EXISTS marketing_metrics (
+  id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  campaign_id     UUID REFERENCES marketing_campaigns(id) ON DELETE CASCADE,
+  source          VARCHAR(50) NOT NULL,
+  date            DATE NOT NULL,
+  impressions     INTEGER DEFAULT 0,
+  reach           INTEGER DEFAULT 0,
+  clicks          INTEGER DEFAULT 0,
+  spend           NUMERIC(14,2) DEFAULT 0,
+  cpm             NUMERIC(14,4) DEFAULT 0,
+  cpc             NUMERIC(14,4) DEFAULT 0,
+  ctr             NUMERIC(14,4) DEFAULT 0,
+  frequency       NUMERIC(14,4) DEFAULT 0,
+  conversions     NUMERIC(14,4) DEFAULT 0,
+  conv_value      NUMERIC(14,2) DEFAULT 0,
+  leads           INTEGER DEFAULT 0,
+  video_views     INTEGER DEFAULT 0,
+  sent            INTEGER DEFAULT 0,
+  delivered       INTEGER DEFAULT 0,
+  opens           INTEGER DEFAULT 0,
+  unique_opens    INTEGER DEFAULT 0,
+  clicks_email    INTEGER DEFAULT 0,
+  unique_clicks   INTEGER DEFAULT 0,
+  unsubscribes    INTEGER DEFAULT 0,
+  bounces_soft    INTEGER DEFAULT 0,
+  bounces_hard    INTEGER DEFAULT 0,
+  spam_reports    INTEGER DEFAULT 0,
+  revenue_attr    NUMERIC(14,2) DEFAULT 0,
+  synced_at       TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE(campaign_id, date)
+);
+
+CREATE INDEX IF NOT EXISTS idx_marketing_metrics_date ON marketing_metrics(date DESC);
+CREATE INDEX IF NOT EXISTS idx_marketing_metrics_source_date ON marketing_metrics(source, date DESC);
