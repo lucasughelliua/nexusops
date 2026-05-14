@@ -614,8 +614,19 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);min-height:1
         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
           <div class="period-tabs" id="execPresets">
             <div class="period-tab active" onclick="execSetPeriod('today',this)">Hoy</div>
+            <div class="period-tab" onclick="execSetPeriod('yesterday',this)">Ayer</div>
+            <div class="period-tab" onclick="execSetPeriod('last7',this)">7D</div>
+            <div class="period-tab" onclick="execSetPeriod('last30',this)">30D</div>
             <div class="period-tab" onclick="execSetPeriod('mtd',this)">MTD</div>
+            <div class="period-tab" onclick="execSetPeriod('lastmonth',this)">Mes anterior</div>
             <div class="period-tab" onclick="execSetPeriod('ytd',this)">YTD</div>
+            <div class="period-tab" onclick="execOpenCustomDate(this)">Personalizado</div>
+          </div>
+          <div id="execCustomDateBox" style="display:none;align-items:center;gap:6px;background:var(--card);border:1px solid var(--border2);border-radius:var(--radius2);padding:5px 6px">
+            <input type="date" id="execDateFromInput" style="height:28px;background:var(--bg3);border:1px solid var(--border2);border-radius:var(--r2);padding:4px 7px;color:var(--text);font-size:11px;font-family:var(--mono);outline:none">
+            <span style="color:var(--text3);font-size:11px">→</span>
+            <input type="date" id="execDateToInput" style="height:28px;background:var(--bg3);border:1px solid var(--border2);border-radius:var(--r2);padding:4px 7px;color:var(--text);font-size:11px;font-family:var(--mono);outline:none">
+            <button class="btn-sm" onclick="execApplyCustomDate()" style="height:28px;font-size:11px">Aplicar</button>
           </div>
           <div style="position:relative">
             <button class="btn-sm" onclick="execToggleComparePicker()" id="execCompareToggleBtn"
@@ -1720,17 +1731,31 @@ function initCharts() {
 // ============================================================
 // EXECUTIVE STATE — date-based, matches worker getDateRange()
 // ============================================================
-function isoDate(d) { return d.toISOString().split('T')[0]; }
-function today() { return isoDate(new Date()); }
-function daysAgo(n) { return isoDate(new Date(Date.now() - 86400000 * n)); }
-function firstOfMonth() {
-  const n = new Date();
-  return `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,'0')}-01`;
+const APP_TZ = 'America/Argentina/Buenos_Aires';
+function isoDate(d) {
+  const parts = new Intl.DateTimeFormat('en-CA', { timeZone: APP_TZ, year:'numeric', month:'2-digit', day:'2-digit' }).formatToParts(d);
+  const v = Object.fromEntries(parts.map(p => [p.type, p.value]));
+  return `${v.year}-${v.month}-${v.day}`;
 }
-function firstOfYear() { return `${new Date().getFullYear()}-01-01`; }
+function dateAtNoon(dateStr) { return new Date(`${dateStr}T12:00:00`); }
+function addDays(dateStr, days) { const d = dateAtNoon(dateStr); d.setDate(d.getDate() + days); return isoDate(d); }
+function today() { return isoDate(new Date()); }
+function daysAgo(n) { return addDays(today(), -n); }
+function firstOfMonth() {
+  const [y,m] = today().split('-');
+  return `${y}-${m}-01`;
+}
+function firstOfYear() { return `${today().slice(0,4)}-01-01`; }
+function lastMonthRange() {
+  const [y,m] = today().split('-').map(Number);
+  const firstCurrent = new Date(y, m - 1, 1, 12);
+  const lastPrev = new Date(firstCurrent); lastPrev.setDate(0);
+  const firstPrev = new Date(lastPrev.getFullYear(), lastPrev.getMonth(), 1, 12);
+  return { dateFrom: isoDate(firstPrev), dateTo: isoDate(lastPrev) };
+}
 
 const execState = {
-  period: 'today',     // 'today' | 'mtd' | 'ytd' | 'custom'
+  period: 'today',     // 'today' | 'yesterday' | 'last7' | 'last30' | 'mtd' | 'lastmonth' | 'ytd' | 'custom'
   dateFrom: today(),
   dateTo: today(),
   compare: false,
@@ -1744,23 +1769,31 @@ const execState = {
 function execPeriodDates(period = execState.period) {
   const t = today();
   switch(period) {
-    case 'today': return { dateFrom: t, dateTo: t };
-    case 'mtd':   return { dateFrom: firstOfMonth(), dateTo: t };
-    case 'ytd':   return { dateFrom: firstOfYear(), dateTo: t };
-    default:      return { dateFrom: execState.dateFrom, dateTo: execState.dateTo };
+    case 'today':     return { dateFrom: t, dateTo: t };
+    case 'yesterday': return { dateFrom: daysAgo(1), dateTo: daysAgo(1) };
+    case 'last7':     return { dateFrom: daysAgo(6), dateTo: t };
+    case 'last30':    return { dateFrom: daysAgo(29), dateTo: t };
+    case 'mtd':       return { dateFrom: firstOfMonth(), dateTo: t };
+    case 'lastmonth': return lastMonthRange();
+    case 'ytd':       return { dateFrom: firstOfYear(), dateTo: t };
+    default:          return { dateFrom: execState.dateFrom, dateTo: execState.dateTo };
   }
 }
 
 function execCompareDates() {
   const { dateFrom, dateTo } = execPeriodDates();
-  const diffDays = Math.round((new Date(dateTo) - new Date(dateFrom)) / 86400000) + 1;
-  const cTo   = isoDate(new Date(new Date(dateFrom) - 86400000));
-  const cFrom = isoDate(new Date(new Date(cTo) - 86400000 * (diffDays - 1)));
+  const diffDays = Math.round((dateAtNoon(dateTo) - dateAtNoon(dateFrom)) / 86400000) + 1;
+  const cTo   = addDays(dateFrom, -1);
+  const cFrom = addDays(cTo, -(diffDays - 1));
   return { compareDateFrom: cFrom, compareDateTo: cTo };
 }
 
 function execPeriodLabel(period = execState.period) {
+  if (period === 'yesterday') return 'Ayer';
+  if (period === 'last7') return 'Últimos 7 días';
+  if (period === 'last30') return 'Últimos 30 días';
   if (period === 'mtd') return 'MTD';
+  if (period === 'lastmonth') return 'Mes anterior';
   if (period === 'ytd') return 'YTD';
   if (period === 'custom') return 'Personalizado';
   return 'Hoy';
@@ -1794,8 +1827,44 @@ async function execSetPeriod(period, el) {
   execState.dateTo   = dateTo;
   document.querySelectorAll('#execPresets .period-tab').forEach(t => t.classList.remove('active'));
   if (el) el.classList.add('active');
-  const fmtDate = d => new Date(d+'T12:00').toLocaleDateString('es-AR',{day:'2-digit',month:'short',year:'numeric'});
-  document.getElementById('execDate').textContent = `${execPeriodLabel(period)} · ${fmtDate(dateFrom)}${dateFrom!==dateTo?' — '+fmtDate(dateTo):''}`;
+  const box = document.getElementById('execCustomDateBox');
+  if (box) box.style.display = period === 'custom' ? 'flex' : 'none';
+  const fromInput = document.getElementById('execDateFromInput');
+  const toInput = document.getElementById('execDateToInput');
+  if (fromInput) fromInput.value = dateFrom;
+  if (toInput) toInput.value = dateTo;
+  execUpdateDateLabel();
+  await execRefresh();
+}
+
+function execUpdateDateLabel() {
+  const { dateFrom, dateTo } = execPeriodDates();
+  const fmtDate = d => dateAtNoon(d).toLocaleDateString('es-AR',{day:'2-digit',month:'short',year:'numeric'});
+  const el = document.getElementById('execDate');
+  if (el) el.textContent = `${execPeriodLabel()} · ${fmtDate(dateFrom)}${dateFrom!==dateTo?' — '+fmtDate(dateTo):''}`;
+}
+
+function execOpenCustomDate(el) {
+  document.querySelectorAll('#execPresets .period-tab').forEach(t => t.classList.remove('active'));
+  if (el) el.classList.add('active');
+  execState.period = 'custom';
+  const box = document.getElementById('execCustomDateBox');
+  if (box) box.style.display = 'flex';
+  const fromInput = document.getElementById('execDateFromInput');
+  const toInput = document.getElementById('execDateToInput');
+  if (fromInput) fromInput.value = execState.dateFrom || today();
+  if (toInput) toInput.value = execState.dateTo || today();
+  execUpdateDateLabel();
+}
+
+async function execApplyCustomDate() {
+  const from = document.getElementById('execDateFromInput')?.value;
+  const to = document.getElementById('execDateToInput')?.value;
+  if (!from || !to || from > to) { alert('Rango de fechas inválido'); return; }
+  execState.period = 'custom';
+  execState.dateFrom = from;
+  execState.dateTo = to;
+  execUpdateDateLabel();
   await execRefresh();
 }
 
@@ -1817,7 +1886,7 @@ function execUpdateCompareLabel() {
   const from = document.getElementById('execCmpFrom')?.value;
   const to   = document.getElementById('execCmpTo')?.value;
   if (!from || !to) return;
-  const fmtD = d => new Date(d+'T12:00').toLocaleDateString('es-AR',{day:'2-digit',month:'short'});
+  const fmtD = d => dateAtNoon(d).toLocaleDateString('es-AR',{day:'2-digit',month:'short'});
   if (document.getElementById('execComparePreviewLabel'))
     document.getElementById('execComparePreviewLabel').textContent = `${fmtD(from)} → ${fmtD(to)}`;
 }
@@ -1830,7 +1899,7 @@ async function execApplyCompare() {
   execState.compareDateFrom = from;
   execState.compareDateTo   = to;
   document.getElementById('execComparePicker').style.display = 'none';
-  const fmtD = d => new Date(d+'T12:00').toLocaleDateString('es-AR',{day:'2-digit',month:'short'});
+  const fmtD = d => dateAtNoon(d).toLocaleDateString('es-AR',{day:'2-digit',month:'short'});
   document.getElementById('execCompareBanner').style.display = 'flex';
   document.getElementById('execCompareLabel').textContent    = `${fmtD(from)} — ${fmtD(to)}`;
   document.getElementById('execCompareTitle').textContent    = `${execPeriodLabel()} vs. ${fmtD(from)}–${fmtD(to)}`;
@@ -1839,17 +1908,16 @@ async function execApplyCompare() {
 
 async function execSetComparePeriod(preset) {
   const { dateFrom, dateTo } = execPeriodDates();
-  const diffDays = Math.round((new Date(dateTo) - new Date(dateFrom)) / 86400000) + 1;
+  const diffDays = Math.round((dateAtNoon(dateTo) - dateAtNoon(dateFrom)) / 86400000) + 1;
   let from, to;
   if (preset === 'previous') {
-    to   = isoDate(new Date(new Date(dateFrom) - 86400000));
-    from = isoDate(new Date(new Date(to) - 86400000*(diffDays-1)));
+    to   = addDays(dateFrom, -1);
+    from = addDays(to, -(diffDays-1));
   } else if (preset === 'lastmonth') {
-    const d = new Date();
-    to   = isoDate(new Date(d.getFullYear(), d.getMonth(), 0));
-    from = isoDate(new Date(d.getFullYear(), d.getMonth()-1, 1));
+    const lm = lastMonthRange();
+    from = lm.dateFrom; to = lm.dateTo;
   } else if (preset === 'lastyear') {
-    const y = new Date().getFullYear() - 1;
+    const y = Number(today().slice(0,4)) - 1;
     const { dateFrom: df, dateTo: dt } = execPeriodDates();
     from = df.replace(/^\d{4}/, y);
     to   = dt.replace(/^\d{4}/, y);
@@ -2167,8 +2235,8 @@ function genOrder() { return null; }
 
 
 async function renderLivePage() {
-  const today = new Date().toISOString().slice(0,10);
-  const exec = await fetchAPIWithFallback('/dashboard/summary?date_from=' + today + '&date_to=' + today, '/metrics/executive?date_from=' + today + '&date_to=' + today, summaryHasValue);
+  const todayStr = today();
+  const exec = await fetchAPIWithFallback('/dashboard/summary?date_from=' + todayStr + '&date_to=' + todayStr, '/metrics/executive?date_from=' + todayStr + '&date_to=' + todayStr, summaryHasValue);
   const execLive = exec?.data || exec || {};
   if (execLive) {
     state.revenue = Number(execLive.total_revenue || 0);
@@ -2193,7 +2261,7 @@ async function renderLivePage() {
   await renderOrdersList();
 
   // Top productos reales
-  const topProds = await fetchAPIWithFallback('/dashboard/top-products?date_from=' + today + '&date_to=' + today + '&limit=10', '/products/top?date_from=' + today + '&date_to=' + today + '&limit=10', hasRows);
+  const topProds = await fetchAPIWithFallback('/dashboard/top-products?date_from=' + todayStr + '&date_to=' + todayStr + '&limit=10', '/products/top?date_from=' + todayStr + '&date_to=' + todayStr + '&limit=10', hasRows);
   const prodList = Array.isArray(topProds) ? topProds : (topProds?.data || []);
   if (!prodList.length) {
     document.getElementById('liveRanking').innerHTML = emptyHTML();
@@ -2211,7 +2279,7 @@ async function renderLivePage() {
 }
 
 async function renderOrdersList() {
-  const data = await fetchAPIWithFallback('/dashboard/tv?date_from=' + new Date().toISOString().slice(0,10) + '&date_to=' + new Date().toISOString().slice(0,10), '/orders/live?limit=15', hasRows);
+  const data = await fetchAPIWithFallback('/dashboard/tv?date_from=' + today() + '&date_to=' + today(), '/orders/live?limit=15', hasRows);
   document.getElementById('orderTicker').textContent = state.orders + ' hoy';
 
   const ordersToShow = Array.isArray(data) ? data : (data?.recent_orders || []);
@@ -2275,15 +2343,15 @@ function renderChannels() {
 // ============================================================
 const mktState = {
   days: 30,
-  dateFrom: new Date(Date.now()-86400000*30).toISOString().split('T')[0],
-  dateTo: new Date().toISOString().split('T')[0],
+  dateFrom: daysAgo(30),
+  dateTo: today(),
   compareOn: false,
   channel: 'all',
   metaFilter: 'all',
 };
 
-function mktToday() { return new Date().toISOString().split('T')[0]; }
-function mktDaysAgo(n) { return new Date(Date.now()-86400000*n).toISOString().split('T')[0]; }
+function mktToday() { return today(); }
+function mktDaysAgo(n) { return daysAgo(n); }
 
 function mktPreset(val, el) {
   document.querySelectorAll('#mktPresets .period-tab').forEach(p=>p.classList.remove('active'));
@@ -2296,12 +2364,12 @@ function mktPreset(val, el) {
     return;
   }
   if(val==='mtd'){
-    const n=new Date(); mktState.dateFrom=`${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,'0')}-01`;
-    mktState.dateTo=mktToday(); mktState.days=n.getDate();
+    mktState.dateFrom=firstOfMonth();
+    mktState.dateTo=mktToday(); mktState.days=Number(today().slice(8,10));
   } else {
     mktState.days=val; mktState.dateFrom=mktDaysAgo(val); mktState.dateTo=mktToday();
   }
-  const f=d=>new Date(d+'T12:00').toLocaleDateString('es-AR',{day:'2-digit',month:'short'});
+  const f=d=>dateAtNoon(d).toLocaleDateString('es-AR',{day:'2-digit',month:'short'});
   document.getElementById('mktDateLabel').textContent=`${f(mktState.dateFrom)} — ${f(mktState.dateTo)}`;
   mktDataCacheKey = null; // Invalidate cache — period changed
   renderMarketing();
@@ -2327,12 +2395,15 @@ function mktToggleCompare(e){
 function renderComparePresets() {
   const days = mktState.days || 30;
   const from = mktState.dateFrom, to = mktState.dateTo;
-  const f = d => new Date(d+'T12:00').toLocaleDateString('es-AR',{day:'2-digit',month:'short'});
+  const f = d => dateAtNoon(d).toLocaleDateString('es-AR',{day:'2-digit',month:'short'});
 
-  const prevTo   = new Date(new Date(from+'T12:00') - 86400000).toISOString().split('T')[0];
-  const prevFrom = new Date(new Date(from+'T12:00') - 86400000*(days+1)).toISOString().split('T')[0];
-  const lastMonthTo   = new Date(new Date(from+'T12:00').setDate(0)).toISOString().split('T')[0];
-  const lastMonthFrom = new Date(new Date(lastMonthTo+'T12:00').setDate(1)).toISOString().split('T')[0];
+  const prevTo   = addDays(from, -1);
+  const prevFrom = addDays(prevTo, -(days-1));
+  const firstCurrent = dateAtNoon(from);
+  const lmToDate = new Date(firstCurrent); lmToDate.setDate(0);
+  const lmFromDate = new Date(lmToDate.getFullYear(), lmToDate.getMonth(), 1, 12);
+  const lastMonthTo   = isoDate(lmToDate);
+  const lastMonthFrom = isoDate(lmFromDate);
 
   const presets = [
     { label:'Período anterior', sub:`${f(prevFrom)} — ${f(prevTo)}`, from:prevFrom, to:prevTo },
@@ -2370,13 +2441,13 @@ function mktApplyCompareCustom() {
     mktState.compareFrom = from;
     mktState.compareTo   = to;
     mktState.compareOn   = true;
-    const f = d => new Date(d+'T12:00').toLocaleDateString('es-AR',{day:'2-digit',month:'short'});
+    const f = d => dateAtNoon(d).toLocaleDateString('es-AR',{day:'2-digit',month:'short'});
     applyCompare(`${f(from)} — ${f(to)}`, from, to);
   }
 }
 
 function applyCompare(label, from, to) {
-  const f = d => new Date(d+'T12:00').toLocaleDateString('es-AR',{day:'2-digit',month:'short'});
+  const f = d => dateAtNoon(d).toLocaleDateString('es-AR',{day:'2-digit',month:'short'});
   const btn = document.getElementById('mktCompareBtn');
   btn.style.background   = 'rgba(139,92,246,.12)';
   btn.style.borderColor  = '#8b5cf6';
@@ -3118,7 +3189,7 @@ function closeTV() {
   document.body.style.overflow='';
 }
 async function updateTV() {
-  const tvToday = new Date().toISOString().slice(0,10);
+  const tvToday = today();
   const [exec, channelsRes, topRes, liveRes, kommoRes, syncRes, mktRes] = await Promise.all([
     fetchAPI('/dashboard/tv?date_from=' + tvToday + '&date_to=' + tvToday),
     fetchAPI('/dashboard/channels?date_from=' + tvToday + '&date_to=' + tvToday),
