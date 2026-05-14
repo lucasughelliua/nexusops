@@ -106,12 +106,11 @@ export async function syncVTEX() {
   const appToken = process.env.VTEX_APP_TOKEN;
   const headers = { 'X-VTEX-API-AppKey': appKey, 'X-VTEX-API-AppToken': appToken };
 
-  // Obtener channel_id de VTEX
   const { rows: [channel] } = await db.query(`SELECT id FROM channels WHERE type='vtex' LIMIT 1`);
   if (!channel) throw new Error('Canal VTEX no configurado');
 
   const daysBack = parseInt(process.env.VTEX_DAYS_BACK || '1');
-const fromDate = last.last_date_synced
+  const fromDate = last.last_date_synced
     ? new Date(last.last_date_synced).toISOString()
     : new Date(Date.now() - 86400000 * daysBack).toISOString();
 
@@ -121,27 +120,43 @@ const fromDate = last.last_date_synced
 
   console.log(`[VTEX] Sincronizando desde ${fromDate}`);
 
+  // Helper con retry y backoff para manejar 429
+  async function vtexFetch(url, retries = 5) {
+    for (let i = 0; i <= retries; i++) {
+      const res = await fetch(url, { headers });
+      if (res.status === 429) {
+        const wait = Math.min(60000, 5000 * Math.pow(2, i));
+        console.log(`[VTEX] Rate limit (429). Esperando ${wait/1000}s...`);
+        await new Promise(r => setTimeout(r, wait));
+        continue;
+      }
+      if (!res.ok) throw new Error(`VTEX API error: ${res.status}`);
+      return res.json();
+    }
+    throw new Error('VTEX: demasiados reintentos por rate limit');
+  }
+
   while (true) {
     const url = `https://${account}.vtexcommercestable.com.br/api/oms/pvt/orders?` +
       `f_createdIn=${encodeURIComponent(fromDate)}_${encodeURIComponent(new Date().toISOString())}` +
       `&orderBy=createdIn,asc&page=${page}&per_page=50`;
 
-    const res = await fetch(url, { headers });
-    if (!res.ok) throw new Error(`VTEX API error: ${res.status}`);
-
-    const data = await res.json();
+    const data = await vtexFetch(url);
     const orders = data.list || [];
-
     if (!orders.length) break;
 
     for (const o of orders) {
-      // Detalle completo de la orden
-      await new Promise(r => setTimeout(r, 400));
-      const detailRes = await fetch(
-        `https://${account}.vtexcommercestable.com.br/api/oms/pvt/orders/${o.orderId}`,
-        { headers }
-      );
-      const detail = await detailRes.json();
+      await new Promise(r => setTimeout(r, 600)); // 600ms entre requests de detalle
+
+      let detail;
+      try {
+        detail = await vtexFetch(
+          `https://${account}.vtexcommercestable.com.br/api/oms/pvt/orders/${o.orderId}`
+        );
+      } catch (e) {
+        console.warn(`[VTEX] Error detalle orden ${o.orderId}:`, e.message);
+        continue;
+      }
 
       const normalized = {
         external_id: detail.orderId,
@@ -183,10 +198,10 @@ const fromDate = last.last_date_synced
       lastDate = detail.creationDate;
     }
 
-    console.log(`[VTEX] Página ${page}: ${orders.length} órdenes`);
+    console.log(`[VTEX] Página ${page}: ${orders.length} órdenes (total: ${totalProcessed})`);
     if (orders.length < 50 || page >= data.paging?.pages) break;
     page++;
-    await new Promise(r => setTimeout(r, 800)); // Rate limiting
+    await new Promise(r => setTimeout(r, 1500)); // 1.5s entre páginas
   }
 
   await endSyncLog(logId, { status: 'success', records: totalProcessed, created: totalCreated, updated: totalUpdated, lastDate });
