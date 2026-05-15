@@ -1,6 +1,10 @@
 {
   "rewrites": [
     {
+      "source": "/api/v1/:path*",
+      "destination": "https://nexusops-api.lucasughelli.workers.dev/api/v1/:path*"
+    },
+    {
       "source": "/api/:path*",
       "destination": "https://nexusops-api.lucasughelli.workers.dev/api/:path*"
     }
