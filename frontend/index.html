@@ -6340,7 +6340,18 @@ function setTheme(theme) {
   const menu = document.getElementById('userMenu');
   if (menu) menu.style.display = 'none';
 }
-
+// Fix: mostrar Kommo, Perfit y Google aunque estén vacíos
+document.addEventListener('DOMContentLoaded', () => {
+  if (typeof initTheme !== 'undefined') initTheme();
+  
+  // Force render de Marketing después de 2 segundos
+  setTimeout(() => {
+    if (typeof renderMarketing !== 'undefined') {
+      console.log('[Fix] Force rendering Marketing...');
+      renderMarketing().catch(e => console.error('[Fix] Error:', e));
+    }
+  }, 2000);
+});
 </script>
 </div><!-- /dashboardApp -->
 </body>
