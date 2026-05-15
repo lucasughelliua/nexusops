@@ -1,770 +1,519 @@
-/**
- * NexusOps — sync-marketing.js
- * Jobs separados por canal:
- *   node sync-marketing.js meta_full    → Meta Ads (Facebook + Instagram)
- *   node sync-marketing.js perfit       → Perfit Email Marketing
- *   node sync-marketing.js google_ads   → Google Ads API (oficial)
- *   node sync-marketing.js kommo        → Kommo CRM leads
- */
+/*
+  NexusOps - sync marketing unificado
+  Ejecutar:
+    node sync-marketing.js google_ads
+    node sync-marketing.js perfit
+    node sync-marketing.js kommo
+    node sync-marketing.js meta_ads
+    node sync-marketing.js all
 
-import { Pool } from 'pg';
+  Requiere:
+    npm i pg googleapis
+*/
 
-const db = new Pool({ connectionString: process.env.DATABASE_URL });
+const { Pool } = require('pg');
+const { google } = require('googleapis');
 
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-const todayISO = () => new Date().toISOString().slice(0, 10);
-const daysAgoISO = (d) => new Date(Date.now() - 86400000 * d).toISOString().slice(0, 10);
-const isoFromUnix = (ts) => (ts ? new Date(Number(ts) * 1000).toISOString() : null);
-const num = (v) => { const n = Number(String(v || 0).replace(',', '.')); return Number.isFinite(n) ? n : 0; };
-const int = (v) => { const n = parseInt(v, 10); return Number.isFinite(n) ? n : 0; };
+const TZ = 'America/Argentina/Buenos_Aires';
+const pool = new Pool({
+  connectionString: requiredEnv('DATABASE_URL'),
+  ssl: process.env.PGSSLMODE === 'disable' ? false : { rejectUnauthorized: false },
+});
 
-function requireEnv(name) {
-  const v = process.env[name]?.trim();
-  if (!v) throw new Error(`Falta variable de entorno: ${name}`);
-  return v;
+function requiredEnv(name) {
+  const value = process.env[name];
+  if (!value || !String(value).trim()) throw new Error(`Falta ${name}`);
+  return value;
 }
 
-async function fetchJson(url, options = {}, retries = 3) {
-  let lastError;
-  for (let i = 0; i <= retries; i++) {
-    try {
-      const res = await fetch(url, options);
-      const text = await res.text();
-      let data = {};
-      try { data = text ? JSON.parse(text) : {}; } catch { data = { raw: text }; }
-      if (!res.ok) {
-        const msg = data?.error?.message || data?.message || data?.userMessage || `HTTP ${res.status}`;
-        if ((res.status === 429 || res.status >= 500) && i < retries) {
-          const wait = 2000 * Math.pow(2, i);
-          console.warn(`[fetch] ${res.status}. Reintento en ${wait / 1000}s`);
-          await sleep(wait);
-          continue;
-        }
-        throw new Error(`${res.status} ${msg}`);
-      }
-      return data;
-    } catch (e) {
-      lastError = e;
-      if (i < retries) { await sleep(1000 * Math.pow(2, i)); continue; }
-    }
+function optionalEnv(name, fallback = '') {
+  return process.env[name] && String(process.env[name]).trim() ? String(process.env[name]).trim() : fallback;
+}
+
+function normalizeHeader(value) {
+  return String(value || '')
+    .trim()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+}
+
+function parseNumber(value) {
+  if (value === null || value === undefined || value === '') return 0;
+  if (typeof value === 'number') return Number.isFinite(value) ? value : 0;
+
+  let s = String(value)
+    .trim()
+    .replace(/\s/g, '')
+    .replace(/[$%xX]/g, '')
+    .replace(/[^0-9,.-]/g, '');
+
+  if (!s || s === '-' || s === '.' || s === ',') return 0;
+
+  const hasComma = s.includes(',');
+  const hasDot = s.includes('.');
+
+  if (hasComma && hasDot) {
+    // 1.234,56 => 1234.56 | 1,234.56 => 1234.56
+    if (s.lastIndexOf(',') > s.lastIndexOf('.')) s = s.replace(/\./g, '').replace(',', '.');
+    else s = s.replace(/,/g, '');
+  } else if (hasComma) {
+    s = s.replace(',', '.');
   }
-  throw lastError;
+
+  const n = Number(s);
+  return Number.isFinite(n) ? n : 0;
 }
 
-// ============================================================
-// SYNC LOG
-// ============================================================
-async function getLastSync(source) {
-  const { rows } = await db.query(
-    `SELECT last_date_synced FROM sync_log WHERE source=$1 AND status IN ('success','partial') ORDER BY started_at DESC LIMIT 1`,
-    [source]
+function toISODate(value) {
+  if (!value) return null;
+  const s = String(value).trim();
+
+  const ymd = s.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})/);
+  if (ymd) return `${ymd[1]}-${String(ymd[2]).padStart(2, '0')}-${String(ymd[3]).padStart(2, '0')}`;
+
+  const dmy = s.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{4})/);
+  if (dmy) return `${dmy[3]}-${String(dmy[2]).padStart(2, '0')}-${String(dmy[1]).padStart(2, '0')}`;
+
+  const d = new Date(s);
+  if (!Number.isNaN(d.getTime())) return d.toISOString().slice(0, 10);
+  return null;
+}
+
+function dateInBAFromUnix(ts) {
+  const d = new Date(Number(ts) * 1000);
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: TZ,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(d);
+}
+
+function first(row, names) {
+  for (const name of names) {
+    const key = normalizeHeader(name);
+    if (row[key] !== undefined && row[key] !== null && row[key] !== '') return row[key];
+  }
+  return '';
+}
+
+function campaignKey(source, campaignId, campaignName) {
+  return String(campaignId || campaignName || source).trim().toLowerCase().replace(/[^a-z0-9]+/g, '_') || source;
+}
+
+async function ensureTables() {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS marketing_daily (
+      date date NOT NULL,
+      source text NOT NULL,
+      campaign_key text NOT NULL,
+      campaign_id text,
+      campaign_name text,
+      spend numeric DEFAULT 0,
+      impressions bigint DEFAULT 0,
+      reach bigint DEFAULT 0,
+      clicks bigint DEFAULT 0,
+      conversions numeric DEFAULT 0,
+      revenue numeric DEFAULT 0,
+      leads bigint DEFAULT 0,
+      emails_sent bigint DEFAULT 0,
+      emails_delivered bigint DEFAULT 0,
+      opens bigint DEFAULT 0,
+      bounces bigint DEFAULT 0,
+      unsubscribes bigint DEFAULT 0,
+      raw jsonb DEFAULT '{}'::jsonb,
+      updated_at timestamptz DEFAULT now(),
+      PRIMARY KEY (date, source, campaign_key)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_marketing_daily_source_date
+      ON marketing_daily (source, date DESC);
+
+    CREATE TABLE IF NOT EXISTS sync_status (
+      source text PRIMARY KEY,
+      ok boolean NOT NULL DEFAULT false,
+      rows_imported integer NOT NULL DEFAULT 0,
+      message text,
+      started_at timestamptz,
+      finished_at timestamptz DEFAULT now()
+    );
+  `);
+}
+
+async function setStatus(source, ok, rows, message, startedAt) {
+  await pool.query(
+    `INSERT INTO sync_status (source, ok, rows_imported, message, started_at, finished_at)
+     VALUES ($1, $2, $3, $4, $5, now())
+     ON CONFLICT (source) DO UPDATE SET
+       ok = EXCLUDED.ok,
+       rows_imported = EXCLUDED.rows_imported,
+       message = EXCLUDED.message,
+       started_at = EXCLUDED.started_at,
+       finished_at = now()`,
+    [source, ok, rows, String(message || '').slice(0, 1000), startedAt]
   );
-  return rows[0]?.last_date_synced || null;
 }
 
-async function startSyncLog(source) {
-  const { rows } = await db.query(
-    `INSERT INTO sync_log(source,status) VALUES($1,'running') RETURNING id`, [source]
-  );
-  return rows[0].id;
-}
-
-async function endSyncLog(id, { status, records = 0, created = 0, updated = 0, lastDate = null, error = null }) {
-  await db.query(`
-    UPDATE sync_log SET status=$1, finished_at=NOW(), records_processed=$2,
-      records_created=$3, records_updated=$4, last_date_synced=$5, error_message=$6,
-      duration_ms=EXTRACT(EPOCH FROM (NOW()-started_at))*1000
-    WHERE id=$7
-  `, [status, records, created, updated, lastDate, error, id]);
-}
-
-// ============================================================
-// DB HELPERS
-// ============================================================
-async function getOrCreateChannel(name, type, externalId = null) {
-  let { rows: [ch] } = await db.query(`SELECT id FROM channels WHERE name=$1 AND type=$2`, [name, type]);
-  if (!ch) {
-    const { rows: [c] } = await db.query(
-      `INSERT INTO channels(name,type,external_id,active) VALUES($1,$2,$3,true) RETURNING id`,
-      [name, type, externalId]
-    );
-    ch = c;
-  }
-  return ch.id;
-}
-
-async function upsertCampaign(data) {
-  const { rows } = await db.query(`
-    INSERT INTO marketing_campaigns
-      (external_id,source,channel_id,name,status,objective,daily_budget,lifetime_budget,start_date,end_date,created_at,updated_at)
-    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
-    ON CONFLICT (external_id,source) DO UPDATE SET
-      status=EXCLUDED.status, name=EXCLUDED.name,
-      daily_budget=EXCLUDED.daily_budget, updated_at=EXCLUDED.updated_at, synced_at=NOW()
-    RETURNING id
-  `, [
-    data.external_id, data.source, data.channel_id, data.name,
-    data.status || 'unknown', data.objective || null,
-    data.daily_budget || null, data.lifetime_budget || null,
-    data.start_date || null, data.end_date || null,
-    data.created_at || new Date().toISOString(),
-    data.updated_at || new Date().toISOString(),
-  ]);
-  return rows[0].id;
-}
-
-async function upsertMetrics(data) {
-  await db.query(`
-    INSERT INTO marketing_metrics
-      (campaign_id,source,date,impressions,reach,clicks,spend,cpm,cpc,ctr,frequency,
-       conversions,conv_value,leads,video_views,
-       sent,delivered,opens,unique_opens,clicks_email,unique_clicks,
-       unsubscribes,bounces_soft,bounces_hard,spam_reports,revenue_attr)
-    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26)
-    ON CONFLICT (campaign_id,date) DO UPDATE SET
-      impressions=EXCLUDED.impressions, reach=EXCLUDED.reach, clicks=EXCLUDED.clicks,
-      spend=EXCLUDED.spend, cpm=EXCLUDED.cpm, cpc=EXCLUDED.cpc, ctr=EXCLUDED.ctr,
-      frequency=EXCLUDED.frequency, conversions=EXCLUDED.conversions, conv_value=EXCLUDED.conv_value,
-      leads=EXCLUDED.leads, sent=EXCLUDED.sent, delivered=EXCLUDED.delivered,
-      opens=EXCLUDED.opens, unique_opens=EXCLUDED.unique_opens, clicks_email=EXCLUDED.clicks_email,
-      unique_clicks=EXCLUDED.unique_clicks, unsubscribes=EXCLUDED.unsubscribes,
-      bounces_soft=EXCLUDED.bounces_soft, bounces_hard=EXCLUDED.bounces_hard,
-      spam_reports=EXCLUDED.spam_reports, revenue_attr=EXCLUDED.revenue_attr, synced_at=NOW()
-  `, [
-    data.campaign_id, data.source, data.date,
-    data.impressions||0, data.reach||0, data.clicks||0,
-    data.spend||0, data.cpm||0, data.cpc||0, data.ctr||0, data.frequency||0,
-    data.conversions||0, data.conv_value||0, data.leads||0, data.video_views||0,
-    data.sent||0, data.delivered||0, data.opens||0, data.unique_opens||0,
-    data.clicks_email||0, data.unique_clicks||0, data.unsubscribes||0,
-    data.bounces_soft||0, data.bounces_hard||0, data.spam_reports||0, data.revenue_attr||0,
-  ]);
-}
-
-// ============================================================
-// JOB 1: META ADS (Facebook + Instagram)
-// ============================================================
-export async function syncMetaAds(daysBack = 30) {
-  const source = 'meta';
-  const logId = await startSyncLog(source);
+async function upsertRows(rows) {
+  if (!rows.length) return 0;
+  const client = await pool.connect();
   try {
-    const token = requireEnv('META_ACCESS_TOKEN');
-    const adAccountId = requireEnv('META_AD_ACCOUNT_ID');
-    const lastSync = await getLastSync(source);
-    const dateFrom = lastSync
-      ? new Date(new Date(lastSync) - 86400000).toISOString().split('T')[0]
-      : daysAgoISO(daysBack);
-    const dateTo = todayISO();
-
-    console.log(`[Meta] Sincronizando ${dateFrom} → ${dateTo}`);
-    const channelId = await getOrCreateChannel('Meta Ads', 'other', adAccountId);
-    let totalCampaigns = 0, totalMetrics = 0;
-
-    // 1. Campañas
-    let after = null;
-    while (true) {
-      const params = new URLSearchParams({
-        access_token: token,
-        fields: 'id,name,status,objective,daily_budget,lifetime_budget,start_time,stop_time,created_time,updated_time',
-        limit: '100',
-      });
-      if (after) params.set('after', after);
-
-      const data = await fetchJson(`https://graph.facebook.com/v19.0/${adAccountId}/campaigns?${params}`);
-      if (data.error) throw new Error(`Meta: ${data.error.message}`);
-
-      for (const camp of (data.data || [])) {
-        await upsertCampaign({
-          external_id: camp.id, source, channel_id: channelId,
-          name: camp.name, status: camp.status, objective: camp.objective,
-          daily_budget: camp.daily_budget ? camp.daily_budget / 100 : null,
-          lifetime_budget: camp.lifetime_budget ? camp.lifetime_budget / 100 : null,
-          start_date: camp.start_time?.split('T')[0] || null,
-          end_date: camp.stop_time?.split('T')[0] || null,
-          created_at: camp.created_time, updated_at: camp.updated_time,
-        });
-        totalCampaigns++;
-      }
-      after = data.paging?.cursors?.after;
-      if (!data.paging?.next) break;
-      await sleep(200);
+    await client.query('BEGIN');
+    let imported = 0;
+    for (const r of rows) {
+      if (!r.date || !r.source) continue;
+      const cKey = r.campaign_key || campaignKey(r.source, r.campaign_id, r.campaign_name);
+      await client.query(
+        `INSERT INTO marketing_daily (
+          date, source, campaign_key, campaign_id, campaign_name,
+          spend, impressions, reach, clicks, conversions, revenue, leads,
+          emails_sent, emails_delivered, opens, bounces, unsubscribes,
+          raw, updated_at
+        ) VALUES (
+          $1,$2,$3,$4,$5,
+          $6,$7,$8,$9,$10,$11,$12,
+          $13,$14,$15,$16,$17,
+          $18::jsonb, now()
+        )
+        ON CONFLICT (date, source, campaign_key) DO UPDATE SET
+          campaign_id = EXCLUDED.campaign_id,
+          campaign_name = EXCLUDED.campaign_name,
+          spend = EXCLUDED.spend,
+          impressions = EXCLUDED.impressions,
+          reach = EXCLUDED.reach,
+          clicks = EXCLUDED.clicks,
+          conversions = EXCLUDED.conversions,
+          revenue = EXCLUDED.revenue,
+          leads = EXCLUDED.leads,
+          emails_sent = EXCLUDED.emails_sent,
+          emails_delivered = EXCLUDED.emails_delivered,
+          opens = EXCLUDED.opens,
+          bounces = EXCLUDED.bounces,
+          unsubscribes = EXCLUDED.unsubscribes,
+          raw = EXCLUDED.raw,
+          updated_at = now()`,
+        [
+          r.date,
+          r.source,
+          cKey,
+          r.campaign_id || null,
+          r.campaign_name || null,
+          parseNumber(r.spend),
+          Math.round(parseNumber(r.impressions)),
+          Math.round(parseNumber(r.reach)),
+          Math.round(parseNumber(r.clicks)),
+          parseNumber(r.conversions),
+          parseNumber(r.revenue),
+          Math.round(parseNumber(r.leads)),
+          Math.round(parseNumber(r.emails_sent)),
+          Math.round(parseNumber(r.emails_delivered)),
+          Math.round(parseNumber(r.opens)),
+          Math.round(parseNumber(r.bounces)),
+          Math.round(parseNumber(r.unsubscribes)),
+          JSON.stringify(r.raw || {}),
+        ]
+      );
+      imported++;
     }
-
-    // 2. Insights por campaña
-    const { rows: campaigns } = await db.query(
-      `SELECT id, external_id FROM marketing_campaigns WHERE source='meta'`
-    );
-
-    for (const camp of campaigns) {
-      try {
-        const params = new URLSearchParams({
-          access_token: token,
-          level: 'campaign', time_increment: '1',
-          time_range: JSON.stringify({ since: dateFrom, until: dateTo }),
-          fields: 'date_start,impressions,reach,clicks,spend,cpm,cpc,ctr,frequency,actions,action_values',
-          limit: '90',
-        });
-        const data = await fetchJson(`https://graph.facebook.com/v19.0/${camp.external_id}/insights?${params}`);
-        if (data.error) continue;
-
-        for (const ins of (data.data || [])) {
-          const actions = ins.actions || [];
-          const actionValues = ins.action_values || [];
-          const getA = (t) => int(actions.find((a) => a.action_type === t)?.value);
-          const getAV = (t) => num(actionValues.find((a) => a.action_type === t)?.value);
-          const purchases = getA('purchase') + getA('offsite_conversion.fb_pixel_purchase');
-          const purchaseValue = getAV('purchase') + getAV('offsite_conversion.fb_pixel_purchase');
-          const leads = getA('lead') + getA('offsite_conversion.fb_pixel_lead');
-
-          await upsertMetrics({
-            campaign_id: camp.id, source, date: ins.date_start,
-            impressions: int(ins.impressions), reach: int(ins.reach),
-            clicks: int(ins.clicks), spend: num(ins.spend),
-            cpm: num(ins.cpm), cpc: num(ins.cpc), ctr: num(ins.ctr), frequency: num(ins.frequency),
-            conversions: purchases, conv_value: purchaseValue, leads, revenue_attr: purchaseValue,
-          });
-          totalMetrics++;
-        }
-      } catch (e) { console.warn(`[Meta] camp ${camp.external_id}:`, e.message); }
-      await sleep(100);
-    }
-
-    await endSyncLog(logId, { status: 'success', records: totalCampaigns + totalMetrics, created: totalMetrics, lastDate: dateTo });
-    console.log(`[Meta] ✓ ${totalCampaigns} campañas, ${totalMetrics} métricas`);
+    await client.query('COMMIT');
+    return imported;
   } catch (e) {
-    await endSyncLog(logId, { status: 'error', error: e.message });
+    await client.query('ROLLBACK');
     throw e;
-  }
-}
-
-// ============================================================
-// JOB 2: PERFIT EMAIL MARKETING
-// ============================================================
-export async function syncPerfit() {
-  const source = 'perfit';
-  const logId = await startSyncLog(source);
-  try {
-    const apiKey = requireEnv('PERFIT_API_KEY');
-    const account = requireEnv('PERFIT_ACCOUNT');
-    const lastSync = await getLastSync(source);
-    const daysBack = int(process.env.PERFIT_DAYS_BACK || 30);
-    const dateFrom = lastSync
-      ? new Date(new Date(lastSync) - 86400000).toISOString().split('T')[0]
-      : daysAgoISO(daysBack);
-
-    console.log(`[Perfit] Account: ${account}, desde: ${dateFrom}`);
-    const baseUrl = `https://api.myperfit.com/v2/${account}`;
-    const channelId = await getOrCreateChannel('Perfit', 'other', account);
-
-    // Estrategia multi-auth: probar en orden hasta encontrar la que funciona
-    const authStrategies = [
-      (url) => ({ url: `${url}${url.includes('?') ? '&' : '?'}api_key=${apiKey}`, opts: {} }),
-      (url) => ({ url, opts: { headers: { 'Authorization': `Basic ${Buffer.from(`${apiKey}:`).toString('base64')}` } } }),
-      (url) => ({ url, opts: { headers: { 'Authorization': `Bearer ${apiKey}` } } }),
-      (url) => ({ url, opts: { headers: { 'X-Auth-Token': apiKey } } }),
-    ];
-
-    let workingAuth = null, workingNs = null;
-    for (const auth of authStrategies) {
-      for (const ns of ['campaigns', 'mailings', 'messages']) {
-        try {
-          const { url, opts } = auth(`${baseUrl}/${ns}?limit=1`);
-          const data = await fetchJson(url, { method: 'GET', ...opts }, 1);
-          if (data?.error?.status === 401 || data?.success === false) continue;
-          workingAuth = auth; workingNs = ns;
-          console.log(`[Perfit] Auth OK con namespace: ${ns}`);
-          break;
-        } catch (_) {}
-      }
-      if (workingAuth) break;
-    }
-
-    if (!workingAuth) {
-      await endSyncLog(logId, { status: 'error', error: 'No se pudo autenticar con Perfit. Verificar API key.' });
-      console.error('[Perfit] ✗ Autenticación fallida');
-      return;
-    }
-
-    const perfitGet = async (path) => {
-      const { url, opts } = workingAuth(`${baseUrl}${path}`);
-      return fetchJson(url, { method: 'GET', ...opts });
-    };
-
-    let totalCampaigns = 0, totalMetrics = 0, page = 1;
-
-    while (true) {
-      const offset = (page - 1) * 50;
-      let data;
-      try { data = await perfitGet(`/${workingNs}?limit=50&offset=${offset}`); }
-      catch (e) { console.warn(`[Perfit] Página ${page}:`, e.message); break; }
-
-      const items = Array.isArray(data) ? data : (data?.data || data?.results || data?.items || []);
-      if (!items.length) break;
-
-      for (const item of items) {
-        const sentAt = item.sentAt || item.sent_at || item.scheduledAt || item.createdAt || item.created_at;
-        if (!sentAt) continue;
-        const sentDate = new Date(sentAt).toISOString().split('T')[0];
-        if (sentDate < dateFrom) continue;
-
-        const campId = await upsertCampaign({
-          external_id: String(item.id), source, channel_id: channelId,
-          name: item.name || item.subject || item.title || `Campaña ${item.id}`,
-          status: item.status || 'sent',
-          created_at: sentAt, updated_at: sentAt,
-        });
-        totalCampaigns++;
-
-        for (const sNs of ['stats', 'statistics', 'report']) {
-          try {
-            const stats = await perfitGet(`/${workingNs}/${item.id}/${sNs}`);
-            const s = stats?.data || stats || {};
-            await upsertMetrics({
-              campaign_id: campId, source, date: sentDate,
-              sent: int(s.sent || s.total || s.totalSent || 0),
-              delivered: int(s.delivered || s.totalDelivered || 0),
-              opens: int(s.opens || s.opened || s.totalOpens || 0),
-              unique_opens: int(s.uniqueOpens || s.unique_opens || 0),
-              clicks_email: int(s.clicks || s.totalClicks || 0),
-              unique_clicks: int(s.uniqueClicks || s.unique_clicks || 0),
-              unsubscribes: int(s.unsubscribes || s.unsubscribed || 0),
-              bounces_soft: int(s.softBounces || s.soft_bounces || 0),
-              bounces_hard: int(s.hardBounces || s.hard_bounces || 0),
-              spam_reports: int(s.spam || s.spamComplaints || 0),
-              revenue_attr: num(s.revenue || s.revenueAttr || 0),
-            });
-            totalMetrics++;
-            break;
-          } catch (_) {}
-        }
-        await sleep(200);
-      }
-
-      console.log(`[Perfit] Página ${page}: ${items.length} campañas`);
-      if (items.length < 50) break;
-      page++;
-      await sleep(300);
-    }
-
-    await endSyncLog(logId, { status: 'success', records: totalCampaigns + totalMetrics, created: totalMetrics, lastDate: todayISO() });
-    console.log(`[Perfit] ✓ ${totalCampaigns} campañas, ${totalMetrics} métricas`);
-  } catch (e) {
-    await endSyncLog(logId, { status: 'error', error: e.message });
-    throw e;
-  }
-}
-
-// ============================================================
-// JOB 3: GOOGLE ADS (API oficial v18)
-// ============================================================
-export async function syncGoogleAds() {
-  const source = 'google_ads';
-  const logId = await startSyncLog(source);
-  try {
-    const clientId      = requireEnv('GOOGLE_ADS_CLIENT_ID');
-    const clientSecret  = requireEnv('GOOGLE_ADS_CLIENT_SECRET');
-    const refreshToken  = requireEnv('GOOGLE_ADS_REFRESH_TOKEN');
-    const devToken      = requireEnv('GOOGLE_ADS_DEVELOPER_TOKEN');
-    const customerId    = requireEnv('GOOGLE_ADS_CUSTOMER_ID').replace(/-/g, '');
-    const loginCustId   = process.env.GOOGLE_ADS_LOGIN_CUSTOMER_ID?.replace(/-/g, '') || customerId;
-    const daysBack      = int(process.env.GOOGLE_ADS_DAYS_BACK || 30);
-    const apiVersion    = process.env.GOOGLE_ADS_API_VERSION || 'v18';
-
-    const lastSync  = await getLastSync(source);
-    const dateFrom  = lastSync
-      ? new Date(new Date(lastSync) - 86400000).toISOString().split('T')[0]
-      : daysAgoISO(daysBack);
-    const dateTo    = todayISO();
-
-    console.log(`[Google Ads] Sincronizando ${dateFrom} → ${dateTo} (customer: ${customerId})`);
-
-    // Obtener access token via OAuth2
-    const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({
-        client_id: clientId,
-        client_secret: clientSecret,
-        refresh_token: refreshToken,
-        grant_type: 'refresh_token',
-      }),
-    });
-    const tokenData = await tokenRes.json();
-    if (!tokenRes.ok) throw new Error(`OAuth2 error: ${JSON.stringify(tokenData)}`);
-    const accessToken = tokenData.access_token;
-
-    const headers = {
-      'Authorization': `Bearer ${accessToken}`,
-      'developer-token': devToken,
-      'Content-Type': 'application/json',
-    };
-    if (loginCustId !== customerId) headers['login-customer-id'] = loginCustId;
-
-    // Query GAQL: métricas por campaña por día
-    const query = `
-      SELECT
-        segments.date,
-        campaign.id,
-        campaign.name,
-        campaign.status,
-        campaign.advertising_channel_type,
-        metrics.cost_micros,
-        metrics.impressions,
-        metrics.clicks,
-        metrics.conversions,
-        metrics.conversions_value,
-        metrics.all_conversions,
-        metrics.view_through_conversions,
-        metrics.average_cpc,
-        metrics.average_cpm,
-        metrics.ctr,
-        metrics.search_impression_share,
-        metrics.absolute_top_impression_percentage,
-        metrics.top_impression_percentage
-      FROM campaign
-      WHERE segments.date BETWEEN '${dateFrom}' AND '${dateTo}'
-        AND campaign.status != 'REMOVED'
-      ORDER BY segments.date DESC, metrics.cost_micros DESC
-    `;
-
-    const adsRes = await fetch(
-      `https://googleads.googleapis.com/${apiVersion}/customers/${customerId}/googleAds:searchStream`,
-      { method: 'POST', headers, body: JSON.stringify({ query }) }
-    );
-
-    if (!adsRes.ok) {
-      const errText = await adsRes.text();
-      throw new Error(`Google Ads API ${adsRes.status}: ${errText.substring(0, 500)}`);
-    }
-
-    const channelId = await getOrCreateChannel('Google Ads', 'other', customerId);
-    let totalMetrics = 0, campaignMap = new Map();
-
-    const adsData = await adsRes.json();
-    const batches = Array.isArray(adsData) ? adsData : [adsData];
-
-    for (const batch of batches) {
-      for (const item of (batch.results || [])) {
-        const camp   = item.campaign || {};
-        const seg    = item.segments || {};
-        const met    = item.metrics  || {};
-
-        // Upsert campaña
-        let campDbId = campaignMap.get(camp.id);
-        if (!campDbId) {
-          campDbId = await upsertCampaign({
-            external_id: String(camp.id || ''),
-            source, channel_id: channelId,
-            name: camp.name || `Campaign ${camp.id}`,
-            status: (camp.status || 'UNKNOWN').toLowerCase(),
-            objective: camp.advertisingChannelType || null,
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-          });
-          campaignMap.set(camp.id, campDbId);
-        }
-
-        const spend = num(met.costMicros || 0) / 1_000_000;
-        const clicks = int(met.clicks || 0);
-        const impressions = int(met.impressions || 0);
-        const conversions = num(met.conversions || 0);
-        const convValue = num(met.conversionsValue || 0);
-        const avgCpc = num(met.averageCpc || 0) / 1_000_000;
-        const avgCpm = num(met.averageCpm || 0) / 1_000_000;
-        const ctr = num(met.ctr || 0) * 100; // Google devuelve 0.02 = 2%
-
-        await upsertMetrics({
-          campaign_id: campDbId, source, date: seg.date,
-          impressions, clicks, spend,
-          cpm: avgCpm, cpc: avgCpc, ctr,
-          conversions, conv_value: convValue, leads: Math.round(conversions),
-          revenue_attr: convValue,
-        });
-        totalMetrics++;
-      }
-    }
-
-    await endSyncLog(logId, { status: 'success', records: totalMetrics, created: totalMetrics, lastDate: dateTo });
-    console.log(`[Google Ads] ✓ ${campaignMap.size} campañas, ${totalMetrics} métricas`);
-  } catch (e) {
-    await endSyncLog(logId, { status: 'error', error: e.message });
-    throw e;
-  }
-}
-
-// ============================================================
-// JOB 4: KOMMO CRM
-// ============================================================
-function kommoLeadStatus(lead) {
-  const statusId = Number(lead.status_id || 0);
-  if (statusId === 142) return 'won';
-  if (statusId === 143) return 'lost';
-  return 'open';
-}
-
-export async function syncKommo() {
-  const source = 'kommo';
-  const logId = await startSyncLog(source);
-  try {
-    const subdomain = requireEnv('KOMMO_SUBDOMAIN')
-      .replace(/^https?:\/\//, '').replace('.kommo.com', '').replace(/\/$/, '');
-    const token = requireEnv('KOMMO_LONG_LIVED_TOKEN');
-    const daysBack = int(process.env.KOMMO_DAYS_BACK || 30);
-    const lastSync = await getLastSync(source);
-    const fromDate = lastSync
-      ? new Date(new Date(lastSync) - 86400000)
-      : new Date(Date.now() - 86400000 * daysBack);
-    const toDate = new Date();
-    const fromTs = Math.floor(fromDate.getTime() / 1000);
-    const toTs   = Math.floor(toDate.getTime() / 1000);
-    const base   = `https://${subdomain}.kommo.com`;
-
-    console.log(`[Kommo] Sincronizando desde ${fromDate.toISOString().slice(0,10)}`);
-
-    const leads = [];
-    for (let page = 1; page <= 50; page++) {
-      const url = `${base}/api/v4/leads?limit=250&page=${page}&filter[updated_at][from]=${fromTs}&filter[updated_at][to]=${toTs}`;
-      const data = await fetchJson(url, { headers: { Authorization: `Bearer ${token}` } }, 3);
-      const batch = data?._embedded?.leads || [];
-      if (!batch.length) break;
-      leads.push(...batch);
-      console.log(`[Kommo] Página ${page}: ${batch.length} leads`);
-      if (batch.length < 250) break;
-      await sleep(300);
-    }
-
-    let upserted = 0;
-    const byDay = new Map();
-
-    for (const lead of leads) {
-      const status    = kommoLeadStatus(lead);
-      const createdAt = isoFromUnix(lead.created_at) || new Date().toISOString();
-      const updatedAt = isoFromUnix(lead.updated_at) || createdAt;
-      const closedAt  = isoFromUnix(lead.closed_at);
-      const date      = createdAt.slice(0, 10);
-      const value     = num(lead.price || 0);
-
-      // Upsert en tabla leads
-      await db.query(`
-        INSERT INTO leads
-          (external_id,status,pipeline_id,pipeline_stage,name,estimated_value,
-           assigned_to,campaign_source,tags,created_at,updated_at,converted_at,closed_at,synced_at)
-        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,NOW())
-        ON CONFLICT (external_id) DO UPDATE SET
-          status=EXCLUDED.status, pipeline_id=EXCLUDED.pipeline_id,
-          pipeline_stage=EXCLUDED.pipeline_stage, name=EXCLUDED.name,
-          estimated_value=EXCLUDED.estimated_value, assigned_to=EXCLUDED.assigned_to,
-          campaign_source=EXCLUDED.campaign_source, tags=EXCLUDED.tags,
-          updated_at=EXCLUDED.updated_at, converted_at=EXCLUDED.converted_at,
-          closed_at=EXCLUDED.closed_at, synced_at=NOW()
-      `, [
-        String(lead.id), status, lead.pipeline_id || null, String(lead.status_id || ''),
-        lead.name || `Lead ${lead.id}`, value,
-        lead.responsible_user_id ? String(lead.responsible_user_id) : null,
-        'kommo',
-        (lead._embedded?.tags || []).map((t) => t.name).filter(Boolean),
-        createdAt, updatedAt,
-        status === 'won' ? (closedAt || updatedAt) : null,
-        closedAt,
-      ]);
-      upserted++;
-
-      const bucket = byDay.get(date) || { leads: 0, won: 0, revenue: 0, open: 0, lost: 0 };
-      bucket.leads++;
-      if (status === 'won') { bucket.won++; bucket.revenue += value; }
-      else if (status === 'lost') { bucket.lost++; }
-      else { bucket.open++; }
-      byDay.set(date, bucket);
-    }
-
-    // Guardar agregados diarios en marketing_metrics para el dashboard
-    const channelId = await getOrCreateChannel('Kommo CRM', 'other', subdomain);
-    const campaignId = await upsertCampaign({
-      external_id: 'kommo_crm_leads', source, channel_id: channelId,
-      name: 'Kommo CRM — Leads',
-      status: 'active', objective: 'crm',
-    });
-
-    for (const [date, b] of byDay.entries()) {
-      await upsertMetrics({
-        campaign_id: campaignId, source, date,
-        leads: b.leads, conversions: b.won,
-        conv_value: b.revenue, revenue_attr: b.revenue,
-      });
-    }
-
-    await endSyncLog(logId, { status: 'success', records: upserted, created: upserted, lastDate: toDate.toISOString() });
-    console.log(`[Kommo] ✓ ${upserted} leads, ${byDay.size} días`);
-  } catch (e) {
-    await endSyncLog(logId, { status: 'error', error: e.message });
-    throw e;
-  }
-}
-
-
-// ============================================================
-// JOB: GOOGLE ADS desde Google Analytics (Sheet export)
-// Sheet ID: 1ldZHPTpoiN6OgyMy4zY2GYiYnNj9X6cgIk5Gqv8G40g
-// Hoja: ga4_marketing
-// Columnas: date, source, medium, campaign, sessions, users, conversions, revenue
-// ============================================================
-export async function syncGoogleAdsFromSheets() {
-  const source = 'google_ads';
-  const logId  = await startSyncLog(source);
-  try {
-    const spreadsheetId = requireEnv('GA4_SPREADSHEET_ID');
-    const sheetName     = process.env.GA4_SHEET_NAME || 'ga4_marketing';
-    const lastSync      = await getLastSync(source);
-    const daysBack      = int(process.env.GOOGLE_ADS_DAYS_BACK || 90);
-    const dateFrom      = lastSync
-      ? new Date(new Date(lastSync) - 86400000).toISOString().split('T')[0]
-      : daysAgoISO(daysBack);
-
-    console.log(`[GA4 Sheets] Sincronizando desde ${dateFrom}`);
-    console.log(`[GA4 Sheets] Sheet: ${spreadsheetId} / ${sheetName}`);
-
-    // Fetch via Google Sheets API using Service Account
-    const { GoogleAuth } = await import('google-auth-library');
-    const { google }     = await import('googleapis');
-
-    const serviceAccountJson = process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
-    if (!serviceAccountJson) throw new Error('Falta GOOGLE_SERVICE_ACCOUNT_JSON');
-
-    const auth = new GoogleAuth({
-      credentials: JSON.parse(serviceAccountJson),
-      scopes: ['https://www.googleapis.com/auth/spreadsheets.readonly'],
-    });
-    const sheets = google.sheets({ version: 'v4', auth });
-
-    // Read header row
-    const headerRes = await sheets.spreadsheets.values.get({
-      spreadsheetId,
-      range: `${sheetName}!A1:Z1`,
-    });
-    const headers = (headerRes.data.values?.[0] || []).map(h => h.toLowerCase().trim());
-    console.log('[GA4 Sheets] Headers:', headers.join(' | '));
-
-    // Column mapping (flexible)
-    const col = (...names) => {
-      for (const n of names) {
-        const i = headers.indexOf(n.toLowerCase());
-        if (i >= 0) return i;
-      }
-      return -1;
-    };
-
-    const iDate       = col('date');
-    const iSource     = col('source', 'session source');
-    const iMedium     = col('medium', 'session medium');
-    const iCampaign   = col('campaign', 'campaign name', 'session campaign');
-    const iSessions   = col('sessions', 'sesiones');
-    const iUsers      = col('users', 'total users', 'usuarios');
-    const iConv       = col('conversions', 'conversiones');
-    const iRevenue    = col('revenue', 'purchase revenue', 'ingresos');
-
-    if (iDate < 0) throw new Error('No se encontró columna "date" en el sheet');
-
-    // Read all data in batches of 1000
-    const channelId = await getOrCreateChannel('Google Ads', 'other', 'ga4_sheets');
-    let processed = 0, skipped = 0, startRow = 2;
-
-    while (true) {
-      const range = `${sheetName}!A${startRow}:Z${startRow + 999}`;
-      const res   = await sheets.spreadsheets.values.get({ spreadsheetId, range });
-      const rows  = res.data.values || [];
-      if (!rows.length) break;
-
-      for (const row of rows) {
-        if (!row[iDate]) continue;
-
-        // Parse date: YYYYMMDD → YYYY-MM-DD
-        const rawDate = String(row[iDate] || '').trim();
-        let date;
-        if (/^\d{8}$/.test(rawDate)) {
-          date = `${rawDate.slice(0,4)}-${rawDate.slice(4,6)}-${rawDate.slice(6,8)}`;
-        } else if (/^\d{4}-\d{2}-\d{2}$/.test(rawDate)) {
-          date = rawDate;
-        } else {
-          skipped++;
-          continue;
-        }
-
-        if (date < dateFrom) { skipped++; continue; }
-
-        // Only include Google Ads traffic (source=google, medium=cpc/paid)
-        const srcVal = iSource >= 0 ? String(row[iSource] || '').toLowerCase() : '';
-        const medVal = iMedium >= 0 ? String(row[iMedium] || '').toLowerCase() : '';
-        const isGAds = srcVal.includes('google') && ['cpc','paid','paid_search','ppc','paidsearch'].some(m => medVal.includes(m));
-        if (!isGAds) { skipped++; continue; }
-
-        const campaignName = iCampaign >= 0 ? (row[iCampaign] || 'Google Ads sin campaña') : 'Google Ads';
-        const externalId   = `ga4_${campaignName}`.toLowerCase().replace(/[^a-z0-9_]+/g, '_').slice(0, 200);
-        const sessions     = int(row[iSessions] || 0);
-        const users        = int(row[iUsers]    || 0);
-        const conversions  = num(row[iConv]     || 0);
-        const revenue      = num(row[iRevenue]  || 0);
-
-        // Negative revenue (returns) — keep as-is
-        const campaignId = await upsertCampaign({
-          external_id: externalId,
-          source,
-          channel_id: channelId,
-          name: campaignName,
-          status: 'active',
-          objective: 'ga4_attribution',
-          created_at: new Date(date).toISOString(),
-          updated_at: new Date().toISOString(),
-        });
-
-        await upsertMetrics({
-          campaign_id: campaignId,
-          source,
-          date,
-          reach: users,
-          clicks: sessions,
-          conversions,
-          conv_value: Math.max(0, revenue), // ignore negative for value
-          revenue_attr: Math.max(0, revenue),
-          leads: Math.round(conversions),
-        });
-        processed++;
-      }
-
-      console.log(`[GA4 Sheets] Filas ${startRow}-${startRow+rows.length-1}: ${processed} procesadas, ${skipped} omitidas`);
-      startRow += 1000;
-      if (rows.length < 1000) break;
-    }
-
-    await endSyncLog(logId, { status: 'success', records: processed, created: processed, lastDate: todayISO() });
-    console.log(`[GA4 Sheets] ✓ ${processed} registros. Omitidos: ${skipped}`);
-  } catch (e) {
-    await endSyncLog(logId, { status: 'error', error: e.message });
-    throw e;
-  }
-}
-
-// ============================================================
-// ENTRYPOINT
-// ============================================================
-const job = process.argv[2];
-(async () => {
-  try {
-    const daysBack = int(process.env.META_DAYS_BACK || 30);
-    if      (job === 'meta_full')  await syncMetaAds(daysBack);
-    else if (job === 'perfit')     await syncPerfit();
-    else if (job === 'google_ads') await syncGoogleAdsFromSheets(); // Uses GA4 Sheet export
-    else if (job === 'kommo')      await syncKommo();
-    else if (job === 'all') {
-      await syncMetaAds(daysBack);
-      await syncPerfit();
-      await syncGoogleAds();
-      await syncKommo();
-    }
-    else console.error('Job desconocido. Usar: meta_full | perfit | google_ads | kommo | all');
-  } catch (e) {
-    console.error(`[${job}] ERROR FATAL:`, e.message);
-    process.exit(1);
   } finally {
-    await db.end();
+    client.release();
   }
-})();
+}
+
+function parseGoogleServiceAccount() {
+  const raw = requiredEnv('GOOGLE_SERVICE_ACCOUNT_JSON');
+  let json;
+  try {
+    json = JSON.parse(raw);
+  } catch (_) {
+    // Permite guardar el JSON en base64 si GitHub rompe comillas/saltos de línea.
+    json = JSON.parse(Buffer.from(raw, 'base64').toString('utf8'));
+  }
+  if (!json.client_email || !json.private_key) {
+    throw new Error('GOOGLE_SERVICE_ACCOUNT_JSON no parece ser un JSON válido de Service Account: faltan client_email/private_key');
+  }
+  json.private_key = json.private_key.replace(/\\n/g, '\n');
+  return json;
+}
+
+async function syncGoogleAds() {
+  const credentials = parseGoogleServiceAccount();
+  const spreadsheetId = requiredEnv('GOOGLE_SHEET_ID');
+  const sheetName = optionalEnv('GOOGLE_SHEET_NAME', 'ga4_marketing');
+  const range = optionalEnv('GOOGLE_SHEET_RANGE', `${sheetName}!A:Z`);
+
+  const auth = new google.auth.GoogleAuth({
+    credentials,
+    scopes: ['https://www.googleapis.com/auth/spreadsheets.readonly'],
+  });
+
+  const sheets = google.sheets({ version: 'v4', auth });
+  const res = await sheets.spreadsheets.values.get({ spreadsheetId, range });
+  const values = res.data.values || [];
+  if (values.length < 2) throw new Error('[google_ads] El Sheet no tiene filas de datos');
+
+  const headers = values[0].map(normalizeHeader);
+  const rows = values.slice(1).map((arr) => {
+    const obj = {};
+    headers.forEach((h, i) => (obj[h] = arr[i]));
+    return obj;
+  });
+
+  const normalized = rows
+    .map((row) => {
+      const date = toISODate(first(row, ['date', 'fecha', 'day', 'dia', 'date_start']));
+      const campaignId = first(row, ['campaign_id', 'id_campana', 'campaign id']);
+      const campaignName = first(row, ['campaign_name', 'campaign', 'campana', 'campaña', 'nombre_campana']);
+      if (!date) return null;
+      return {
+        date,
+        source: 'google_ads',
+        campaign_id: campaignId || null,
+        campaign_name: campaignName || 'Google Ads',
+        spend: first(row, ['cost', 'costo', 'spend', 'inversion', 'inversión', 'investment']),
+        impressions: first(row, ['impressions', 'impresiones']),
+        clicks: first(row, ['clicks', 'clics']),
+        conversions: first(row, ['conversions', 'conversiones', 'conv']),
+        revenue: first(row, ['revenue', 'purchase_revenue', 'conversion_value', 'valor_conversiones', 'ingresos']),
+        leads: first(row, ['leads', 'lead']),
+        raw: row,
+      };
+    })
+    .filter(Boolean);
+
+  if (!normalized.length) throw new Error('[google_ads] No se pudo mapear ninguna fila real del Sheet. Revisar columnas Fecha/Campaña/Costo/Clics.');
+  return upsertRows(normalized);
+}
+
+async function fetchJson(url, options = {}) {
+  const res = await fetch(url, options);
+  const text = await res.text();
+  let json = null;
+  try { json = text ? JSON.parse(text) : null; } catch (_) {}
+  if (!res.ok) {
+    throw new Error(`HTTP ${res.status} ${url}: ${text.slice(0, 500)}`);
+  }
+  return json;
+}
+
+async function syncPerfit() {
+  const account = requiredEnv('PERFIT_ACCOUNT');
+  const apiKey = requiredEnv('PERFIT_API_KEY');
+  const days = Number(optionalEnv('PERFIT_DAYS_BACK', '30'));
+  const from = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+
+  let url = `https://api.myperfit.com/v2/${encodeURIComponent(account)}/activity?view=full&filters.timestamp.gt=${encodeURIComponent(from)}`;
+  const events = [];
+
+  for (let page = 0; page < 50 && url; page++) {
+    const json = await fetchJson(url, { headers: { Authentication: apiKey, Accept: 'application/json' } });
+    const data = Array.isArray(json?.data) ? json.data : [];
+    events.push(...data);
+    url = json?.paging?.next || '';
+  }
+
+  if (!events.length) {
+    throw new Error('[perfit] No se importaron eventos reales desde /activity. No voy a insertar ceros falsos.');
+  }
+
+  const map = new Map();
+  for (const ev of events) {
+    const type = String(ev.track_type || ev.type || ev.event || '').toLowerCase();
+    const timestamp = ev.timestamp || ev.date || ev.created || ev.created_at;
+    const date = toISODate(timestamp);
+    if (!date) continue;
+
+    const mailing = ev.mailing || ev.mail || ev.campaign || ev.message || {};
+    const campaignId = String(mailing.id || ev.mailing_id || ev.campaign_id || 'perfit_activity');
+    const campaignName = String(mailing.name || mailing.subject || ev.subject || 'Perfit Activity');
+    const key = `${date}|${campaignId}|${campaignName}`;
+
+    if (!map.has(key)) {
+      map.set(key, {
+        date,
+        source: 'perfit',
+        campaign_id: campaignId,
+        campaign_name: campaignName,
+        emails_sent: 0,
+        emails_delivered: 0,
+        opens: 0,
+        clicks: 0,
+        bounces: 0,
+        unsubscribes: 0,
+        raw: { sample: ev },
+      });
+    }
+
+    const row = map.get(key);
+    if (type.includes('sent')) row.emails_sent += 1;
+    else if (type.includes('delivered') || type.includes('delivery')) row.emails_delivered += 1;
+    else if (type.includes('open')) row.opens += 1;
+    else if (type.includes('click')) row.clicks += 1;
+    else if (type.includes('bounce') || type.includes('rejected')) row.bounces += 1;
+    else if (type.includes('unsub') || type.includes('desus')) row.unsubscribes += 1;
+  }
+
+  const rows = [...map.values()];
+  if (!rows.length) throw new Error('[perfit] Llegaron eventos pero no se pudieron agrupar por fecha/campaña. Revisar raw.');
+  return upsertRows(rows);
+}
+
+async function syncKommo() {
+  const subdomainRaw = requiredEnv('KOMMO_SUBDOMAIN').replace(/^https?:\/\//, '').replace(/\.kommo\.com.*$/, '');
+  const token = requiredEnv('KOMMO_ACCESS_TOKEN');
+  const days = Number(optionalEnv('KOMMO_DAYS_BACK', '30'));
+  const fromUnix = Math.floor((Date.now() - days * 24 * 60 * 60 * 1000) / 1000);
+  const toUnix = Math.floor(Date.now() / 1000);
+
+  const leads = [];
+  for (let page = 1; page <= 100; page++) {
+    const url = new URL(`https://${subdomainRaw}.kommo.com/api/v4/leads`);
+    url.searchParams.set('limit', '250');
+    url.searchParams.set('page', String(page));
+    url.searchParams.set('filter[created_at][from]', String(fromUnix));
+    url.searchParams.set('filter[created_at][to]', String(toUnix));
+    const json = await fetchJson(url.toString(), {
+      headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
+    });
+
+    const batch = json?._embedded?.leads || [];
+    leads.push(...batch);
+    if (!json?._links?.next?.href || batch.length === 0) break;
+  }
+
+  if (!leads.length) throw new Error('[kommo] No se importaron leads reales. Revisar token/subdomain/filtros.');
+
+  const map = new Map();
+  for (const lead of leads) {
+    const createdAt = lead.created_at || lead.updated_at || lead.closed_at;
+    if (!createdAt) continue;
+    const date = dateInBAFromUnix(createdAt);
+    const pipeline = lead.pipeline_id ? `pipeline_${lead.pipeline_id}` : 'pipeline_unknown';
+    const status = lead.status_id ? `status_${lead.status_id}` : 'status_unknown';
+    const campaignId = `${pipeline}_${status}`;
+    const campaignName = `Kommo ${pipeline} / ${status}`;
+    const key = `${date}|${campaignId}`;
+
+    if (!map.has(key)) {
+      map.set(key, {
+        date,
+        source: 'kommo',
+        campaign_id: campaignId,
+        campaign_name: campaignName,
+        leads: 0,
+        revenue: 0,
+        conversions: 0,
+        raw: { sample: lead },
+      });
+    }
+    const row = map.get(key);
+    row.leads += 1;
+    row.revenue += parseNumber(lead.price || 0);
+    if (lead.closed_at) row.conversions += 1;
+  }
+
+  return upsertRows([...map.values()]);
+}
+
+async function syncMetaAds() {
+  const accessToken = requiredEnv('META_ACCESS_TOKEN');
+  let adAccountId = requiredEnv('META_AD_ACCOUNT_ID');
+  if (!adAccountId.startsWith('act_')) adAccountId = `act_${adAccountId}`;
+  const apiVersion = optionalEnv('META_API_VERSION', 'v20.0');
+  const days = Number(optionalEnv('META_DAYS_BACK', '30'));
+
+  const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  const until = new Date().toISOString().slice(0, 10);
+  const fields = [
+    'date_start',
+    'campaign_id',
+    'campaign_name',
+    'spend',
+    'impressions',
+    'reach',
+    'clicks',
+    'actions',
+    'action_values',
+  ].join(',');
+
+  let url = `https://graph.facebook.com/${apiVersion}/${adAccountId}/insights?level=campaign&time_increment=1&fields=${fields}&time_range[since]=${since}&time_range[until]=${until}&limit=500&access_token=${encodeURIComponent(accessToken)}`;
+  const rows = [];
+
+  for (let page = 0; page < 50 && url; page++) {
+    const json = await fetchJson(url);
+    for (const item of json.data || []) {
+      const actions = Array.isArray(item.actions) ? item.actions : [];
+      const values = Array.isArray(item.action_values) ? item.action_values : [];
+      const actionValue = (names) => actions
+        .filter((a) => names.includes(a.action_type))
+        .reduce((sum, a) => sum + parseNumber(a.value), 0);
+      const valueAmount = (names) => values
+        .filter((a) => names.includes(a.action_type))
+        .reduce((sum, a) => sum + parseNumber(a.value), 0);
+
+      rows.push({
+        date: item.date_start,
+        source: 'meta_ads',
+        campaign_id: item.campaign_id,
+        campaign_name: item.campaign_name,
+        spend: item.spend,
+        impressions: item.impressions,
+        reach: item.reach,
+        clicks: item.clicks,
+        conversions: actionValue(['purchase', 'omni_purchase', 'offsite_conversion.fb_pixel_purchase']),
+        leads: actionValue(['lead', 'onsite_conversion.lead_grouped', 'offsite_conversion.fb_pixel_lead']),
+        revenue: valueAmount(['purchase', 'omni_purchase', 'offsite_conversion.fb_pixel_purchase']),
+        raw: item,
+      });
+    }
+    url = json.paging?.next || '';
+  }
+
+  if (!rows.length) throw new Error('[meta_ads] No se importaron filas reales.');
+  return upsertRows(rows);
+}
+
+async function runSource(source) {
+  const startedAt = new Date();
+  console.log(`[${source}] inicio`);
+  try {
+    let rows = 0;
+    if (source === 'google_ads') rows = await syncGoogleAds();
+    else if (source === 'perfit') rows = await syncPerfit();
+    else if (source === 'kommo' || source === 'kommo_crm') rows = await syncKommo();
+    else if (source === 'meta_ads' || source === 'meta') rows = await syncMetaAds();
+    else throw new Error(`Source no soportado: ${source}`);
+
+    await setStatus(source, true, rows, `OK - ${rows} filas importadas`, startedAt);
+    console.log(`[${source}] OK - ${rows} filas importadas`);
+    return rows;
+  } catch (err) {
+    await setStatus(source, false, 0, err.message, startedAt).catch(() => {});
+    console.error(`[${source}] ERROR FATAL: ${err.message}`);
+    throw err;
+  }
+}
+
+async function main() {
+  await ensureTables();
+  const arg = process.argv[2] || 'all';
+  const sources = arg === 'all' ? ['meta_ads', 'google_ads', 'perfit', 'kommo'] : [arg];
+  let total = 0;
+  for (const source of sources) total += await runSource(source);
+  await pool.end();
+  console.log(`Sync completo. Total filas: ${total}`);
+}
+
+main().catch(async (err) => {
+  console.error(err);
+  await pool.end().catch(() => {});
+  process.exit(1);
+});
