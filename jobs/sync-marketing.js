@@ -150,7 +150,6 @@ async function syncGoogleAdsFromSheet(client) {
     const campaignName = pick(row, ['campaign_name', 'campaign', 'campana', 'campaña', 'nombre_campana']);
 
     const campaignKey = makeCampaignKey(campaignId, campaignName || 'Google Ads');
-
     const key = `${date}|google_ads|${campaignKey}`;
 
     if (!grouped.has(key)) {
@@ -166,6 +165,11 @@ async function syncGoogleAdsFromSheet(client) {
         conversions: 0,
         revenue: 0,
         leads: 0,
+        emails_sent: 0,
+        emails_delivered: 0,
+        opens: 0,
+        bounces: 0,
+        unsubscribes: 0,
         raw: []
       });
     }
@@ -294,7 +298,7 @@ async function syncPerfit(client) {
       item.emails_sent += 1;
     }
 
-    if (type.includes('delivered') || type.includes('delivered') || type.includes('entregado')) {
+    if (type.includes('delivered') || type.includes('entregado')) {
       item.emails_delivered += 1;
     }
 
@@ -348,7 +352,6 @@ async function syncKommo(client) {
 
   let page = 1;
   let totalRows = 0;
-
   const grouped = new Map();
 
   while (true) {
@@ -392,9 +395,7 @@ async function syncKommo(client) {
 
       const pipelineId = lead.pipeline_id ? String(lead.pipeline_id) : 'sin_pipeline';
       const statusId = lead.status_id ? String(lead.status_id) : 'sin_status';
-
       const campaignKey = `pipeline_${pipelineId}_status_${statusId}`;
-
       const key = `${date}|kommo|${campaignKey}`;
 
       if (!grouped.has(key)) {
@@ -410,6 +411,11 @@ async function syncKommo(client) {
           conversions: 0,
           revenue: 0,
           leads: 0,
+          emails_sent: 0,
+          emails_delivered: 0,
+          opens: 0,
+          bounces: 0,
+          unsubscribes: 0,
           raw: []
         });
       }
