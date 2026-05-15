@@ -583,26 +583,98 @@ function parseNumber(value) {
 }
 
 function normalizeDate(value) {
-  const str = String(value || '').trim();
+  if (value === null || value === undefined || value === '') {
+    throw new Error(`Fecha vacía o inválida: ${value}`);
+  }
 
+  const str = String(value).trim();
+
+  // Formato correcto: 2026-03-30
   if (/^\d{4}-\d{2}-\d{2}$/.test(str)) {
     return str;
   }
 
-  const match = str.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})$/);
+  // Formato GA4 / Google Ads export: 20260330
+  if (/^\d{8}$/.test(str)) {
+    const year = str.slice(0, 4);
+    const month = str.slice(4, 6);
+    const day = str.slice(6, 8);
 
-  if (match) {
-    const [, day, month, year] = match;
-    return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    const normalized = `${year}-${month}-${day}`;
+
+    if (isValidDateOnly(normalized)) {
+      return normalized;
+    }
+
+    throw new Error(`Fecha YYYYMMDD inválida: ${value}`);
+  }
+
+  // Formato argentino: 30/03/2026 o 30-03-2026
+  const argMatch = str.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})$/);
+
+  if (argMatch) {
+    const [, day, month, year] = argMatch;
+    const normalized = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+
+    if (isValidDateOnly(normalized)) {
+      return normalized;
+    }
+
+    throw new Error(`Fecha argentina inválida: ${value}`);
+  }
+
+  // Formato ISO con hora: 2026-03-30T00:00:00
+  const isoMatch = str.match(/^(\d{4}-\d{2}-\d{2})[T\s]/);
+
+  if (isoMatch) {
+    const normalized = isoMatch[1];
+
+    if (isValidDateOnly(normalized)) {
+      return normalized;
+    }
+  }
+
+  // Google Sheets a veces devuelve serial date numérico.
+  // Ejemplo: 45382
+  if (/^\d{5}$/.test(str)) {
+    const serial = Number(str);
+    const date = googleSheetsSerialToDate(serial);
+    const normalized = dateToBuenosAires(date);
+
+    if (isValidDateOnly(normalized)) {
+      return normalized;
+    }
   }
 
   const parsed = new Date(str);
 
   if (!Number.isNaN(parsed.getTime())) {
-    return dateToBuenosAires(parsed);
+    const normalized = dateToBuenosAires(parsed);
+
+    if (isValidDateOnly(normalized)) {
+      return normalized;
+    }
   }
 
   throw new Error(`Fecha inválida: ${value}`);
+}
+
+function isValidDateOnly(dateString) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateString)) return false;
+
+  const [year, month, day] = dateString.split('-').map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day));
+
+  return (
+    date.getUTCFullYear() === year &&
+    date.getUTCMonth() === month - 1 &&
+    date.getUTCDate() === day
+  );
+}
+
+function googleSheetsSerialToDate(serial) {
+  const excelEpoch = new Date(Date.UTC(1899, 11, 30));
+  return new Date(excelEpoch.getTime() + serial * 24 * 60 * 60 * 1000);
 }
 
 function dateToBuenosAires(dateValue) {
