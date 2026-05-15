@@ -3360,5 +3360,324 @@ async function bootDashboard() {
 }
 </script>
 </div><!-- /dashboardApp -->
+  <script>
+(function () {
+  const API_SUMMARY = "/api/report/summary?range=today";
+
+  function normalizeText(value) {
+    return String(value || "")
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase()
+      .trim();
+  }
+
+  function money(value) {
+    const n = Number(value || 0);
+    return n.toLocaleString("es-AR", {
+      style: "currency",
+      currency: "ARS",
+      maximumFractionDigits: 0
+    });
+  }
+
+  function number(value) {
+    return Number(value || 0).toLocaleString("es-AR");
+  }
+
+  function percent(value) {
+    const n = Number(value || 0);
+    return `${(n * 100).toFixed(1)}%`;
+  }
+
+  function getLeafElements() {
+    return Array.from(document.querySelectorAll("body *")).filter(el => {
+      const text = String(el.textContent || "").trim();
+      if (!text) return false;
+      if (el.children.length > 0) return false;
+      if (["SCRIPT", "STYLE", "NOSCRIPT"].includes(el.tagName)) return false;
+      return true;
+    });
+  }
+
+  function findLeafByText(searchText) {
+    const target = normalizeText(searchText);
+
+    return getLeafElements().find(el => {
+      const text = normalizeText(el.textContent);
+      return text === target || text.includes(target);
+    });
+  }
+
+  function findCardFromLabel(labelText) {
+    const label = findLeafByText(labelText);
+    if (!label) return null;
+
+    let node = label;
+
+    for (let i = 0; i < 8; i++) {
+      if (!node || !node.parentElement) break;
+
+      node = node.parentElement;
+
+      const txt = String(node.textContent || "");
+      const smallEnough = txt.length < 500;
+      const hasValue =
+        txt.includes("$0") ||
+        txt.includes("0") ||
+        txt.includes("—") ||
+        txt.includes("-");
+
+      if (smallEnough && hasValue) {
+        return node;
+      }
+    }
+
+    return label.parentElement;
+  }
+
+  function setCardValue(labelText, valueText) {
+    const card = findCardFromLabel(labelText);
+    if (!card) return false;
+
+    const leaves = Array.from(card.querySelectorAll("*")).filter(el => {
+      const text = String(el.textContent || "").trim();
+      if (!text) return false;
+      if (el.children.length > 0) return false;
+
+      const normalized = normalizeText(text);
+      const labelNormalized = normalizeText(labelText);
+
+      if (normalized.includes(labelNormalized)) return false;
+      if (normalized.includes("hoy")) return false;
+      if (normalized.includes("estimado")) return false;
+      if (normalized.includes("real")) return false;
+
+      return (
+        text === "$0" ||
+        text === "0" ||
+        text === "—" ||
+        text === "-" ||
+        text === "0%" ||
+        text === "0.0%" ||
+        /^\$[\d.,]+$/.test(text) ||
+        /^[\d.,]+$/.test(text)
+      );
+    });
+
+    if (!leaves.length) return false;
+
+    const best = leaves
+      .map(el => ({
+        el,
+        size: parseFloat(getComputedStyle(el).fontSize || "0")
+      }))
+      .sort((a, b) => b.size - a.size)[0].el;
+
+    best.textContent = valueText;
+    return true;
+  }
+
+  function setTextReplacing(regex, replacement) {
+    getLeafElements().forEach(el => {
+      const text = String(el.textContent || "");
+      if (regex.test(text)) {
+        el.textContent = text.replace(regex, replacement);
+      }
+    });
+  }
+
+  function hideNoDataMessages() {
+    getLeafElements().forEach(el => {
+      const text = normalizeText(el.textContent);
+      if (text.includes("sin datos para este periodo") || text.includes("sin datos para este período")) {
+        el.style.display = "none";
+      }
+    });
+  }
+
+  function renderTopProducts(products) {
+    if (!Array.isArray(products) || !products.length) return;
+
+    const tableHeaders = getLeafElements().filter(el => {
+      const text = normalizeText(el.textContent);
+      return text === "#producto canal cant." || text.includes("#producto canal cant");
+    });
+
+    if (!tableHeaders.length) return;
+
+    const container = tableHeaders[0].parentElement;
+    if (!container) return;
+
+    const existing = document.getElementById("nx-real-top-products");
+    if (existing) existing.remove();
+
+    const wrapper = document.createElement("div");
+    wrapper.id = "nx-real-top-products";
+    wrapper.style.marginTop = "12px";
+    wrapper.style.display = "grid";
+    wrapper.style.gap = "8px";
+
+    products.slice(0, 10).forEach((p, index) => {
+      const row = document.createElement("div");
+      row.style.display = "grid";
+      row.style.gridTemplateColumns = "32px 1fr 90px 60px";
+      row.style.gap = "8px";
+      row.style.alignItems = "center";
+      row.style.fontSize = "13px";
+      row.style.padding = "8px 10px";
+      row.style.border = "1px solid rgba(148,163,184,.15)";
+      row.style.borderRadius = "10px";
+      row.style.background = "rgba(15,23,42,.45)";
+
+      row.innerHTML = `
+        <strong>${index + 1}</strong>
+        <span>${escapeHtml(p.product_name || p.product || "Producto")}</span>
+        <span>${escapeHtml(p.channel || p.source || "")}</span>
+        <strong>${number(p.quantity || p.qty || 0)}</strong>
+      `;
+
+      wrapper.appendChild(row);
+    });
+
+    container.appendChild(wrapper);
+  }
+
+  function renderLatestOrders(orders) {
+    if (!Array.isArray(orders) || !orders.length) return;
+
+    setTextReplacing(/Últimos pedidos\s+0\s+hoy/i, `Últimos pedidos ${orders.length} hoy`);
+
+    const label = findLeafByText("Últimos pedidos");
+    if (!label) return;
+
+    let container = label.parentElement;
+
+    for (let i = 0; i < 5; i++) {
+      if (!container || !container.parentElement) break;
+      const txt = String(container.textContent || "");
+      if (txt.includes("Últimos pedidos") && txt.length < 700) break;
+      container = container.parentElement;
+    }
+
+    if (!container) return;
+
+    const existing = document.getElementById("nx-real-latest-orders");
+    if (existing) existing.remove();
+
+    const wrapper = document.createElement("div");
+    wrapper.id = "nx-real-latest-orders";
+    wrapper.style.marginTop = "12px";
+    wrapper.style.display = "grid";
+    wrapper.style.gap = "8px";
+
+    orders.slice(0, 6).forEach(order => {
+      const row = document.createElement("div");
+      row.style.display = "grid";
+      row.style.gridTemplateColumns = "1fr auto";
+      row.style.gap = "8px";
+      row.style.alignItems = "center";
+      row.style.fontSize = "13px";
+      row.style.padding = "8px 10px";
+      row.style.border = "1px solid rgba(148,163,184,.15)";
+      row.style.borderRadius = "10px";
+      row.style.background = "rgba(15,23,42,.45)";
+
+      row.innerHTML = `
+        <span>${escapeHtml(order.order_id || order.external_id || "Pedido")}</span>
+        <strong>${money(order.revenue || order.total_amount || order.facturacion || 0)}</strong>
+      `;
+
+      wrapper.appendChild(row);
+    });
+
+    container.appendChild(wrapper);
+  }
+
+  function updateUpdatedLabel() {
+    getLeafElements().forEach(el => {
+      const text = normalizeText(el.textContent);
+      if (text.includes("actualizado hace")) {
+        el.textContent = "Actualizado hace 0 min · ahora";
+      }
+    });
+  }
+
+  function applyDashboardData(data) {
+    const revenue = data.revenue || data.facturacion || data?.summary?.revenue || 0;
+    const orders = data.ventas || data.orders_count || data?.orders?.count || data?.summary?.orders || 0;
+    const avgTicket = data.avg_ticket || data.ticket_promedio || data?.summary?.avg_ticket || 0;
+    const units = data.unidades || data.items_count || data?.summary?.units || 0;
+    const cancellations = data.cancelaciones || data?.summary?.cancelaciones || 0;
+    const conversion = data.conversion_rate || data?.summary?.conversion_rate || 0;
+
+    setCardValue("REVENUE DEL DÍA", money(revenue));
+    setCardValue("ÓRDENES", number(orders));
+    setCardValue("TICKET PROMEDIO", money(avgTicket));
+    setCardValue("UNIDADES", units ? number(units) : "—");
+    setCardValue("CONVERSIÓN", percent(conversion));
+    setCardValue("CANCELACIONES", number(cancellations));
+
+    setCardValue("Revenue del día", money(revenue));
+    setCardValue("Órdenes del día", number(orders));
+
+    setTextReplacing(/Ticket prom:\s*\$?[\d.,]*/i, `Ticket prom: ${money(avgTicket)}`);
+    setTextReplacing(/\$0\s+de\s+\$0/i, `${money(revenue)} de meta diaria`);
+    setTextReplacing(/Últimos pedidos\s+0\s+hoy/i, `Últimos pedidos ${orders} hoy`);
+
+    hideNoDataMessages();
+    renderTopProducts(data.top_products || data.products || []);
+    renderLatestOrders(data.latest_orders || data.orders_list || []);
+    updateUpdatedLabel();
+
+    window.NEXUSOPS_LAST_SUMMARY = data;
+
+    console.log("[NexusOps] Dashboard actualizado con datos reales:", data);
+  }
+
+  async function loadDashboardData() {
+    try {
+      const response = await fetch(`${API_SUMMARY}&_=${Date.now()}`, {
+        cache: "no-store"
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+
+      const data = await response.json();
+
+      if (!data || data.ok === false) {
+        throw new Error(data && data.error ? data.error : "Respuesta inválida");
+      }
+
+      applyDashboardData(data);
+    } catch (error) {
+      console.error("[NexusOps] Error cargando datos reales:", error);
+    }
+  }
+
+  function escapeHtml(value) {
+    return String(value || "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#039;");
+  }
+
+  window.NEXUSOPS_FORCE_REFRESH = loadDashboardData;
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", loadDashboardData);
+  } else {
+    loadDashboardData();
+  }
+
+  setTimeout(loadDashboardData, 800);
+  setTimeout(loadDashboardData, 2500);
+  setInterval(loadDashboardData, 30000);
+})();
+</script>
 </body>
 </html>
