@@ -3362,17 +3362,48 @@ async function bootDashboard() {
 </div><!-- /dashboardApp -->
   <script>
 (function () {
-  const API_SUMMARY = "/api/report/summary?range=today";
+  const NX = {
+    execRange: "today",
+    execChannel: "all",
+    mktRange: "30d",
+    mktChannel: "all",
+    customFrom: null,
+    customTo: null,
+    mktCustomFrom: null,
+    mktCustomTo: null,
+    dailyGoal: 453000000
+  };
 
-  function normalizeText(value) {
-    return String(value || "")
-      .normalize("NFD")
-      .replace(/[\u0300-\u036f]/g, "")
-      .toLowerCase()
-      .trim();
+  const RANGE_MAP = {
+    today: "today",
+    yesterday: "yesterday",
+    ayer: "yesterday",
+    last7: "7d",
+    "7d": "7d",
+    last30: "30d",
+    "30d": "30d",
+    mtd: "mtd",
+    ytd: "ytd",
+    lastmonth: "last_month",
+    last_month: "last_month",
+    mes_anterior: "last_month"
+  };
+
+  function qs(id) {
+    return document.getElementById(id);
   }
 
-  function money(value) {
+  function setHTML(id, html) {
+    const el = qs(id);
+    if (el) el.innerHTML = html;
+  }
+
+  function setText(id, text) {
+    const el = qs(id);
+    if (el) el.textContent = text;
+  }
+
+  function fmtMoney(value) {
     const n = Number(value || 0);
     return n.toLocaleString("es-AR", {
       style: "currency",
@@ -3381,283 +3412,16 @@ async function bootDashboard() {
     });
   }
 
-  function number(value) {
+  function fmtNumber(value) {
     return Number(value || 0).toLocaleString("es-AR");
   }
 
-  function percent(value) {
+  function fmtPercent(value) {
     const n = Number(value || 0);
-    return `${(n * 100).toFixed(1)}%`;
+    return `${n.toFixed(1)}%`;
   }
 
-  function getLeafElements() {
-    return Array.from(document.querySelectorAll("body *")).filter(el => {
-      const text = String(el.textContent || "").trim();
-      if (!text) return false;
-      if (el.children.length > 0) return false;
-      if (["SCRIPT", "STYLE", "NOSCRIPT"].includes(el.tagName)) return false;
-      return true;
-    });
-  }
-
-  function findLeafByText(searchText) {
-    const target = normalizeText(searchText);
-
-    return getLeafElements().find(el => {
-      const text = normalizeText(el.textContent);
-      return text === target || text.includes(target);
-    });
-  }
-
-  function findCardFromLabel(labelText) {
-    const label = findLeafByText(labelText);
-    if (!label) return null;
-
-    let node = label;
-
-    for (let i = 0; i < 8; i++) {
-      if (!node || !node.parentElement) break;
-
-      node = node.parentElement;
-
-      const txt = String(node.textContent || "");
-      const smallEnough = txt.length < 500;
-      const hasValue =
-        txt.includes("$0") ||
-        txt.includes("0") ||
-        txt.includes("—") ||
-        txt.includes("-");
-
-      if (smallEnough && hasValue) {
-        return node;
-      }
-    }
-
-    return label.parentElement;
-  }
-
-  function setCardValue(labelText, valueText) {
-    const card = findCardFromLabel(labelText);
-    if (!card) return false;
-
-    const leaves = Array.from(card.querySelectorAll("*")).filter(el => {
-      const text = String(el.textContent || "").trim();
-      if (!text) return false;
-      if (el.children.length > 0) return false;
-
-      const normalized = normalizeText(text);
-      const labelNormalized = normalizeText(labelText);
-
-      if (normalized.includes(labelNormalized)) return false;
-      if (normalized.includes("hoy")) return false;
-      if (normalized.includes("estimado")) return false;
-      if (normalized.includes("real")) return false;
-
-      return (
-        text === "$0" ||
-        text === "0" ||
-        text === "—" ||
-        text === "-" ||
-        text === "0%" ||
-        text === "0.0%" ||
-        /^\$[\d.,]+$/.test(text) ||
-        /^[\d.,]+$/.test(text)
-      );
-    });
-
-    if (!leaves.length) return false;
-
-    const best = leaves
-      .map(el => ({
-        el,
-        size: parseFloat(getComputedStyle(el).fontSize || "0")
-      }))
-      .sort((a, b) => b.size - a.size)[0].el;
-
-    best.textContent = valueText;
-    return true;
-  }
-
-  function setTextReplacing(regex, replacement) {
-    getLeafElements().forEach(el => {
-      const text = String(el.textContent || "");
-      if (regex.test(text)) {
-        el.textContent = text.replace(regex, replacement);
-      }
-    });
-  }
-
-  function hideNoDataMessages() {
-    getLeafElements().forEach(el => {
-      const text = normalizeText(el.textContent);
-      if (text.includes("sin datos para este periodo") || text.includes("sin datos para este período")) {
-        el.style.display = "none";
-      }
-    });
-  }
-
-  function renderTopProducts(products) {
-    if (!Array.isArray(products) || !products.length) return;
-
-    const tableHeaders = getLeafElements().filter(el => {
-      const text = normalizeText(el.textContent);
-      return text === "#producto canal cant." || text.includes("#producto canal cant");
-    });
-
-    if (!tableHeaders.length) return;
-
-    const container = tableHeaders[0].parentElement;
-    if (!container) return;
-
-    const existing = document.getElementById("nx-real-top-products");
-    if (existing) existing.remove();
-
-    const wrapper = document.createElement("div");
-    wrapper.id = "nx-real-top-products";
-    wrapper.style.marginTop = "12px";
-    wrapper.style.display = "grid";
-    wrapper.style.gap = "8px";
-
-    products.slice(0, 10).forEach((p, index) => {
-      const row = document.createElement("div");
-      row.style.display = "grid";
-      row.style.gridTemplateColumns = "32px 1fr 90px 60px";
-      row.style.gap = "8px";
-      row.style.alignItems = "center";
-      row.style.fontSize = "13px";
-      row.style.padding = "8px 10px";
-      row.style.border = "1px solid rgba(148,163,184,.15)";
-      row.style.borderRadius = "10px";
-      row.style.background = "rgba(15,23,42,.45)";
-
-      row.innerHTML = `
-        <strong>${index + 1}</strong>
-        <span>${escapeHtml(p.product_name || p.product || "Producto")}</span>
-        <span>${escapeHtml(p.channel || p.source || "")}</span>
-        <strong>${number(p.quantity || p.qty || 0)}</strong>
-      `;
-
-      wrapper.appendChild(row);
-    });
-
-    container.appendChild(wrapper);
-  }
-
-  function renderLatestOrders(orders) {
-    if (!Array.isArray(orders) || !orders.length) return;
-
-    setTextReplacing(/Últimos pedidos\s+0\s+hoy/i, `Últimos pedidos ${orders.length} hoy`);
-
-    const label = findLeafByText("Últimos pedidos");
-    if (!label) return;
-
-    let container = label.parentElement;
-
-    for (let i = 0; i < 5; i++) {
-      if (!container || !container.parentElement) break;
-      const txt = String(container.textContent || "");
-      if (txt.includes("Últimos pedidos") && txt.length < 700) break;
-      container = container.parentElement;
-    }
-
-    if (!container) return;
-
-    const existing = document.getElementById("nx-real-latest-orders");
-    if (existing) existing.remove();
-
-    const wrapper = document.createElement("div");
-    wrapper.id = "nx-real-latest-orders";
-    wrapper.style.marginTop = "12px";
-    wrapper.style.display = "grid";
-    wrapper.style.gap = "8px";
-
-    orders.slice(0, 6).forEach(order => {
-      const row = document.createElement("div");
-      row.style.display = "grid";
-      row.style.gridTemplateColumns = "1fr auto";
-      row.style.gap = "8px";
-      row.style.alignItems = "center";
-      row.style.fontSize = "13px";
-      row.style.padding = "8px 10px";
-      row.style.border = "1px solid rgba(148,163,184,.15)";
-      row.style.borderRadius = "10px";
-      row.style.background = "rgba(15,23,42,.45)";
-
-      row.innerHTML = `
-        <span>${escapeHtml(order.order_id || order.external_id || "Pedido")}</span>
-        <strong>${money(order.revenue || order.total_amount || order.facturacion || 0)}</strong>
-      `;
-
-      wrapper.appendChild(row);
-    });
-
-    container.appendChild(wrapper);
-  }
-
-  function updateUpdatedLabel() {
-    getLeafElements().forEach(el => {
-      const text = normalizeText(el.textContent);
-      if (text.includes("actualizado hace")) {
-        el.textContent = "Actualizado hace 0 min · ahora";
-      }
-    });
-  }
-
-  function applyDashboardData(data) {
-    const revenue = data.revenue || data.facturacion || data?.summary?.revenue || 0;
-    const orders = data.ventas || data.orders_count || data?.orders?.count || data?.summary?.orders || 0;
-    const avgTicket = data.avg_ticket || data.ticket_promedio || data?.summary?.avg_ticket || 0;
-    const units = data.unidades || data.items_count || data?.summary?.units || 0;
-    const cancellations = data.cancelaciones || data?.summary?.cancelaciones || 0;
-    const conversion = data.conversion_rate || data?.summary?.conversion_rate || 0;
-
-    setCardValue("REVENUE DEL DÍA", money(revenue));
-    setCardValue("ÓRDENES", number(orders));
-    setCardValue("TICKET PROMEDIO", money(avgTicket));
-    setCardValue("UNIDADES", units ? number(units) : "—");
-    setCardValue("CONVERSIÓN", percent(conversion));
-    setCardValue("CANCELACIONES", number(cancellations));
-
-    setCardValue("Revenue del día", money(revenue));
-    setCardValue("Órdenes del día", number(orders));
-
-    setTextReplacing(/Ticket prom:\s*\$?[\d.,]*/i, `Ticket prom: ${money(avgTicket)}`);
-    setTextReplacing(/\$0\s+de\s+\$0/i, `${money(revenue)} de meta diaria`);
-    setTextReplacing(/Últimos pedidos\s+0\s+hoy/i, `Últimos pedidos ${orders} hoy`);
-
-    hideNoDataMessages();
-    renderTopProducts(data.top_products || data.products || []);
-    renderLatestOrders(data.latest_orders || data.orders_list || []);
-    updateUpdatedLabel();
-
-    window.NEXUSOPS_LAST_SUMMARY = data;
-
-    console.log("[NexusOps] Dashboard actualizado con datos reales:", data);
-  }
-
-  async function loadDashboardData() {
-    try {
-      const response = await fetch(`${API_SUMMARY}&_=${Date.now()}`, {
-        cache: "no-store"
-      });
-
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`);
-      }
-
-      const data = await response.json();
-
-      if (!data || data.ok === false) {
-        throw new Error(data && data.error ? data.error : "Respuesta inválida");
-      }
-
-      applyDashboardData(data);
-    } catch (error) {
-      console.error("[NexusOps] Error cargando datos reales:", error);
-    }
-  }
-
-  function escapeHtml(value) {
+  function escapeHTML(value) {
     return String(value || "")
       .replace(/&/g, "&amp;")
       .replace(/</g, "&lt;")
@@ -3666,17 +3430,659 @@ async function bootDashboard() {
       .replace(/'/g, "&#039;");
   }
 
-  window.NEXUSOPS_FORCE_REFRESH = loadDashboardData;
-
-  if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", loadDashboardData);
-  } else {
-    loadDashboardData();
+  function normalizeRange(range) {
+    return RANGE_MAP[range] || range || "today";
   }
 
-  setTimeout(loadDashboardData, 800);
-  setTimeout(loadDashboardData, 2500);
-  setInterval(loadDashboardData, 30000);
+  function todayAR() {
+    return new Intl.DateTimeFormat("en-CA", {
+      timeZone: "America/Argentina/Buenos_Aires",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit"
+    }).format(new Date());
+  }
+
+  function labelForRange(range) {
+    const labels = {
+      today: "Hoy",
+      yesterday: "Ayer",
+      "7d": "Últimos 7 días",
+      "30d": "Últimos 30 días",
+      mtd: "Mes actual",
+      ytd: "Año actual",
+      last_month: "Mes anterior"
+    };
+
+    return labels[normalizeRange(range)] || "Período personalizado";
+  }
+
+  function buildSalesUrl() {
+    const range = normalizeRange(NX.execRange);
+    const params = new URLSearchParams();
+
+    params.set("range", range);
+
+    if (NX.execChannel && NX.execChannel !== "all") {
+      params.set("source", NX.execChannel);
+    }
+
+    if (range === "custom" && NX.customFrom && NX.customTo) {
+      params.set("date_from", NX.customFrom);
+      params.set("date_to", NX.customTo);
+    }
+
+    params.set("_", Date.now());
+
+    return `/api/report/summary?${params.toString()}`;
+  }
+
+  function buildMarketingUrl() {
+    const range = normalizeRange(NX.mktRange);
+    const params = new URLSearchParams();
+
+    params.set("range", range);
+
+    if (NX.mktChannel && NX.mktChannel !== "all") {
+      params.set("source", NX.mktChannel);
+    }
+
+    if (range === "custom" && NX.mktCustomFrom && NX.mktCustomTo) {
+      params.set("date_from", NX.mktCustomFrom);
+      params.set("date_to", NX.mktCustomTo);
+    }
+
+    params.set("_", Date.now());
+
+    return `/api/marketing/summary?${params.toString()}`;
+  }
+
+  async function fetchJSON(url) {
+    const res = await fetch(url, { cache: "no-store" });
+
+    if (!res.ok) {
+      throw new Error(`${url} HTTP ${res.status}`);
+    }
+
+    const data = await res.json();
+
+    if (!data || data.ok === false) {
+      throw new Error(data && data.error ? data.error : `Respuesta inválida: ${url}`);
+    }
+
+    return data;
+  }
+
+  function renderMetricCard(title, value, sub, accent) {
+    return `
+      <div class="metric-card" style="border-top-color:${accent || "var(--accent)"}">
+        <div class="metric-label">${escapeHTML(title)}</div>
+        <div class="metric-value">${value}</div>
+        <div class="metric-change positive">↑ ${escapeHTML(sub || "real")}</div>
+      </div>
+    `;
+  }
+
+  function renderExecutiveKpis(data) {
+    const revenue = Number(data.revenue || data.facturacion || data.summary?.revenue || 0);
+    const orders = Number(data.ventas || data.orders_count || data.orders?.count || data.summary?.orders || 0);
+    const avgTicket = Number(data.avg_ticket || data.ticket_promedio || data.summary?.avg_ticket || 0);
+    const units = Number(data.unidades || data.items_count || data.summary?.units || 0);
+    const cancellations = Number(data.cancelaciones || data.summary?.cancelaciones || 0);
+    const conversion = Number(data.conversion_rate || data.summary?.conversion_rate || 0);
+
+    setHTML("execChannelCards", `
+      ${renderMetricCard("Revenue del día", fmtMoney(revenue), "real", "var(--accent)")}
+      ${renderMetricCard("Órdenes", fmtNumber(orders), "real", "var(--teal)")}
+      ${renderMetricCard("Ticket promedio", fmtMoney(avgTicket), "real", "var(--amber)")}
+      ${renderMetricCard("Unidades", units ? fmtNumber(units) : "—", "real", "var(--teal)")}
+      ${renderMetricCard("Conversión", fmtPercent(conversion), "estimado", "var(--purple)")}
+      ${renderMetricCard("Cancelaciones", fmtNumber(cancellations), "hoy", "var(--red)")}
+    `);
+
+    const pct = NX.dailyGoal > 0 ? Math.min((revenue / NX.dailyGoal) * 100, 100) : 0;
+
+    setText("goalPct", fmtPercent(pct));
+    setText("goalSub", `${fmtMoney(revenue)} de ${fmtMoney(NX.dailyGoal)}`);
+
+    const goalFill = qs("goalFill");
+    if (goalFill) goalFill.style.width = `${pct}%`;
+
+    const liveCount = qs("liveCount");
+    if (liveCount) liveCount.textContent = fmtNumber(orders);
+
+    setText("execDate", `${labelForRange(NX.execRange)} · ${data.date_from || todayAR()}${data.date_to && data.date_to !== data.date_from ? " a " + data.date_to : ""}`);
+  }
+
+  function renderChannelProgress(channels) {
+    const totalRevenue = channels.reduce((acc, ch) => acc + Number(ch.revenue || ch.facturacion || 0), 0);
+
+    const pctFor = (source) => {
+      const item = channels.find(ch => String(ch.source || ch.channel || "").toLowerCase() === source);
+      const revenue = Number(item?.revenue || item?.facturacion || 0);
+      return totalRevenue > 0 ? (revenue / totalRevenue) * 100 : 0;
+    };
+
+    const vtex = pctFor("vtex");
+    const ml1 = pctFor("meli_1");
+    const ml2 = pctFor("meli_2");
+
+    setText("vtexPct", fmtPercent(vtex));
+    setText("ml1Pct", fmtPercent(ml1));
+    setText("ml2Pct", fmtPercent(ml2));
+
+    const vtexBar = qs("vtexBar");
+    const ml1Bar = qs("ml1Bar");
+    const ml2Bar = qs("ml2Bar");
+
+    if (vtexBar) vtexBar.style.width = `${vtex}%`;
+    if (ml1Bar) ml1Bar.style.width = `${ml1}%`;
+    if (ml2Bar) ml2Bar.style.width = `${ml2}%`;
+  }
+
+  function renderTopProducts(products) {
+    const tbody = document.querySelector("#topProdsTable tbody");
+
+    if (!tbody) return;
+
+    if (!Array.isArray(products) || !products.length) {
+      tbody.innerHTML = `
+        <tr>
+          <td colspan="4" style="text-align:center;color:var(--text3);padding:18px">
+            Sin productos para este período/canal
+          </td>
+        </tr>
+      `;
+      return;
+    }
+
+    tbody.innerHTML = products.slice(0, 10).map((p, index) => `
+      <tr>
+        <td>${index + 1}</td>
+        <td>${escapeHTML(p.product_name || p.product || "Producto")}</td>
+        <td>${escapeHTML(p.channel || p.source || "-")}</td>
+        <td>${fmtNumber(p.quantity || p.qty || 0)}</td>
+      </tr>
+    `).join("");
+  }
+
+  function renderTopProductsByChannel(products) {
+    const box = qs("topProductsByChannel");
+    if (!box) return;
+
+    const grouped = {};
+
+    (products || []).forEach(p => {
+      const channel = p.channel || p.source || "sin_canal";
+      if (!grouped[channel]) grouped[channel] = [];
+      grouped[channel].push(p);
+    });
+
+    const channels = Object.keys(grouped);
+
+    if (!channels.length) {
+      box.innerHTML = `
+        <div class="card">
+          <div style="color:var(--text3);font-size:13px">Sin productos para este período/canal</div>
+        </div>
+      `;
+      return;
+    }
+
+    box.innerHTML = channels.map(channel => `
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">${escapeHTML(channel.toUpperCase())}</span>
+        </div>
+        <table class="rank-table">
+          <tbody>
+            ${grouped[channel].slice(0, 10).map((p, index) => `
+              <tr>
+                <td>${index + 1}</td>
+                <td>${escapeHTML(p.product_name || p.product || "Producto")}</td>
+                <td>${fmtNumber(p.quantity || p.qty || 0)}</td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+      </div>
+    `).join("");
+  }
+
+  function renderLive(data) {
+    const revenue = Number(data.revenue || data.facturacion || 0);
+    const orders = Number(data.ventas || data.orders_count || data.orders?.count || 0);
+    const avgTicket = Number(data.avg_ticket || data.ticket_promedio || 0);
+
+    setHTML("liveKpis", `
+      ${renderMetricCard("Revenue del día", fmtMoney(revenue), "+0% vs ayer", "var(--accent)")}
+      ${renderMetricCard("Órdenes del día", fmtNumber(orders), `Ticket prom: ${fmtMoney(avgTicket)}`, "var(--teal)")}
+      ${renderMetricCard("Unidades vendidas", fmtNumber(data.items_count || data.unidades || 0), "real", "var(--amber)")}
+    `);
+
+    setText("orderTicker", `${fmtNumber(orders)} hoy`);
+
+    const ordersList = qs("ordersList");
+    if (ordersList) {
+      const ordersData = data.latest_orders || data.orders_list || [];
+
+      ordersList.innerHTML = ordersData.length ? ordersData.slice(0, 10).map(order => `
+        <div class="order-row">
+          <div>
+            <div class="order-id">${escapeHTML(order.order_id || order.external_id || "Pedido")}</div>
+            <div class="order-meta">${escapeHTML(order.customer_name || "")}</div>
+          </div>
+          <div style="text-align:right">
+            <div class="order-amount">${fmtMoney(order.revenue || order.facturacion || order.total_amount || 0)}</div>
+            <div class="channel-pill">${escapeHTML(order.channel || order.source || "-")}</div>
+          </div>
+        </div>
+      `).join("") : `
+        <div style="color:var(--text3);font-size:13px">Sin pedidos para este período/canal</div>
+      `;
+    }
+
+    const ranking = qs("liveRanking");
+    if (ranking) {
+      const products = data.top_products || data.products || [];
+      ranking.innerHTML = products.length ? products.slice(0, 8).map((p, index) => `
+        <div class="rank-row">
+          <span>${index + 1}. ${escapeHTML(p.product_name || p.product || "Producto")}</span>
+          <strong>${fmtNumber(p.quantity || p.qty || 0)}</strong>
+        </div>
+      `).join("") : `<div style="color:var(--text3);font-size:13px">Sin ranking disponible</div>`;
+    }
+  }
+
+  function renderChannels(data) {
+    const box = qs("channelCards");
+    const table = qs("channelTable");
+
+    const channels = data.channels || data.channels_breakdown || [];
+
+    if (box) {
+      box.innerHTML = channels.length ? channels.map(ch => `
+        <div class="metric-card">
+          <div class="metric-label">${escapeHTML(ch.channel || ch.source || "Canal")}</div>
+          <div class="metric-value">${fmtMoney(ch.revenue || ch.facturacion || 0)}</div>
+          <div class="metric-change positive">${fmtNumber(ch.orders || ch.ventas || 0)} órdenes</div>
+        </div>
+      `).join("") : `
+        <div class="metric-card">
+          <div class="metric-label">Sin datos</div>
+          <div class="metric-value">$0</div>
+          <div class="metric-change">para este período</div>
+        </div>
+      `;
+    }
+
+    if (table) {
+      table.innerHTML = channels.length ? `
+        <table class="rank-table">
+          <thead>
+            <tr>
+              <th>Canal</th>
+              <th>Órdenes</th>
+              <th>Revenue</th>
+              <th>Ticket</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${channels.map(ch => {
+              const orders = Number(ch.orders || ch.ventas || 0);
+              const revenue = Number(ch.revenue || ch.facturacion || 0);
+              return `
+                <tr>
+                  <td>${escapeHTML(ch.channel || ch.source || "-")}</td>
+                  <td>${fmtNumber(orders)}</td>
+                  <td>${fmtMoney(revenue)}</td>
+                  <td>${fmtMoney(orders > 0 ? revenue / orders : 0)}</td>
+                </tr>
+              `;
+            }).join("")}
+          </tbody>
+        </table>
+      ` : `<div style="color:var(--text3);font-size:13px">Sin canales para este período</div>`;
+    }
+  }
+
+  function renderMarketingKpis(containerId, metrics) {
+    const box = qs(containerId);
+    if (!box) return;
+
+    box.innerHTML = `
+      ${renderMetricCard("Inversión", fmtMoney(metrics.spend || metrics.inversion || metrics.investment || 0), "real", "var(--accent)")}
+      ${renderMetricCard("Revenue atribuido", fmtMoney(metrics.revenue || 0), "real", "var(--teal)")}
+      ${renderMetricCard("ROAS", `${Number(metrics.roas || 0).toFixed(1)}x`, "real", "var(--purple)")}
+      ${renderMetricCard("Leads", fmtNumber(metrics.leads || 0), "real", "var(--amber)")}
+      ${renderMetricCard("Clics", fmtNumber(metrics.clicks || metrics.clics || 0), "real", "var(--teal)")}
+      ${renderMetricCard("CTR", fmtPercent(Number(metrics.ctr || 0) * 100), "real", "var(--purple)")}
+    `;
+  }
+
+  function pickSource(marketing, source) {
+    const list = marketing.by_source || [];
+    return list.find(x => String(x.source || "").toLowerCase() === source) || {};
+  }
+
+  function renderCampaignTable(tbodyId, campaigns, source) {
+    const tbody = qs(tbodyId);
+    if (!tbody) return;
+
+    const rows = (campaigns || []).filter(c => {
+      if (!source) return true;
+      return String(c.source || "").toLowerCase() === source;
+    });
+
+    if (!rows.length) {
+      tbody.innerHTML = `
+        <tr>
+          <td colspan="12" style="text-align:center;color:var(--text3);padding:18px">
+            Sin campañas importadas
+          </td>
+        </tr>
+      `;
+      return;
+    }
+
+    tbody.innerHTML = rows.slice(0, 30).map(c => {
+      const spend = Number(c.spend || c.inversion || 0);
+      const clicks = Number(c.clicks || c.clics || 0);
+      const impressions = Number(c.impressions || 0);
+      const conversions = Number(c.conversions || c.conversiones || 0);
+      const revenue = Number(c.revenue || 0);
+      const ctr = impressions > 0 ? clicks / impressions * 100 : 0;
+      const cpc = clicks > 0 ? spend / clicks : 0;
+      const cpa = conversions > 0 ? spend / conversions : 0;
+      const roas = spend > 0 ? revenue / spend : 0;
+
+      return `
+        <tr>
+          <td style="text-align:left">${escapeHTML(c.campaign_name || c.campaign_id || c.campaign_key || "Campaña")}</td>
+          <td>Activa</td>
+          <td>${fmtMoney(spend)}</td>
+          <td>${fmtNumber(impressions)}</td>
+          <td>${fmtNumber(clicks)}</td>
+          <td>${fmtPercent(ctr)}</td>
+          <td>${impressions > 0 ? fmtMoney(spend / impressions * 1000) : "$0"}</td>
+          <td>${fmtMoney(cpc)}</td>
+          <td>${fmtNumber(conversions)}</td>
+          <td>${fmtMoney(cpa)}</td>
+          <td>${roas.toFixed(1)}x</td>
+        </tr>
+      `;
+    }).join("");
+  }
+
+  function renderPerfitTable(campaigns) {
+    const tbody = qs("mktPerfitTbody");
+    if (!tbody) return;
+
+    const rows = (campaigns || []).filter(c => String(c.source || "").toLowerCase() === "perfit");
+
+    if (!rows.length) {
+      tbody.innerHTML = `
+        <tr>
+          <td colspan="9" style="text-align:center;color:var(--text3);padding:18px">
+            Sin campañas Perfit importadas
+          </td>
+        </tr>
+      `;
+      return;
+    }
+
+    tbody.innerHTML = rows.slice(0, 30).map(c => {
+      const sent = Number(c.emails_sent || 0);
+      const delivered = Number(c.emails_delivered || 0);
+      const opens = Number(c.opens || 0);
+      const clicks = Number(c.clicks || 0);
+      const unsub = Number(c.unsubscribes || 0);
+      const openRate = delivered > 0 ? opens / delivered * 100 : 0;
+      const ctr = delivered > 0 ? clicks / delivered * 100 : 0;
+
+      return `
+        <tr>
+          <td style="text-align:left">${escapeHTML(c.campaign_name || c.campaign_id || c.campaign_key || "Campaña")}</td>
+          <td>Activa</td>
+          <td>${fmtNumber(sent)}</td>
+          <td>${fmtNumber(delivered)}</td>
+          <td>${fmtNumber(opens)}</td>
+          <td>${fmtPercent(openRate)}</td>
+          <td>${fmtNumber(clicks)}</td>
+          <td>${fmtPercent(ctr)}</td>
+          <td>${fmtNumber(unsub)}</td>
+        </tr>
+      `;
+    }).join("");
+  }
+
+  function renderMarketing(data) {
+    const marketing = data.marketing ? data.marketing : data;
+    const totals = marketing.totals || {};
+    const campaigns = marketing.campaigns || [];
+
+    renderMarketingKpis("mktKpisCombined", totals);
+    renderMarketingKpis("mktKpisMeta", pickSource(marketing, "meta"));
+    renderMarketingKpis("mktKpisGoogle", pickSource(marketing, "google_ads"));
+
+    const perfit = pickSource(marketing, "perfit");
+    renderMarketingKpis("mktKpisPerfit", {
+      spend: 0,
+      revenue: 0,
+      roas: 0,
+      leads: 0,
+      clicks: perfit.clicks || 0,
+      ctr: perfit.emails_delivered > 0 ? perfit.clicks / perfit.emails_delivered : 0
+    });
+
+    setText("mktDateLabel", labelForRange(NX.mktRange));
+
+    renderCampaignTable("mktMetaTbody", campaigns, "meta");
+    renderCampaignTable("mktGoogleTbody", campaigns, "google_ads");
+    renderPerfitTable(campaigns);
+
+    setText("mktMetaCampCount", `(${campaigns.filter(c => c.source === "meta").length} campañas)`);
+    setText("mktPerfitCampCount", `(${campaigns.filter(c => c.source === "perfit").length} campañas)`);
+    setText("mktGoogleCampCount", `(${campaigns.filter(c => c.source === "google_ads").length} campañas)`);
+
+    const dist = qs("mktDistStats");
+    if (dist) {
+      const list = marketing.by_source || [];
+      dist.innerHTML = list.length ? list.map(s => `
+        <div class="progress-row">
+          <div class="progress-label">
+            <span>${escapeHTML(s.source)}</span>
+            <span>${fmtMoney(s.spend || 0)}</span>
+          </div>
+        </div>
+      `).join("") : `<div style="color:var(--text3);font-size:13px">Sin datos de marketing importados</div>`;
+    }
+  }
+
+  async function loadExecutive() {
+    try {
+      const data = await fetchJSON(buildSalesUrl());
+
+      renderExecutiveKpis(data);
+      renderChannelProgress(data.channels || []);
+      renderTopProducts(data.top_products || data.products || []);
+      renderTopProductsByChannel(data.top_products || data.products || []);
+      renderLive(data);
+      renderChannels(data);
+
+      window.NEXUSOPS_LAST_SUMMARY = data;
+      console.log("[NexusOps] Vista ejecutiva actualizada:", data);
+    } catch (err) {
+      console.error("[NexusOps] Error Vista Ejecutiva:", err);
+    }
+  }
+
+  async function loadMarketing() {
+    try {
+      const data = await fetchJSON(buildMarketingUrl());
+      renderMarketing(data);
+      window.NEXUSOPS_LAST_MARKETING = data;
+      console.log("[NexusOps] Marketing actualizado:", data);
+    } catch (err) {
+      console.error("[NexusOps] Error Marketing:", err);
+    }
+  }
+
+  function setActiveButton(container, btn) {
+    if (!btn || !container) return;
+
+    container.querySelectorAll(".period-tab, .channel-btn").forEach(x => {
+      x.classList.remove("active", "active-all");
+    });
+
+    btn.classList.add("active");
+  }
+
+  window.execSetPeriod = function (period, btn) {
+    NX.execRange = normalizeRange(period);
+    NX.customFrom = null;
+    NX.customTo = null;
+
+    const box = qs("execCustomDateBox");
+    if (box) box.style.display = "none";
+
+    setActiveButton(qs("execPresets"), btn);
+    loadExecutive();
+  };
+
+  window.execSetChannel = function (channel, btn) {
+    NX.execChannel = channel || "all";
+    const parent = btn ? btn.parentElement : null;
+
+    if (parent) {
+      parent.querySelectorAll(".channel-btn").forEach(x => x.classList.remove("active", "active-all"));
+      btn.classList.add(channel === "all" ? "active-all" : "active");
+    }
+
+    loadExecutive();
+  };
+
+  window.execOpenCustomDate = function (btn) {
+    NX.execRange = "custom";
+    const box = qs("execCustomDateBox");
+    if (box) box.style.display = "flex";
+    setActiveButton(qs("execPresets"), btn);
+  };
+
+  window.execApplyCustomDate = function () {
+    const from = qs("execDateFromInput")?.value;
+    const to = qs("execDateToInput")?.value;
+
+    if (!from || !to) return;
+
+    NX.execRange = "custom";
+    NX.customFrom = from;
+    NX.customTo = to;
+    loadExecutive();
+  };
+
+  window.execToggleCompare = function (event) {
+    if (event) event.stopPropagation();
+    const picker = qs("execComparePicker");
+    if (picker) picker.classList.toggle("open");
+  };
+
+  window.execClearCompare = function () {
+    const banner = qs("execCompareBanner");
+    if (banner) banner.style.display = "none";
+  };
+
+  window.execApplyCompareCustom = function () {};
+  window.execApplyCompare = function () {};
+  window.execSetComparePreset = function () {};
+
+  window.mktPreset = function (period, btn) {
+    NX.mktRange = typeof period === "number" ? `${period}d` : normalizeRange(period);
+
+    const box = qs("mktCustomRange");
+    if (box) box.style.display = NX.mktRange === "custom" ? "flex" : "none";
+
+    setActiveButton(qs("mktPresets"), btn);
+
+    if (NX.mktRange !== "custom") {
+      loadMarketing();
+    }
+  };
+
+  window.mktApplyCustom = function () {
+    const from = qs("mktFrom")?.value;
+    const to = qs("mktTo")?.value;
+
+    if (!from || !to) return;
+
+    NX.mktRange = "custom";
+    NX.mktCustomFrom = from;
+    NX.mktCustomTo = to;
+    loadMarketing();
+  };
+
+  window.mktSetChannel = function (channel, btn) {
+    NX.mktChannel = channel || "all";
+    const parent = btn ? btn.parentElement : null;
+
+    if (parent) {
+      parent.querySelectorAll(".channel-btn").forEach(x => x.classList.remove("active", "active-all"));
+      btn.classList.add(channel === "all" ? "active-all" : "active");
+    }
+
+    loadMarketing();
+  };
+
+  window.mktToggleCompare = function (event) {
+    if (event) event.stopPropagation();
+    const picker = qs("mktComparePicker");
+    if (picker) picker.classList.toggle("open");
+  };
+
+  window.mktClearCompare = function () {
+    const banner = qs("mktCompareBanner");
+    if (banner) banner.style.display = "none";
+  };
+
+  window.mktApplyCompareCustom = function () {};
+  window.mktSwitchChart = function () {};
+  window.mktSwitchMetaChart = function () {};
+  window.mktFilterMeta = function () {};
+  window.mktSwitchGoogleChart = function () {};
+
+  window.showPage = function (page, el) {
+    document.querySelectorAll(".page").forEach(p => p.classList.remove("active"));
+    const target = qs(`page-${page}`);
+    if (target) target.classList.add("active");
+
+    document.querySelectorAll(".nav-item").forEach(n => n.classList.remove("active"));
+    if (el) el.classList.add("active");
+
+    if (page === "marketing") loadMarketing();
+    if (page === "executive" || page === "live" || page === "channels") loadExecutive();
+  };
+
+  window.NEXUSOPS_FORCE_REFRESH = function () {
+    loadExecutive();
+    loadMarketing();
+  };
+
+  function init() {
+    loadExecutive();
+    loadMarketing();
+
+    setTimeout(loadExecutive, 800);
+    setTimeout(loadExecutive, 2500);
+
+    setInterval(loadExecutive, 30000);
+    setInterval(loadMarketing, 60000);
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", init);
+  } else {
+    init();
+  }
 })();
 </script>
 </body>
