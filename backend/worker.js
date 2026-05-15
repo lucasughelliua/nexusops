@@ -5816,43 +5816,45 @@ var worker_default = {
         }
       }
       if (path === "/api/v1/marketing/google-ads" && req.method === "GET") {
-  const { dateFrom, dateTo } = getDateRange(url);
   try {
-    // Leer directamente del Sheet
-    const sheetId = env.GA4_SHEET_ID; // '1ldZHPTpoiN6OgyMy4zY2GYiYnNj9X6cgIk5Gqv8G40g'
-    const range = env.GA4_RANGE || 'Sheet1!A:Z';
+    // Llamar a AppScript directamente
+    const appScriptUrl = `https://script.google.com/macros/d/AKfycbzFM9xIQEzC_GUDyfkjLz_UyaXOEeduTpxfbFeNx6LMj_0g41o5yerw6OwhODGFQwLGyw/userweb?token=nexusops-google-ads-2026`;
     
-    const sheetUrl = `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/${range}?key=${env.GOOGLE_API_KEY}`;
-    const response = await fetch(sheetUrl);
-    const sheetData = await response.json();
-    
-    if (!sheetData.values) {
+    const response = await fetch(appScriptUrl);
+    const data = await response.json();
+
+    if (!data.ok || !data.data) {
       return json({ ok: true, data: [] });
     }
-    
-    // Parse filas del Sheet
-    const headers = sheetData.values[0];
-    const rows = sheetData.values.slice(1);
-    
-    const campaigns = rows.map(row => {
-      const obj = {};
-      headers.forEach((h, i) => {
-        obj[h.toLowerCase().replace(/\s+/g, '_')] = row[i] || 0;
-      });
-      return {
-        campaign_name: obj.campaign_name || obj.campaign || 'Google Ads',
-        spend: Number(obj.spend || 0),
-        clicks: Number(obj.clicks || 0),
-        conversions: Number(obj.conversions || 0),
-        ctr: Number(obj.ctr || 0),
-        cpa: Number(obj.cpa || 0),
-        roas: Number(obj.roas || 0)
-      };
+
+    const campaigns = data.data.map(row => ({
+      campaign_name: row.campaign_name || row.campaign || 'Google Ads',
+      spend: Number(row.spend || 0),
+      clicks: Number(row.clicks || 0),
+      impressions: Number(row.impressions || 0),
+      conversions: Number(row.conversions || 0),
+      ctr: Number(row.ctr || 0),
+      cpa: Number(row.cpa || 0),
+      roas: Number(row.roas || 0)
+    }));
+
+    const totals = {
+      spend: campaigns.reduce((a, c) => a + c.spend, 0),
+      clicks: campaigns.reduce((a, c) => a + c.clicks, 0),
+      impressions: campaigns.reduce((a, c) => a + c.impressions, 0),
+      conversions: campaigns.reduce((a, c) => a + c.conversions, 0),
+      revenue: campaigns.reduce((a, c) => a + (c.spend * c.roas), 0),
+    };
+
+    return json({
+      ok: true,
+      data: campaigns,
+      totals,
+      source: 'google_ads_sheet'
     });
-    
-    return json({ ok: true, data: campaigns });
-  } catch (e) {
-    console.error('[Google Ads]', e.message);
+
+  } catch (error) {
+    console.error('[Google Ads]', error.message);
     return json({ ok: true, data: [] });
   }
 }
