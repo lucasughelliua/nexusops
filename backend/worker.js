@@ -5816,31 +5816,46 @@ var worker_default = {
         }
       }
       if (path === "/api/v1/marketing/google-ads" && req.method === "GET") {
-        const { dateFrom, dateTo } = getDateRange(url);
-        try {
-          const rows = await sql`
-            SELECT
-              mc.name AS campaign_name,
-              mc.status,
-              SUM(mm.clicks) AS clicks,
-              SUM(mm.reach) AS sessions,
-              SUM(mm.conversions) AS conversions,
-              SUM(mm.conv_value) AS revenue,
-              SUM(mm.spend) AS spend,
-              CASE WHEN SUM(mm.spend) > 0 THEN SUM(mm.conv_value)/SUM(mm.spend) ELSE 0 END AS roas,
-              CASE WHEN SUM(mm.clicks) > 0 THEN SUM(mm.conversions)/SUM(mm.clicks)*100 ELSE 0 END AS conv_rate
-            FROM marketing_campaigns mc
-            JOIN marketing_metrics mm ON mm.campaign_id = mc.id
-            WHERE mc.source = 'google_ads'
-              AND mm.date >= ${dateFrom}::date AND mm.date <= ${dateTo}::date
-            GROUP BY mc.id, mc.name, mc.status
-            ORDER BY revenue DESC
-          `;
-          return json({ ok: true, data: rows });
-        } catch (e) {
-          return json({ ok: false, error: e.message, data: [] });
-        }
-      }
+  const { dateFrom, dateTo } = getDateRange(url);
+  try {
+    // Leer directamente del Sheet
+    const sheetId = env.GA4_SHEET_ID; // '1ldZHPTpoiN6OgyMy4zY2GYiYnNj9X6cgIk5Gqv8G40g'
+    const range = env.GA4_RANGE || 'Sheet1!A:Z';
+    
+    const sheetUrl = `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/${range}?key=${env.GOOGLE_API_KEY}`;
+    const response = await fetch(sheetUrl);
+    const sheetData = await response.json();
+    
+    if (!sheetData.values) {
+      return json({ ok: true, data: [] });
+    }
+    
+    // Parse filas del Sheet
+    const headers = sheetData.values[0];
+    const rows = sheetData.values.slice(1);
+    
+    const campaigns = rows.map(row => {
+      const obj = {};
+      headers.forEach((h, i) => {
+        obj[h.toLowerCase().replace(/\s+/g, '_')] = row[i] || 0;
+      });
+      return {
+        campaign_name: obj.campaign_name || obj.campaign || 'Google Ads',
+        spend: Number(obj.spend || 0),
+        clicks: Number(obj.clicks || 0),
+        conversions: Number(obj.conversions || 0),
+        ctr: Number(obj.ctr || 0),
+        cpa: Number(obj.cpa || 0),
+        roas: Number(obj.roas || 0)
+      };
+    });
+    
+    return json({ ok: true, data: campaigns });
+  } catch (e) {
+    console.error('[Google Ads]', e.message);
+    return json({ ok: true, data: [] });
+  }
+}
       if (path === "/api/v1/marketing/kommo" && req.method === "GET") {
         const { dateFrom, dateTo } = getDateRange(url);
         try {
