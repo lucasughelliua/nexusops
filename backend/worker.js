@@ -5676,19 +5676,30 @@ var worker_default = {
       if (path === "/api/v1/metrics/executive" && req.method === "GET") {
         const { dateFrom, dateTo } = getDateRange(url);
         try {
+          // Revenue y órdenes desde orders (sin JOIN para evitar duplicación).
+          // Unidades desde order_items con subquery separada.
           const rows = await sql`
+            WITH base AS (
+              SELECT id, total_amount, net_amount, is_canceled, is_returned
+              FROM orders
+              WHERE (created_at AT TIME ZONE 'America/Argentina/Buenos_Aires')::date >= ${dateFrom}::date
+                AND (created_at AT TIME ZONE 'America/Argentina/Buenos_Aires')::date <= ${dateTo}::date
+                AND COALESCE(is_canceled, false) = false
+            ),
+            units AS (
+              SELECT COALESCE(SUM(oi.quantity), 0)::int AS units_sold
+              FROM order_items oi
+              JOIN base b ON b.id = oi.order_id
+            )
             SELECT
-              COALESCE(SUM(o.total_amount), 0) AS total_revenue,
-              COALESCE(SUM(o.net_amount), 0) AS net_revenue,
-              COUNT(*)::int AS orders_count,
-              COALESCE(AVG(o.total_amount), 0) AS avg_ticket,
-              COALESCE(SUM(oi.quantity), 0) AS units_sold,
-              COUNT(*) FILTER (WHERE COALESCE(o.is_canceled,false))::int AS cancellations,
-              COUNT(*) FILTER (WHERE COALESCE(o.is_returned,false))::int AS returns
-            FROM orders o
-            LEFT JOIN order_items oi ON oi.order_id = o.id
-            WHERE (o.created_at AT TIME ZONE 'America/Argentina/Buenos_Aires')::date >= ${dateFrom}::date AND (o.created_at AT TIME ZONE 'America/Argentina/Buenos_Aires')::date <= ${dateTo}::date
-              AND COALESCE(o.is_canceled,false) = false
+              COALESCE(SUM(b.total_amount), 0)     AS total_revenue,
+              COALESCE(SUM(b.net_amount), 0)       AS net_revenue,
+              COUNT(*)::int                         AS orders_count,
+              COALESCE(AVG(b.total_amount), 0)     AS avg_ticket,
+              (SELECT units_sold FROM units)        AS units_sold,
+              0::int                                AS cancellations,
+              0::int                                AS returns
+            FROM base b
           `;
           return json(rows[0] || {});
         } catch (e) {
