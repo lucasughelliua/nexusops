@@ -3,21 +3,42 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>NexusOps TV Mode</title>
+  <title>NexusOps — Modo TV</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { 
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-      background: #0a0a0f;
-      color: #fff;
-      overflow: hidden;
+    
+    :root {
+      --bg: #fff;
+      --bg-secondary: #f5f5f5;
+      --text: #000;
+      --text-muted: #666;
+      --border: #e0e0e0;
+      --card-bg: #fff;
     }
-    .tv-shell {
+    
+    body.dark-mode {
+      --bg: #0a0a0f;
+      --bg-secondary: #111118;
+      --text: #fff;
+      --text-muted: #999;
+      --border: #1e1e2e;
+      --card-bg: #1a1a2e;
+    }
+    
+    html, body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      overflow: hidden;
+      transition: background .3s, color .3s;
+    }
+    
+    .tv-container {
       display: flex;
       flex-direction: column;
       height: 100vh;
-      padding: 16px 20px;
-      gap: 12px;
+      padding: 20px;
+      gap: 16px;
     }
     
     /* HEADER */
@@ -27,486 +48,628 @@
       align-items: center;
       flex-shrink: 0;
     }
+    
+    .tv-header-left {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    
     .tv-logo {
-      font-size: 16px;
+      font-size: 20px;
       font-weight: 700;
       letter-spacing: -0.5px;
     }
-    .tv-logo span { color: #6366f1; margin-right: 5px; }
-    .tv-time { font-size: 12px; color: #6b7280; font-family: monospace; }
-    .tv-close { position: fixed; top: 12px; right: 14px; z-index: 1000; cursor: pointer; 
-                background: #1a1a2e; border: 1px solid #2d2d45; border-radius: 7px; 
-                padding: 5px 11px; font-size: 11px; color: #9ca3af; }
-    .tv-close:hover { color: #fff; border-color: #6366f1; }
     
-    /* KPI ROW */
-    .tv-kpi-row {
-      display: grid;
-      grid-template-columns: repeat(5, 1fr);
-      gap: 10px;
-      flex-shrink: 0;
-    }
-    .tv-kpi {
-      background: #111118;
-      border: 1px solid #1e1e2e;
-      border-radius: 10px;
-      padding: 12px 14px;
-    }
-    .tv-kpi-label {
-      font-size: 10px;
-      text-transform: uppercase;
-      letter-spacing: 0.08em;
-      color: #6b7280;
-      font-weight: 600;
-      margin-bottom: 3px;
-    }
-    .tv-kpi-value {
-      font-size: 26px;
-      font-weight: 700;
-      letter-spacing: -1px;
-      font-family: monospace;
-      color: #fff;
-      line-height: 1;
-    }
-    .tv-kpi-sub {
+    .tv-live-badge {
+      display: flex;
+      align-items: center;
+      gap: 6px;
       font-size: 11px;
-      color: #4b5563;
-      margin-top: 2px;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      font-weight: 700;
+      color: #10b981;
     }
     
-    /* CHANNELS ROW — VTEX + MeLi */
-    .tv-channels-row {
-      display: grid;
-      grid-template-columns: 1.2fr 1.2fr;
-      gap: 12px;
-      flex-shrink: 0;
+    .tv-live-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #10b981;
+      animation: pulse 1.5s infinite;
     }
-    .tv-channel-card {
-      background: #111118;
-      border: 1px solid #1e1e2e;
-      border-radius: 12px;
-      padding: 14px;
+    
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.6; transform: scale(1.2); }
+    }
+    
+    .tv-header-right {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+    
+    .tv-time {
+      font-size: 13px;
+      color: var(--text-muted);
+      font-family: monospace;
+    }
+    
+    /* MAIN REVENUE DISPLAY */
+    .tv-revenue-section {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      background: linear-gradient(135deg, #fff9e6 0%, #fffaf0 100%);
+      border: 2px solid #ffd700;
+      border-radius: 20px;
+      padding: 32px;
+      flex-shrink: 0;
+      position: relative;
+      overflow: hidden;
+    }
+    
+    body.dark-mode .tv-revenue-section {
+      background: linear-gradient(135deg, rgba(255, 215, 0, 0.1) 0%, rgba(255, 215, 0, 0.05) 100%);
+      border-color: #ffd700;
+    }
+    
+    .tv-revenue-section::before {
+      content: '';
+      position: absolute;
+      top: -50%;
+      right: -50%;
+      width: 300px;
+      height: 300px;
+      background: radial-gradient(circle, rgba(255, 215, 0, 0.1) 0%, transparent 70%);
+      border-radius: 50%;
+    }
+    
+    .tv-revenue-content {
       display: flex;
       flex-direction: column;
-      gap: 10px;
-    }
-    .tv-ch-header {
-      display: flex;
       align-items: center;
       gap: 8px;
+      position: relative;
+      z-index: 1;
     }
-    .tv-ch-pill {
-      font-size: 9px;
-      font-weight: 700;
-      padding: 3px 8px;
-      border-radius: 4px;
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-    }
-    .tv-vtex { background: rgba(239, 68, 68, 0.15); color: #fca5a5; border: 1px solid rgba(239, 68, 68, 0.3); }
-    .tv-meli { background: rgba(251, 191, 36, 0.15); color: #fcd34d; border: 1px solid rgba(251, 191, 36, 0.3); }
     
-    .tv-ch-name { font-size: 12px; font-weight: 600; color: #d1d5db; }
-    .tv-ch-revenue {
-      font-size: 28px;
-      font-weight: 700;
-      font-family: monospace;
-      color: #fff;
-      letter-spacing: -0.5px;
-      line-height: 1;
-      margin: 4px 0;
-    }
-    .tv-ch-metrics {
-      display: grid;
-      grid-template-columns: repeat(4, 1fr);
-      gap: 8px;
-      font-size: 11px;
-    }
-    .tv-ch-metric {
-      background: rgba(99, 102, 241, 0.1);
-      border: 1px solid rgba(99, 102, 241, 0.2);
-      border-radius: 6px;
-      padding: 6px;
-      text-align: center;
-    }
-    .tv-ch-metric-label { color: #6b7280; font-size: 9px; text-transform: uppercase; }
-    .tv-ch-metric-value { color: #6366f1; font-weight: 600; font-family: monospace; font-size: 12px; }
-    
-    /* HEATMAP */
-    .tv-heatmap-section {
-      background: #111118;
-      border: 1px solid #1e1e2e;
-      border-radius: 10px;
-      padding: 12px;
-      flex-shrink: 0;
-    }
-    .tv-heatmap-title {
-      font-size: 10px;
+    .tv-revenue-label {
+      font-size: 14px;
       text-transform: uppercase;
-      letter-spacing: 0.08em;
-      color: #6b7280;
+      letter-spacing: 0.12em;
       font-weight: 600;
-      margin-bottom: 8px;
-    }
-    .tv-heatmap-grid {
-      display: grid;
-      grid-template-columns: repeat(24, 1fr);
-      gap: 2px;
-      height: 40px;
-    }
-    .tv-heatmap-cell {
-      border-radius: 3px;
-      cursor: pointer;
-      font-size: 8px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      color: rgba(255,255,255,0.6);
+      color: #666;
     }
     
-    /* BOTTOM PANELS */
-    .tv-bottom-row {
+    body.dark-mode .tv-revenue-label {
+      color: #999;
+    }
+    
+    .tv-revenue-value {
+      font-size: 72px;
+      font-weight: 800;
+      letter-spacing: -2px;
+      font-family: monospace;
+      color: #ffd700;
+      line-height: 1;
+    }
+    
+    .tv-revenue-update {
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+    
+    /* CHANNELS ROW */
+    .tv-channels-section {
       display: grid;
-      grid-template-columns: 1.2fr 1fr 1fr;
-      gap: 10px;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
       flex: 1;
       min-height: 0;
     }
-    .tv-panel {
-      background: #111118;
-      border: 1px solid #1e1e2e;
-      border-radius: 10px;
-      padding: 12px;
-      overflow: hidden;
+    
+    .tv-channel {
       display: flex;
       flex-direction: column;
+      background: var(--card-bg);
+      border: 2px solid var(--border);
+      border-radius: 16px;
+      padding: 24px;
+      transition: border-color .3s;
     }
-    .tv-panel-title {
-      font-size: 10px;
-      text-transform: uppercase;
-      letter-spacing: 0.08em;
-      color: #6b7280;
-      font-weight: 600;
-      margin-bottom: 8px;
-      flex-shrink: 0;
+    
+    .tv-channel:hover {
+      border-color: #ffd700;
     }
-    .tv-order-row, .tv-prod-row {
+    
+    .tv-channel-header {
       display: flex;
       align-items: center;
-      gap: 8px;
-      padding: 6px 0;
-      border-bottom: 1px solid #1a1a27;
-      font-size: 11px;
-      overflow: hidden;
+      gap: 12px;
+      margin-bottom: 16px;
+      flex-shrink: 0;
     }
-    .tv-order-row:last-child, .tv-prod-row:last-child { border-bottom: none; }
-    .tv-prod-num { width: 14px; color: #4b5563; font-family: monospace; font-size: 10px; flex-shrink: 0; }
-    .tv-prod-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #d1d5db; }
-    .tv-prod-qty { font-family: monospace; font-weight: 600; color: #6366f1; font-size: 10px; flex-shrink: 0; }
     
-    /* MARKETING PANEL */
-    .tv-mkt-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; margin-bottom: 8px; }
-    .tv-mkt-kpi { background: #0d0d18; border: 1px solid #1e1e2e; border-radius: 8px; padding: 8px 10px; }
-    .tv-mkt-label { font-size: 9px; text-transform: uppercase; letter-spacing: 0.08em; color: #6b7280; font-weight: 600; margin-bottom: 2px; }
-    .tv-mkt-val { font-size: 16px; font-weight: 700; font-family: monospace; color: #fff; line-height: 1.1; }
-    
-    /* SYNC */
-    .tv-sync-row { display: flex; align-items: center; gap: 6px; padding: 4px 0; font-size: 10px; color: #6b7280; border-bottom: 1px solid #1a1a27; }
-    .tv-sync-row:last-child { border-bottom: none; }
-    .tv-sync-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
-    
-    .tv-live-badge { 
-      display: flex; 
-      align-items: center; 
-      gap: 4px; 
-      font-size: 9px; 
-      text-transform: uppercase; 
+    .tv-channel-badge {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 40px;
+      height: 40px;
+      border-radius: 8px;
+      font-weight: 700;
+      font-size: 12px;
+      text-transform: uppercase;
       letter-spacing: 0.08em;
-      color: #10b981;
+    }
+    
+    .tv-channel-badge.vtex {
+      background: rgba(239, 68, 68, 0.15);
+      color: #ef4444;
+      border: 2px solid #ef4444;
+    }
+    
+    .tv-channel-badge.meli {
+      background: rgba(255, 215, 0, 0.15);
+      color: #ffc000;
+      border: 2px solid #ffc000;
+    }
+    
+    body.dark-mode .tv-channel-badge.vtex {
+      background: rgba(239, 68, 68, 0.2);
+      color: #fca5a5;
+    }
+    
+    body.dark-mode .tv-channel-badge.meli {
+      background: rgba(255, 215, 0, 0.2);
+      color: #fcd34d;
+    }
+    
+    .tv-channel-name {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+    
+    .tv-channel-name-main {
+      font-size: 14px;
       font-weight: 700;
     }
-    .tv-live-dot {
-      width: 6px;
-      height: 6px;
-      border-radius: 50%;
-      background: #10b981;
-      animation: pulse 2s infinite;
+    
+    .tv-channel-name-sub {
+      font-size: 11px;
+      color: var(--text-muted);
     }
-    @keyframes pulse {
-      0%, 100% { opacity: 1; }
-      50% { opacity: 0.5; }
+    
+    /* CHANNEL METRICS */
+    .tv-channel-metrics {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 12px;
+      margin-bottom: 16px;
+      flex: 1;
+    }
+    
+    .tv-metric {
+      background: var(--bg-secondary);
+      border-radius: 10px;
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    
+    .tv-metric-label {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      font-weight: 600;
+      color: var(--text-muted);
+    }
+    
+    .tv-metric-value {
+      font-size: 22px;
+      font-weight: 700;
+      font-family: monospace;
+      color: var(--text);
+      line-height: 1;
+    }
+    
+    /* CHANNEL REVENUE HIGHLIGHT */
+    .tv-channel-revenue {
+      background: linear-gradient(135deg, #fff9e6 0%, #fffaf0 100%);
+      border: 2px solid #ffd700;
+      border-radius: 12px;
+      padding: 14px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-shrink: 0;
+    }
+    
+    body.dark-mode .tv-channel-revenue {
+      background: linear-gradient(135deg, rgba(255, 215, 0, 0.1) 0%, rgba(255, 215, 0, 0.05) 100%);
+    }
+    
+    .tv-channel-revenue-label {
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      font-weight: 600;
+      color: #666;
+    }
+    
+    body.dark-mode .tv-channel-revenue-label {
+      color: #999;
+    }
+    
+    .tv-channel-revenue-value {
+      font-size: 28px;
+      font-weight: 800;
+      font-family: monospace;
+      color: #ffd700;
+      line-height: 1;
+    }
+    
+    /* TOP PRODUCTS */
+    .tv-products-section {
+      background: var(--card-bg);
+      border: 2px solid var(--border);
+      border-radius: 16px;
+      padding: 20px;
+      flex-shrink: 0;
+      max-height: 240px;
+      overflow-y: auto;
+    }
+    
+    .tv-products-title {
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      font-weight: 700;
+      margin-bottom: 12px;
+      color: var(--text-muted);
+    }
+    
+    .tv-product-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 0;
+      border-bottom: 1px solid var(--border);
+      font-size: 12px;
+    }
+    
+    .tv-product-row:last-child {
+      border-bottom: none;
+    }
+    
+    .tv-product-rank {
+      width: 24px;
+      height: 24px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: linear-gradient(135deg, #ffd700, #ffed4e);
+      color: #000;
+      border-radius: 4px;
+      font-weight: 700;
+      font-size: 11px;
+      flex-shrink: 0;
+    }
+    
+    .tv-product-badge {
+      font-size: 9px;
+      font-weight: 700;
+      padding: 2px 6px;
+      border-radius: 3px;
+      text-transform: uppercase;
+      flex-shrink: 0;
+    }
+    
+    .tv-product-badge.vtex {
+      background: #fee2e2;
+      color: #991b1b;
+    }
+    
+    .tv-product-badge.meli {
+      background: #fef3c7;
+      color: #92400e;
+    }
+    
+    body.dark-mode .tv-product-badge.vtex {
+      background: rgba(239, 68, 68, 0.2);
+      color: #fca5a5;
+    }
+    
+    body.dark-mode .tv-product-badge.meli {
+      background: rgba(255, 215, 0, 0.2);
+      color: #fcd34d;
+    }
+    
+    .tv-product-name {
+      flex: 1;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      color: var(--text);
+    }
+    
+    .tv-product-qty {
+      font-family: monospace;
+      font-weight: 600;
+      color: #ffd700;
+      flex-shrink: 0;
+      width: 50px;
+      text-align: right;
+    }
+    
+    /* THEME TOGGLE */
+    .tv-theme-toggle {
+      display: flex;
+      gap: 6px;
+      padding: 4px;
+      background: var(--bg-secondary);
+      border-radius: 6px;
+    }
+    
+    .tv-theme-btn {
+      padding: 6px 10px;
+      border: none;
+      background: transparent;
+      color: var(--text-muted);
+      cursor: pointer;
+      font-size: 12px;
+      border-radius: 4px;
+      transition: all .2s;
+      font-weight: 600;
+    }
+    
+    .tv-theme-btn.active {
+      background: var(--card-bg);
+      color: var(--text);
+      border: 1px solid var(--border);
+    }
+    
+    /* SCROLLBAR */
+    ::-webkit-scrollbar {
+      width: 6px;
+    }
+    
+    ::-webkit-scrollbar-track {
+      background: var(--bg-secondary);
+    }
+    
+    ::-webkit-scrollbar-thumb {
+      background: var(--border);
+      border-radius: 3px;
+    }
+    
+    ::-webkit-scrollbar-thumb:hover {
+      background: #ffd700;
     }
   </style>
 </head>
 <body>
-  <div class="tv-shell">
-    <button class="tv-close" onclick="window.close()">✕ Salir</button>
-    
+  <div class="tv-container">
     <!-- HEADER -->
     <div class="tv-header">
-      <div style="display: flex; align-items: center; gap: 12px;">
-        <div class="tv-logo"><span>⬡</span>NexusOps</div>
-        <div class="tv-live-badge"><div class="tv-live-dot"></div> LIVE</div>
-      </div>
-      <div class="tv-time" id="tvTime"></div>
-    </div>
-    
-    <!-- KPI TOTALES -->
-    <div class="tv-kpi-row">
-      <div class="tv-kpi">
-        <div class="tv-kpi-label">Revenue total</div>
-        <div class="tv-kpi-value" id="tvRevenue">$0</div>
-        <div class="tv-kpi-sub" id="tvRevenueSub">0 unidades</div>
-      </div>
-      <div class="tv-kpi">
-        <div class="tv-kpi-label">Total órdenes</div>
-        <div class="tv-kpi-value" id="tvOrders">0</div>
-        <div class="tv-kpi-sub" id="tvOrdersSub">Ticket $0</div>
-      </div>
-      <div class="tv-kpi">
-        <div class="tv-kpi-label">Leads Kommo</div>
-        <div class="tv-kpi-value" id="tvLeads">0</div>
-        <div class="tv-kpi-sub" id="tvLeadsSub">ganados</div>
-      </div>
-      <div class="tv-kpi">
-        <div class="tv-kpi-label">Inversión mkt</div>
-        <div class="tv-kpi-value" id="tvSpend">$0</div>
-        <div class="tv-kpi-sub" id="tvRoas">ROAS —</div>
-      </div>
-      <div class="tv-kpi">
-        <div class="tv-kpi-label">Sync OK</div>
-        <div class="tv-kpi-value" id="tvSyncCount" style="font-size: 20px; padding-top: 4px;">—</div>
-        <div class="tv-kpi-sub" id="tvSyncSub">fuentes activas</div>
-      </div>
-    </div>
-    
-    <!-- CANALES SEPARADOS -->
-    <div class="tv-channels-row">
-      <div class="tv-channel-card">
-        <div class="tv-ch-header">
-          <span class="tv-ch-pill tv-vtex">VTEX</span>
-          <span class="tv-ch-name">Canal propio</span>
+      <div class="tv-header-left">
+        <div class="tv-logo">⬡ NexusOps</div>
+        <div class="tv-live-badge">
+          <div class="tv-live-dot"></div>
+          En vivo
         </div>
-        <div class="tv-ch-revenue" id="tvVtexRev">$0</div>
-        <div class="tv-ch-metrics">
-          <div class="tv-ch-metric">
-            <div class="tv-ch-metric-label">Órdenes</div>
-            <div class="tv-ch-metric-value" id="tvVtexOrd">0</div>
+      </div>
+      <div class="tv-header-right">
+        <div class="tv-time" id="tvTime"></div>
+        <div class="tv-theme-toggle">
+          <button class="tv-theme-btn active" id="btnLight" onclick="setTheme('light')">☀</button>
+          <button class="tv-theme-btn" id="btnDark" onclick="setTheme('dark')">🌙</button>
+        </div>
+      </div>
+    </div>
+    
+    <!-- MAIN REVENUE -->
+    <div class="tv-revenue-section">
+      <div class="tv-revenue-content">
+        <div class="tv-revenue-label">Ventas de hoy en vivo</div>
+        <div class="tv-revenue-value" id="tvTotalRevenue">$0</div>
+        <div class="tv-revenue-update">Actualizado hace <span id="tvLastUpdate">0</span> segundos</div>
+      </div>
+    </div>
+    
+    <!-- CHANNELS: VTEX + MELI -->
+    <div class="tv-channels-section">
+      <!-- VTEX -->
+      <div class="tv-channel">
+        <div class="tv-channel-header">
+          <div class="tv-channel-badge vtex">VTEX</div>
+          <div class="tv-channel-name">
+            <div class="tv-channel-name-main">Canal propio</div>
+            <div class="tv-channel-name-sub">Tu tienda VTEX</div>
           </div>
-          <div class="tv-ch-metric">
-            <div class="tv-ch-metric-label">Ticket</div>
-            <div class="tv-ch-metric-value" id="tvVtexTick">$0</div>
+        </div>
+        
+        <div class="tv-channel-metrics">
+          <div class="tv-metric">
+            <div class="tv-metric-label">Órdenes</div>
+            <div class="tv-metric-value" id="tvVtexOrders">0</div>
           </div>
-          <div class="tv-ch-metric">
-            <div class="tv-ch-metric-label">Unidades</div>
-            <div class="tv-ch-metric-value" id="tvVtexUnd">0</div>
+          <div class="tv-metric">
+            <div class="tv-metric-label">Unidades</div>
+            <div class="tv-metric-value" id="tvVtexUnits">0</div>
           </div>
-          <div class="tv-ch-metric">
-            <div class="tv-ch-metric-label">% Total</div>
-            <div class="tv-ch-metric-value" id="tvVtexPct">0%</div>
+          <div class="tv-metric">
+            <div class="tv-metric-label">Ticket</div>
+            <div class="tv-metric-value" id="tvVtexTicket">$0</div>
           </div>
+          <div class="tv-metric">
+            <div class="tv-metric-label">% Total</div>
+            <div class="tv-metric-value" id="tvVtexPct">0%</div>
+          </div>
+        </div>
+        
+        <div class="tv-channel-revenue">
+          <div class="tv-channel-revenue-label">Ingresos</div>
+          <div class="tv-channel-revenue-value" id="tvVtexRevenue">$0</div>
         </div>
       </div>
       
-      <div class="tv-channel-card">
-        <div class="tv-ch-header">
-          <span class="tv-ch-pill tv-meli">MeLi</span>
-          <span class="tv-ch-name">Mercado Libre (#1 + #2)</span>
+      <!-- MELI (suma de #1 + #2) -->
+      <div class="tv-channel">
+        <div class="tv-channel-header">
+          <div class="tv-channel-badge meli">ML</div>
+          <div class="tv-channel-name">
+            <div class="tv-channel-name-main">Mercado Libre</div>
+            <div class="tv-channel-name-sub">#1 + #2</div>
+          </div>
         </div>
-        <div class="tv-ch-revenue" id="tvMeliRev">$0</div>
-        <div class="tv-ch-metrics">
-          <div class="tv-ch-metric">
-            <div class="tv-ch-metric-label">Órdenes</div>
-            <div class="tv-ch-metric-value" id="tvMeliOrd">0</div>
+        
+        <div class="tv-channel-metrics">
+          <div class="tv-metric">
+            <div class="tv-metric-label">Órdenes</div>
+            <div class="tv-metric-value" id="tvMeliOrders">0</div>
           </div>
-          <div class="tv-ch-metric">
-            <div class="tv-ch-metric-label">Ticket</div>
-            <div class="tv-ch-metric-value" id="tvMeliTick">$0</div>
+          <div class="tv-metric">
+            <div class="tv-metric-label">Unidades</div>
+            <div class="tv-metric-value" id="tvMeliUnits">0</div>
           </div>
-          <div class="tv-ch-metric">
-            <div class="tv-ch-metric-label">Unidades</div>
-            <div class="tv-ch-metric-value" id="tvMeliUnd">0</div>
+          <div class="tv-metric">
+            <div class="tv-metric-label">Ticket</div>
+            <div class="tv-metric-value" id="tvMeliTicket">$0</div>
           </div>
-          <div class="tv-ch-metric">
-            <div class="tv-ch-metric-label">% Total</div>
-            <div class="tv-ch-metric-value" id="tvMeliPct">0%</div>
+          <div class="tv-metric">
+            <div class="tv-metric-label">% Total</div>
+            <div class="tv-metric-value" id="tvMeliPct">0%</div>
           </div>
+        </div>
+        
+        <div class="tv-channel-revenue">
+          <div class="tv-channel-revenue-label">Ingresos</div>
+          <div class="tv-channel-revenue-value" id="tvMeliRevenue">$0</div>
         </div>
       </div>
     </div>
     
-    <!-- HEATMAP -->
-    <div class="tv-heatmap-section">
-      <div class="tv-heatmap-title">Órdenes por hora (hoy)</div>
-      <div class="tv-heatmap-grid" id="tvHeatmap"></div>
-    </div>
-    
-    <!-- BOTTOM PANELS -->
-    <div class="tv-bottom-row">
-      <div class="tv-panel">
-        <div class="tv-panel-title">Últimos pedidos</div>
-        <div id="tvFeed" style="overflow-y: auto; flex: 1;"></div>
-      </div>
-      <div class="tv-panel">
-        <div class="tv-panel-title">Top productos (hoy)</div>
-        <div id="tvTopProds" style="overflow-y: auto; flex: 1;"></div>
-      </div>
-      <div class="tv-panel">
-        <div class="tv-panel-title">Marketing & Sync</div>
-        <div class="tv-mkt-grid" id="tvMktGrid"></div>
-        <div class="tv-panel-title" style="margin-top: 6px;">Estado de fuentes</div>
-        <div id="tvSyncList" style="overflow-y: auto; flex: 1;"></div>
-      </div>
+    <!-- TOP PRODUCTS -->
+    <div class="tv-products-section">
+      <div class="tv-products-title">🏆 Productos más vendidos hoy</div>
+      <div id="tvProductsList"></div>
     </div>
   </div>
   
   <script>
-    const fmt = n => '$' + Math.round(n||0).toLocaleString('es-AR');
-    const fmtNum = n => Math.round(n||0).toLocaleString('es-AR');
+    const fmt = n => {
+      const num = Math.round(n || 0);
+      return '$' + num.toLocaleString('es-AR');
+    };
+    const fmtNum = n => Math.round(n || 0).toLocaleString('es-AR');
     
+    // Tema claro/oscuro
+    function initTheme() {
+      const saved = localStorage.getItem('nexusops-theme') || 'light';
+      setTheme(saved);
+    }
+    
+    function setTheme(theme) {
+      localStorage.setItem('nexusops-theme', theme);
+      const isDark = theme === 'dark';
+      document.body.classList.toggle('dark-mode', isDark);
+      document.getElementById('btnLight').classList.toggle('active', !isDark);
+      document.getElementById('btnDark').classList.toggle('active', isDark);
+    }
+    
+    // Actualizar hora
+    function updateTime() {
+      const now = new Date();
+      const time = now.toLocaleTimeString('es-AR', {hour: '2-digit', minute: '2-digit', second: '2-digit'});
+      document.getElementById('tvTime').textContent = time;
+      
+      const lastUpdate = Math.floor((Date.now() - window.lastFetch) / 1000);
+      document.getElementById('tvLastUpdate').textContent = Math.min(60, lastUpdate);
+    }
+    
+    setInterval(updateTime, 1000);
+    window.lastFetch = Date.now();
+    
+    // Obtener datos y actualizar
     async function updateTV() {
       const today = new Date().toISOString().split('T')[0];
-      const [tvData, chanData, topProds, kommo, sync, mkt] = await Promise.all([
-        fetch(`/api/v1/metrics/executive?date_from=${today}&date_to=${today}`).then(r=>r.json()).catch(e=>(console.error(e),{})),
-        fetch(`/api/v1/dashboard/channels?date_from=${today}&date_to=${today}`).then(r=>r.json()).catch(e=>(console.error(e),{})),
-        fetch(`/api/v1/products/top?date_from=${today}&date_to=${today}&limit=12`).then(r=>r.json()).catch(e=>(console.error(e),{})),
-        fetch(`/api/v1/marketing/kommo?date_from=${today}&date_to=${today}`).then(r=>r.json()).catch(e=>(console.error(e),{})),
-        fetch(`/api/v1/sync/status`).then(r=>r.json()).catch(e=>(console.error(e),[])),
-        fetch(`/api/v1/marketing/overview?date_from=${today}&date_to=${today}`).then(r=>r.json()).catch(e=>(console.error(e),{})),
-      ]);
+      const baseUrl = '/api/v1';
       
-      // Total KPIs
-      const revenue = Number(tvData.total_revenue || 0);
-      const orders = Number(tvData.orders_count || 0);
-      const units = Number(tvData.units_sold || 0);
-      const ticket = orders > 0 ? revenue / orders : 0;
-      
-      document.getElementById('tvRevenue').textContent = fmt(revenue);
-      document.getElementById('tvRevenueSub').textContent = fmtNum(units) + ' unidades';
-      document.getElementById('tvOrders').textContent = orders;
-      document.getElementById('tvOrdersSub').textContent = 'Ticket ' + fmt(ticket);
-      document.getElementById('tvTime').textContent = new Date().toLocaleString('es-AR', {weekday:'short', day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit'});
-      
-      // Kommo
-      const kommoSum = kommo?.summary || kommo || {};
-      document.getElementById('tvLeads').textContent = Number(kommoSum.total_leads || 0);
-      document.getElementById('tvLeadsSub').textContent = Number(kommoSum.won_leads || 0) + ' ganados';
-      
-      // Marketing
-      const mktData = mkt?.data || [];
-      const spend = mktData.reduce((a,r)=>a+Number(r.spend||0), 0);
-      const convVal = mktData.reduce((a,r)=>a+Number(r.purchase_value||r.conv_value||0), 0);
-      const roas = spend > 0 ? (convVal / spend).toFixed(2) : '—';
-      document.getElementById('tvSpend').textContent = fmt(spend);
-      document.getElementById('tvRoas').textContent = 'ROAS ' + (spend > 0 ? roas + 'x' : '—');
-      
-      // Sync
-      const syncOk = (Array.isArray(sync) ? sync : []).filter(s => s.status === 'success' || s.status === 'partial').length;
-      const syncLen = Array.isArray(sync) ? sync.length : 0;
-      document.getElementById('tvSyncCount').textContent = syncOk + '/' + syncLen;
-      
-      // Channels
-      const chans = chanData?.data || [];
-      function sumCh(srcs) {
-        const rows = chans.filter(c => srcs.includes(c.source));
-        return {
-          rev: rows.reduce((a,r)=>a+Number(r.total_revenue||0), 0),
-          ord: rows.reduce((a,r)=>a+Number(r.orders_count||0), 0),
-          und: rows.reduce((a,r)=>a+Number(r.units_sold||0), 0),
-          tick: rows.reduce((a,r)=>a+Number(r.total_revenue||0), 0) / Math.max(1, rows.reduce((a,r)=>a+Number(r.orders_count||0), 0))
-        };
-      }
-      const vtex = sumCh(['vtex']);
-      const meli = sumCh(['meli_1', 'meli_2', 'ml_1', 'ml_2']);
-      const totalRev = vtex.rev + meli.rev;
-      
-      document.getElementById('tvVtexRev').textContent = fmt(vtex.rev);
-      document.getElementById('tvVtexOrd').textContent = vtex.ord;
-      document.getElementById('tvVtexTick').textContent = fmt(vtex.tick);
-      document.getElementById('tvVtexUnd').textContent = vtex.und;
-      document.getElementById('tvVtexPct').textContent = totalRev > 0 ? Math.round(vtex.rev/totalRev*100) + '%' : '0%';
-      
-      document.getElementById('tvMeliRev').textContent = fmt(meli.rev);
-      document.getElementById('tvMeliOrd').textContent = meli.ord;
-      document.getElementById('tvMeliTick').textContent = fmt(meli.tick);
-      document.getElementById('tvMeliUnd').textContent = meli.und;
-      document.getElementById('tvMeliPct').textContent = totalRev > 0 ? Math.round(meli.rev/totalRev*100) + '%' : '0%';
-      
-      // Feed
-      const recent = tvData?.recent_orders || [];
-      const feed = document.getElementById('tvFeed');
-      feed.innerHTML = recent.slice(0, 15).map(o => {
-        const src = (o.source || '').toLowerCase();
-        const lbl = src.includes('vtex') ? 'VTEX' : src.includes('meli') || src.includes('ml') ? 'MeLi' : '—';
-        const pillCls = src.includes('vtex') ? 'tv-vtex' : 'tv-meli';
-        return `<div class="tv-order-row">
-          <span class="tv-ch-pill ${pillCls}" style="font-size:8px;padding:1px 5px">${lbl}</span>
-          <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#d1d5db">${o.products?.[0] || 'Orden'}</span>
-          <span style="font-family:monospace;font-weight:600;color:#fff;flex-shrink:0">${fmt(Number(o.total_amount||0))}</span>
-        </div>`;
-      }).join('') || '<div style="color:#4b5563;font-size:11px;padding:8px">Sin pedidos</div>';
-      
-      // Top productos
-      const prods = topProds?.data || [];
-      const topEl = document.getElementById('tvTopProds');
-      topEl.innerHTML = prods.slice(0, 12).map((p, i) => {
-        const src = (p.source || '').toLowerCase();
-        const lbl = src.includes('vtex') ? 'VT' : 'ML';
-        const pillCls = src.includes('vtex') ? 'tv-vtex' : 'tv-meli';
-        return `<div class="tv-prod-row">
-          <span class="tv-prod-num">${i+1}</span>
-          <span class="tv-ch-pill ${pillCls}" style="font-size:8px;padding:1px 4px;flex-shrink:0">${lbl}</span>
-          <span class="tv-prod-name">${p.product_name || p.name || 'Producto'}</span>
-          <span class="tv-prod-qty">${Number(p.quantity||0)} ud</span>
-        </div>`;
-      }).join('') || '<div style="color:#4b5563;font-size:11px;padding:8px">Sin datos</div>';
-      
-      // Marketing KPIs
-      const metaSpend = mktData.filter(r => (r.source||'').includes('meta')).reduce((a,r)=>a+Number(r.spend||0), 0);
-      const metaConvs = mktData.filter(r => (r.source||'').includes('meta')).reduce((a,r)=>a+Number(r.conversions||0), 0);
-      const perfitOpens = mktData.filter(r => (r.source||'').includes('perfit')).reduce((a,r)=>a+Number(r.opens||r.unique_opens||0), 0);
-      document.getElementById('tvMktGrid').innerHTML = `
-        <div class="tv-mkt-kpi"><div class="tv-mkt-label">Meta spend</div><div class="tv-mkt-val">${fmt(metaSpend)}</div></div>
-        <div class="tv-mkt-kpi"><div class="tv-mkt-label">Conversiones</div><div class="tv-mkt-val">${metaConvs}</div></div>
-        <div class="tv-mkt-kpi"><div class="tv-mkt-label">Pipeline kommo</div><div class="tv-mkt-val">${fmt(Number(kommoSum.pipeline_value||0))}</div></div>
-        <div class="tv-mkt-kpi"><div class="tv-mkt-label">Email aperturas</div><div class="tv-mkt-val">${fmtNum(perfitOpens)}</div></div>`;
-      
-      // Sync status
-      const syncLabels = {vtex:'VTEX',meli_1:'MeLi #1',meli_2:'MeLi #2',kommo:'Kommo',meta:'Meta',perfit:'Perfit',google_ads:'Google',logistics:'Log'};
-      document.getElementById('tvSyncList').innerHTML = (Array.isArray(sync) && sync.length > 0)
-        ? sync.map(s => {
-          const ok = s.status === 'success' || s.status === 'partial';
-          const run = s.status === 'running';
-          const color = ok ? '#22c55e' : run ? '#f59e0b' : '#ef4444';
-          const ago = s.finished_at ? (() => {
-            const diff = Math.round((Date.now() - new Date(s.finished_at)) / 60000);
-            return diff < 60 ? diff + 'm' : Math.round(diff/60) + 'h';
-          })() : '—';
-          return `<div class="tv-sync-row">
-            <div class="tv-sync-dot" style="background:${color}"></div>
-            <span style="flex:1">${syncLabels[s.source]||s.source}</span>
-            <span>${run ? 'sync' : ago}</span>
+      try {
+        const [tv, channels, topProds] = await Promise.all([
+          fetch(`${baseUrl}/metrics/executive?date_from=${today}&date_to=${today}`).then(r => r.json()).catch(() => ({})),
+          fetch(`${baseUrl}/dashboard/channels?date_from=${today}&date_to=${today}`).then(r => r.json()).catch(() => ({})),
+          fetch(`${baseUrl}/products/top?date_from=${today}&date_to=${today}&limit=8`).then(r => r.json()).catch(() => ({})),
+        ]);
+        
+        // Total
+        const totalRev = Number(tv.total_revenue || 0);
+        const totalOrd = Number(tv.orders_count || 0);
+        const totalUnd = Number(tv.units_sold || 0);
+        
+        document.getElementById('tvTotalRevenue').textContent = fmt(totalRev);
+        window.lastFetch = Date.now();
+        
+        // Canales
+        const chans = channels?.data || [];
+        function sumCh(srcs) {
+          const rows = chans.filter(c => srcs.includes(c.source));
+          return {
+            rev: rows.reduce((a, r) => a + Number(r.total_revenue || 0), 0),
+            ord: rows.reduce((a, r) => a + Number(r.orders_count || 0), 0),
+            und: rows.reduce((a, r) => a + Number(r.units_sold || 0), 0),
+            tick: rows.reduce((a, r) => a + Number(r.total_revenue || 0), 0) / Math.max(1, rows.reduce((a, r) => a + Number(r.orders_count || 0), 0))
+          };
+        }
+        
+        const vtex = sumCh(['vtex']);
+        const meli = sumCh(['meli_1', 'meli_2', 'ml_1', 'ml_2']);
+        
+        document.getElementById('tvVtexRevenue').textContent = fmt(vtex.rev);
+        document.getElementById('tvVtexOrders').textContent = vtex.ord;
+        document.getElementById('tvVtexUnits').textContent = vtex.und;
+        document.getElementById('tvVtexTicket').textContent = fmt(vtex.tick);
+        document.getElementById('tvVtexPct').textContent = totalRev > 0 ? Math.round(vtex.rev / totalRev * 100) + '%' : '0%';
+        
+        document.getElementById('tvMeliRevenue').textContent = fmt(meli.rev);
+        document.getElementById('tvMeliOrders').textContent = meli.ord;
+        document.getElementById('tvMeliUnits').textContent = meli.und;
+        document.getElementById('tvMeliTicket').textContent = fmt(meli.tick);
+        document.getElementById('tvMeliPct').textContent = totalRev > 0 ? Math.round(meli.rev / totalRev * 100) + '%' : '0%';
+        
+        // Top productos
+        const prods = topProds?.data || [];
+        const prodList = document.getElementById('tvProductsList');
+        prodList.innerHTML = prods.slice(0, 8).map((p, i) => {
+          const src = (p.source || '').toLowerCase();
+          const badge = src.includes('vtex') ? 'vtex' : 'meli';
+          const label = badge === 'vtex' ? 'VTEX' : 'ML';
+          return `<div class="tv-product-row">
+            <div class="tv-product-rank">${i + 1}</div>
+            <div class="tv-product-badge ${badge}">${label}</div>
+            <div class="tv-product-name">${p.product_name || 'Producto'}</div>
+            <div class="tv-product-qty">${Number(p.quantity || 0)} ud</div>
           </div>`;
-        }).join('')
-        : '<div style="color:#4b5563;font-size:10px;padding:8px">Sin datos</div>';
-      
-      // Heatmap
-      const heatEl = document.getElementById('tvHeatmap');
-      heatEl.innerHTML = '';
-      for (let h = 0; h < 24; h++) {
-        const cnt = recent.filter(r => new Date(r.created_at).getHours() === h).length;
-        const intensity = Math.min(100, (cnt / 2) * 100);
-        const cell = document.createElement('div');
-        cell.className = 'tv-heatmap-cell';
-        cell.style.background = `rgba(99, 102, 241, ${intensity/100})`;
-        cell.title = `${String(h).padStart(2,'0')}:00 — ${cnt} órdenes`;
-        cell.textContent = cnt > 0 ? cnt : '';
-        heatEl.appendChild(cell);
+        }).join('') || '<div style="color: var(--text-muted); padding: 12px; text-align: center;">Sin datos disponibles</div>';
+        
+      } catch (e) {
+        console.error('Error updating TV:', e);
       }
     }
     
+    // Inicializar
+    initTheme();
+    updateTime();
     updateTV();
-    setInterval(updateTV, 15000); // Actualizar cada 15 segundos
+    
+    // Actualizar cada 10 segundos
+    setInterval(updateTV, 10000);
   </script>
 </body>
 </html>
