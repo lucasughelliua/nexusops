@@ -5420,31 +5420,31 @@ var worker_default = {
             SUM(impressions) AS impressions,
             SUM(reach) AS reach,
             SUM(clicks) AS clicks,
-            SUM(inline_link_clicks) AS inline_link_clicks,
-            SUM(outbound_clicks) AS outbound_clicks,
-            SUM(landing_page_views) AS landing_page_views,
-            SUM(purchases) AS purchases,
-            SUM(purchase_value) AS purchase_value,
+            SUM(0) AS inline_link_clicks,
+            SUM(0) AS outbound_clicks,
+            SUM(0) AS landing_page_views,
+            SUM(COALESCE(conversions,0)) AS purchases,
+            SUM(COALESCE(conv_value,0)) AS purchase_value,
             SUM(leads) AS leads,
             SUM(sent) AS sent,
             SUM(delivered) AS delivered,
             SUM(opens) AS opens,
             SUM(unique_opens) AS unique_opens,
             SUM(clicks_email) AS clicks_email,
-            SUM(unique_clicks_email) AS unique_clicks_email,
+            SUM(clicks_email) AS unique_clicks_email,
             SUM(unsubscribes) AS unsubscribes,
             SUM(bounces_soft) AS bounces_soft,
             SUM(bounces_hard) AS bounces_hard,
-            CASE WHEN SUM(spend) > 0 THEN SUM(purchase_value) / SUM(spend) ELSE 0 END AS roas,
-            CASE WHEN SUM(spend) > 0 THEN (SUM(purchase_value) - SUM(spend)) / SUM(spend) ELSE 0 END AS roi,
-            CASE WHEN SUM(purchases) > 0 THEN SUM(spend) / SUM(purchases) ELSE 0 END AS cpa,
+            CASE WHEN SUM(spend) > 0 THEN SUM(COALESCE(conv_value,0)) / SUM(spend) ELSE 0 END AS roas,
+            CASE WHEN SUM(spend) > 0 THEN (SUM(COALESCE(conv_value,0)) - SUM(spend)) / SUM(spend) ELSE 0 END AS roi,
+            CASE WHEN SUM(conversions) > 0 THEN SUM(spend) / SUM(conversions) ELSE 0 END AS cpa,
             CASE WHEN SUM(leads) > 0 THEN SUM(spend) / SUM(leads) ELSE 0 END AS cpl,
             CASE WHEN SUM(impressions) > 0 THEN SUM(clicks)::NUMERIC / SUM(impressions) * 100 ELSE 0 END AS ctr,
-            CASE WHEN SUM(landing_page_views) > 0 THEN SUM(purchases)::NUMERIC / SUM(landing_page_views) * 100 ELSE 0 END AS conversion_rate,
-            CASE WHEN SUM(purchases) > 0 THEN SUM(purchase_value) / SUM(purchases) ELSE 0 END AS aov,
+            CASE WHEN SUM(clicks) > 0 THEN SUM(conversions)::NUMERIC / SUM(clicks) * 100 ELSE 0 END AS conversion_rate,
+            CASE WHEN SUM(conversions) > 0 THEN SUM(COALESCE(conv_value,0)) / SUM(conversions) ELSE 0 END AS aov,
             CASE WHEN SUM(delivered) > 0 THEN SUM(unique_opens)::NUMERIC / SUM(delivered) * 100 ELSE 0 END AS open_rate,
-            CASE WHEN SUM(delivered) > 0 THEN SUM(unique_clicks_email)::NUMERIC / SUM(delivered) * 100 ELSE 0 END AS email_click_rate,
-            CASE WHEN SUM(unique_opens) > 0 THEN SUM(unique_clicks_email)::NUMERIC / SUM(unique_opens) * 100 ELSE 0 END AS ctor
+            CASE WHEN SUM(delivered) > 0 THEN SUM(clicks_email)::NUMERIC / SUM(delivered) * 100 ELSE 0 END AS email_click_rate,
+            CASE WHEN SUM(unique_opens) > 0 THEN SUM(clicks_email)::NUMERIC / SUM(unique_opens) * 100 ELSE 0 END AS ctor
           FROM marketing_metrics
           WHERE date >= ${dateFrom}::date AND date <= ${dateTo}::date
           GROUP BY source
@@ -5540,8 +5540,8 @@ var worker_default = {
             SUM(reach) AS reach,
             SUM(clicks) AS clicks,
             SUM(spend) AS spend,
-            SUM(purchases) AS purchases,
-            SUM(purchase_value) AS purchase_value,
+            SUM(COALESCE(conversions,0)) AS purchases,
+            SUM(COALESCE(conv_value,0)) AS purchase_value,
             SUM(leads) AS leads,
             CASE WHEN SUM(spend) > 0 THEN SUM(purchase_value)/SUM(spend) ELSE 0 END AS roas
           FROM meta_insights_breakdowns
@@ -5592,13 +5592,13 @@ var worker_default = {
             COALESCE(SUM(mm.sent),0) AS sent,
             COALESCE(SUM(mm.delivered),0) AS delivered,
             COALESCE(SUM(mm.unique_opens),0) AS unique_opens,
-            COALESCE(SUM(mm.unique_clicks_email),0) AS unique_clicks,
+            COALESCE(SUM(mm.clicks_email),0) AS unique_clicks,
             COALESCE(SUM(mm.unsubscribes),0) AS unsubscribes,
             COALESCE(SUM(mm.bounces_soft),0) AS bounces_soft,
             COALESCE(SUM(mm.bounces_hard),0) AS bounces_hard,
             CASE WHEN COALESCE(SUM(mm.delivered),0) > 0 THEN SUM(mm.unique_opens)::NUMERIC / SUM(mm.delivered) * 100 ELSE 0 END AS open_rate,
-            CASE WHEN COALESCE(SUM(mm.delivered),0) > 0 THEN SUM(mm.unique_clicks_email)::NUMERIC / SUM(mm.delivered) * 100 ELSE 0 END AS click_rate,
-            CASE WHEN COALESCE(SUM(mm.unique_opens),0) > 0 THEN SUM(mm.unique_clicks_email)::NUMERIC / SUM(mm.unique_opens) * 100 ELSE 0 END AS ctor
+            CASE WHEN COALESCE(SUM(mm.delivered),0) > 0 THEN SUM(mm.clicks_email)::NUMERIC / SUM(mm.delivered) * 100 ELSE 0 END AS click_rate,
+            CASE WHEN COALESCE(SUM(mm.unique_opens),0) > 0 THEN SUM(mm.clicks_email)::NUMERIC / SUM(mm.unique_opens) * 100 ELSE 0 END AS ctor
           FROM marketing_campaigns mc
           LEFT JOIN marketing_metrics mm ON mm.campaign_id=mc.id AND mm.date >= ${dateFrom}::date AND mm.date <= ${dateTo}::date
           WHERE mc.source='perfit'
@@ -5615,8 +5615,8 @@ var worker_default = {
             mm.*,
             mc.name AS campaign_name,
             CASE WHEN delivered > 0 THEN unique_opens::NUMERIC/delivered*100 ELSE 0 END AS open_rate,
-            CASE WHEN delivered > 0 THEN unique_clicks_email::NUMERIC/delivered*100 ELSE 0 END AS click_rate,
-            CASE WHEN unique_opens > 0 THEN unique_clicks_email::NUMERIC/unique_opens*100 ELSE 0 END AS ctor,
+            CASE WHEN delivered > 0 THEN clicks_email::NUMERIC/delivered*100 ELSE 0 END AS click_rate,
+            CASE WHEN unique_opens > 0 THEN clicks_email::NUMERIC/unique_opens*100 ELSE 0 END AS ctor,
             CASE WHEN sent > 0 THEN (bounces_soft + bounces_hard)::NUMERIC/sent*100 ELSE 0 END AS bounce_rate,
             CASE WHEN delivered > 0 THEN unsubscribes::NUMERIC/delivered*100 ELSE 0 END AS unsubscribe_rate
           FROM marketing_metrics mm
@@ -5676,15 +5676,22 @@ var worker_default = {
       if (path === "/api/v1/metrics/executive" && req.method === "GET") {
         const { dateFrom, dateTo } = getDateRange(url);
         try {
-          // Revenue y órdenes desde orders (sin JOIN para evitar duplicación).
-          // Unidades desde order_items con subquery separada.
+          // Revenue/órdenes desde orders sin JOIN (evita duplicación 1 orden × N items).
+          // Unidades via subquery escalar separada.
           const rows = await sql`
             WITH base AS (
-              SELECT id, total_amount, net_amount, is_canceled, is_returned
+              SELECT id, total_amount, net_amount
               FROM orders
               WHERE (created_at AT TIME ZONE 'America/Argentina/Buenos_Aires')::date >= ${dateFrom}::date
                 AND (created_at AT TIME ZONE 'America/Argentina/Buenos_Aires')::date <= ${dateTo}::date
                 AND COALESCE(is_canceled, false) = false
+            ),
+            cancelled AS (
+              SELECT COUNT(*)::int AS cnt
+              FROM orders
+              WHERE (created_at AT TIME ZONE 'America/Argentina/Buenos_Aires')::date >= ${dateFrom}::date
+                AND (created_at AT TIME ZONE 'America/Argentina/Buenos_Aires')::date <= ${dateTo}::date
+                AND COALESCE(is_canceled, false) = true
             ),
             units AS (
               SELECT COALESCE(SUM(oi.quantity), 0)::int AS units_sold
@@ -5692,13 +5699,13 @@ var worker_default = {
               JOIN base b ON b.id = oi.order_id
             )
             SELECT
-              COALESCE(SUM(b.total_amount), 0)     AS total_revenue,
-              COALESCE(SUM(b.net_amount), 0)       AS net_revenue,
-              COUNT(*)::int                         AS orders_count,
-              COALESCE(AVG(b.total_amount), 0)     AS avg_ticket,
-              (SELECT units_sold FROM units)        AS units_sold,
-              0::int                                AS cancellations,
-              0::int                                AS returns
+              COALESCE(SUM(b.total_amount), 0)  AS total_revenue,
+              COALESCE(SUM(b.net_amount), 0)    AS net_revenue,
+              COUNT(b.id)::int                  AS orders_count,
+              COALESCE(AVG(b.total_amount), 0)  AS avg_ticket,
+              (SELECT units_sold FROM units)     AS units_sold,
+              (SELECT cnt FROM cancelled)        AS cancellations,
+              0::int                             AS returns
             FROM base b
           `;
           return json(rows[0] || {});
