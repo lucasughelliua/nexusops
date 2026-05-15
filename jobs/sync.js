@@ -125,20 +125,37 @@ export async function syncVTEX() {
     channel = created.rows[0];
   }
 
+  // SYNC_WINDOW_DAYS: cuántos días hacia atrás busca en el sync incremental normal.
+  // El histórico (>30 días) se mantiene en la DB intacto para la función "comparar".
+  // VTEX_DAYS_BACK solo aplica si no hay ningún sync exitoso previo (primera vez).
   const firstSyncDays = parseInt(process.env.VTEX_DAYS_BACK || '365', 10);
-  const overlapMinutes = parseInt(process.env.VTEX_INCREMENTAL_OVERLAP_MINUTES || '90', 10);
-  const blockDays = parseInt(process.env.VTEX_BLOCK_DAYS || '7', 10);
+  const syncWindowDays = parseInt(process.env.VTEX_SYNC_WINDOW_DAYS || '30', 10);
+  const overlapMinutes = parseInt(process.env.VTEX_INCREMENTAL_OVERLAP_MINUTES || '15', 10);
+  const blockDays = parseInt(process.env.VTEX_BLOCK_DAYS || '3', 10);
   const minBlockHours = parseInt(process.env.VTEX_MIN_BLOCK_HOURS || '6', 10);
   const perPage = Math.min(parseInt(process.env.VTEX_PER_PAGE || '100', 10), 100);
+  // Checkpoint: guarda progreso en DB cada N bloques para sobrevivir timeouts
+  const checkpointEveryBlocks = parseInt(process.env.VTEX_CHECKPOINT_EVERY || '3', 10);
   const maxPages = 30; // VTEX OMS corta en page 30. Página 31 suele devolver 400.
 
   const now = new Date();
-  const firstFrom = new Date(now.getTime() - firstSyncDays * 86400000);
   const forceFull = String(process.env.VTEX_FORCE_FULL || '').toLowerCase() === 'true';
-  const incrementalFrom = (!forceFull && last.last_date_synced)
-    ? new Date(new Date(last.last_date_synced).getTime() - overlapMinutes * 60000)
-    : firstFrom;
-  const syncFrom = incrementalFrom < firstFrom ? firstFrom : incrementalFrom;
+
+  // Límite duro: nunca buscar más allá de syncWindowDays hacia atrás en runs normales.
+  // En el primer sync (sin historial) usa firstSyncDays para cargar el histórico completo.
+  const windowFrom = new Date(now.getTime() - syncWindowDays * 86400000);
+  const firstFrom  = new Date(now.getTime() - firstSyncDays  * 86400000);
+
+  let incrementalFrom;
+  if (forceFull || !last.last_date_synced) {
+    // Sin historial → carga histórica desde firstSyncDays
+    incrementalFrom = firstFrom;
+  } else {
+    // Incremental: arranca desde el último sync con solape, pero nunca más de syncWindowDays atrás
+    const fromLastSync = new Date(new Date(last.last_date_synced).getTime() - overlapMinutes * 60000);
+    incrementalFrom = fromLastSync > windowFrom ? fromLastSync : windowFrom;
+  }
+  const syncFrom = incrementalFrom;
 
   let totalProcessed = 0;
   let totalCreated = 0;
@@ -315,8 +332,25 @@ export async function syncVTEX() {
 
   try {
     const field = (!forceFull && last.last_date_synced) ? 'lastChange' : 'creationDate';
-    for (const [from, to] of makeBlocks(syncFrom, now, blockDays)) {
+    const blocks = makeBlocks(syncFrom, now, blockDays);
+
+    for (let i = 0; i < blocks.length; i++) {
+      const [from, to] = blocks[i];
       await syncBlock(field, from, to);
+
+      // Checkpoint: guarda progreso en DB cada N bloques completados.
+      // Si GitHub Actions cancela el job por timeout, el próximo run arranca
+      // desde aquí en vez de repetir todo el rango desde el inicio.
+      if ((i + 1) % checkpointEveryBlocks === 0 && maxLastChange !== syncFrom.toISOString()) {
+        await db.query(`
+          UPDATE sync_log SET
+            status='running',
+            records_processed=$1, records_created=$2, records_updated=$3,
+            last_date_synced=$4
+          WHERE id=$5
+        `, [totalProcessed, totalCreated, totalUpdated, maxLastChange, logId]);
+        console.log(`[VTEX] Checkpoint guardado en bloque ${i + 1}/${blocks.length} (${maxLastChange})`);
+      }
     }
 
     await endSyncLog(logId, {
@@ -330,14 +364,29 @@ export async function syncVTEX() {
 
     console.log(`[VTEX] ✓ ${totalProcessed} órdenes. Creadas: ${totalCreated}, Actualizadas: ${totalUpdated}, omitidas: ${totalSkippedDetails}`);
   } catch (e) {
-    await endSyncLog(logId, {
-      status: totalProcessed > 0 ? 'partial' : 'error',
-      records: totalProcessed,
-      created: totalCreated,
-      updated: totalUpdated,
-      lastDate: maxLastChange,
-      error: e.message
-    });
+    // Guardar checkpoint de emergencia antes de lanzar el error,
+    // así el próximo run no repite todo desde el inicio.
+    if (maxLastChange !== syncFrom.toISOString()) {
+      await db.query(`
+        UPDATE sync_log SET
+          status='partial',
+          records_processed=$1, records_created=$2, records_updated=$3,
+          last_date_synced=$4, error_message=$5,
+          finished_at=NOW(),
+          duration_ms=EXTRACT(EPOCH FROM (NOW()-started_at))*1000
+        WHERE id=$6
+      `, [totalProcessed, totalCreated, totalUpdated, maxLastChange, e.message, logId]);
+      console.log(`[VTEX] Checkpoint de emergencia guardado hasta ${maxLastChange}`);
+    } else {
+      await endSyncLog(logId, {
+        status: totalProcessed > 0 ? 'partial' : 'error',
+        records: totalProcessed,
+        created: totalCreated,
+        updated: totalUpdated,
+        lastDate: maxLastChange,
+        error: e.message
+      });
+    }
     throw e;
   }
 }
