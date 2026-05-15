@@ -270,54 +270,20 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);min-height:1
 .funnel-count{font-size:12px;font-family:var(--mono);font-weight:500;width:50px;text-align:right;flex-shrink:0}
 
 /* ---- TV MODE ---- */
-.tv-overlay{display:none;position:fixed;inset:0;z-index:999;background:#0a0a0f;flex-direction:column;padding:16px 20px;overflow:hidden}
+.tv-overlay{
+  display:none;position:fixed;inset:0;z-index:999;
+  background:var(--bg);flex-direction:column;padding:32px;
+}
 .tv-overlay.active{display:flex}
-.tv-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;flex-shrink:0}
-.tv-logo{font-size:15px;font-weight:700;letter-spacing:-0.3px;color:#fff}
-.tv-logo span{color:#6366f1;margin-right:5px}
-.tv-time{font-size:12px;color:#6b7280;font-family:var(--mono)}
-.tv-kpi-row{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-bottom:10px;flex-shrink:0}
-.tv-kpi{background:#111118;border:1px solid #1e1e2e;border-radius:10px;padding:12px 14px}
-.tv-kpi-label{font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:#6b7280;font-weight:600;margin-bottom:3px}
-.tv-kpi-value{font-size:26px;font-weight:700;letter-spacing:-1px;font-family:var(--mono);color:#fff;line-height:1}
-.tv-kpi-sub{font-size:11px;color:#4b5563;margin-top:2px}
-.tv-channels-row{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:10px;flex-shrink:0}
-.tv-channel-card{background:#111118;border:1px solid #1e1e2e;border-radius:10px;padding:11px 14px}
-.tv-ch-header{display:flex;align-items:center;gap:7px;margin-bottom:6px}
-.tv-ch-pill{font-size:9px;font-weight:700;padding:2px 7px;border-radius:4px;text-transform:uppercase;letter-spacing:.05em}
-.tv-ch-name{font-size:12px;font-weight:600;color:#d1d5db}
-.tv-ch-revenue{font-size:22px;font-weight:700;font-family:var(--mono);color:#fff;letter-spacing:-0.5px;line-height:1;margin-bottom:4px}
-.tv-ch-stats{display:flex;gap:14px}
-.tv-ch-stat{font-size:11px;color:#6b7280}
-.tv-ch-stat b{color:#9ca3af;font-weight:600}
-.tv-bottom-row{display:grid;grid-template-columns:1.3fr 1fr 1fr;gap:10px;flex:1;min-height:0}
-.tv-panel{background:#111118;border:1px solid #1e1e2e;border-radius:10px;padding:11px 13px;overflow:hidden;display:flex;flex-direction:column}
-.tv-panel-title{font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:#6b7280;font-weight:600;margin-bottom:7px;flex-shrink:0}
-.tv-order-row{display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid #1a1a27;font-size:12px}
-.tv-order-row:last-child{border-bottom:none}
-.tv-prod-row{display:flex;align-items:center;gap:6px;padding:4px 0;border-bottom:1px solid #1a1a27;font-size:11px}
-.tv-prod-row:last-child{border-bottom:none}
-.tv-prod-num{width:14px;color:#4b5563;font-family:var(--mono);font-size:10px;flex-shrink:0}
-.tv-prod-name{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#d1d5db}
-.tv-prod-qty{font-family:var(--mono);font-weight:600;color:#6366f1;font-size:11px;flex-shrink:0}
-.tv-mkt-grid{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-bottom:8px}
-.tv-mkt-kpi{background:#0d0d18;border:1px solid #1e1e2e;border-radius:8px;padding:8px 10px}
-.tv-mkt-label{font-size:9px;text-transform:uppercase;letter-spacing:.08em;color:#6b7280;font-weight:600;margin-bottom:2px}
-.tv-mkt-val{font-size:18px;font-weight:700;font-family:var(--mono);color:#fff;line-height:1.1}
-.tv-sync-row{display:flex;align-items:center;gap:6px;padding:4px 0;font-size:11px;color:#6b7280;border-bottom:1px solid #1a1a27}
-.tv-sync-row:last-child{border-bottom:none}
-.tv-sync-dot{width:6px;height:6px;border-radius:50%;flex-shrink:0}
-.tv-close-btn{position:fixed;top:12px;right:14px;z-index:1000;cursor:pointer;background:#1a1a2e;border:1px solid #2d2d45;border-radius:7px;padding:5px 11px;font-size:11px;color:#9ca3af}
-.tv-close-btn:hover{color:#fff;border-color:#6366f1}
-.tv-vtex{background:rgba(239,68,68,.15);color:#fca5a5;border:1px solid rgba(239,68,68,.3)}
-.tv-ml1{background:rgba(251,191,36,.15);color:#fcd34d;border:1px solid rgba(251,191,36,.3)}
-.tv-ml2{background:rgba(99,102,241,.15);color:#a5b4fc;border:1px solid rgba(99,102,241,.3)}
-.tv-other{background:rgba(107,114,128,.15);color:#9ca3af;border:1px solid rgba(107,114,128,.3)}
-.tv-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}
-.tv-big-metric{background:#111118;border:1px solid #1e1e2e;border-radius:10px;padding:16px;display:flex;flex-direction:column;justify-content:space-between}
-.tv-metric-label{font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:#6b7280;font-weight:600}
-.tv-metric-value{font-size:36px;font-weight:700;letter-spacing:-1px;font-family:var(--mono);line-height:1;color:#fff}
-.tv-orders-feed{background:#111118;border:1px solid #1e1e2e;border-radius:10px;padding:14px;overflow:hidden}
+.tv-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:40px}
+.tv-logo{font-size:20px;font-weight:600;letter-spacing:-0.5px}
+.tv-time{font-size:14px;color:var(--text3);font-family:var(--mono)}
+.tv-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:24px;flex:1}
+.tv-big-metric{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:32px;display:flex;flex-direction:column;justify-content:space-between}
+.tv-metric-label{font-size:13px;text-transform:uppercase;letter-spacing:1px;color:var(--text3);font-weight:500}
+.tv-metric-value{font-size:56px;font-weight:700;letter-spacing:-3px;font-family:var(--mono);line-height:1}
+.tv-orders-feed{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:24px;overflow:hidden}
+.tv-close-btn{position:fixed;top:20px;right:20px;z-index:1000;cursor:pointer;background:var(--bg3);border:1px solid var(--border2);border-radius:8px;padding:8px 14px;font-size:13px;color:var(--text2)}
 
 /* ---- MOBILE OVERLAY ---- */
 .sidebar-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:99}
@@ -1126,72 +1092,30 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);min-height:1
 <div class="tv-overlay" id="tvOverlay">
   <button class="tv-close-btn" onclick="closeTV()">✕ Salir</button>
   <div class="tv-header">
-    <div style="display:flex;align-items:center;gap:12px">
-      <div class="tv-logo"><span>⬡</span>NexusOps</div>
-      <div class="live-badge" style="padding:2px 8px;font-size:10px"><div class="live-dot"></div>LIVE</div>
+    <div>
+      <div class="tv-logo">NexusOps — Ventas en vivo</div>
+      <div class="tv-time" id="tvDate"></div>
     </div>
-    <div class="tv-time" id="tvDate"></div>
+    <div class="live-badge"><div class="live-dot"></div>LIVE</div>
   </div>
-  <div class="tv-kpi-row">
-    <div class="tv-kpi">
-      <div class="tv-kpi-label">Revenue total</div>
-      <div class="tv-kpi-value" id="tvRevenue">$0</div>
-      <div class="tv-kpi-sub" id="tvDelta">0 unidades</div>
+  <div class="tv-grid">
+    <div class="tv-big-metric">
+      <div class="tv-metric-label">Revenue del día</div>
+      <div class="tv-metric-value" id="tvRevenue">$0</div>
+      <div class="live-badge" style="width:fit-content"><div class="live-dot"></div><span id="tvDelta">+0%</span> vs ayer</div>
     </div>
-    <div class="tv-kpi">
-      <div class="tv-kpi-label">Órdenes</div>
-      <div class="tv-kpi-value" id="tvOrders">0</div>
-      <div class="tv-kpi-sub" id="tvTicket">Ticket $0</div>
+    <div class="tv-big-metric">
+      <div class="tv-metric-label">Órdenes del día</div>
+      <div class="tv-metric-value" id="tvOrders">0</div>
+      <div style="font-size:13px;color:var(--text3)">Ticket prom: <span id="tvTicket" style="color:var(--text)">$0</span></div>
     </div>
-    <div class="tv-kpi">
-      <div class="tv-kpi-label">Leads Kommo hoy</div>
-      <div class="tv-kpi-value" id="tvLeads">0</div>
-      <div class="tv-kpi-sub" id="tvLeadsSub">— ganados</div>
-    </div>
-    <div class="tv-kpi">
-      <div class="tv-kpi-label">Inversión marketing</div>
-      <div class="tv-kpi-value" id="tvSpend">$0</div>
-      <div class="tv-kpi-sub" id="tvRoas">ROAS —</div>
-    </div>
-    <div class="tv-kpi">
-      <div class="tv-kpi-label">Sync estado</div>
-      <div class="tv-kpi-value" id="tvSync" style="font-size:20px;padding-top:4px">—</div>
-      <div class="tv-kpi-sub" id="tvSyncSub">fuentes OK</div>
+    <div class="tv-orders-feed">
+      <div class="tv-metric-label" style="margin-bottom:14px">Últimos pedidos</div>
+      <div id="tvFeed" style="display:flex;flex-direction:column;gap:8px"></div>
     </div>
   </div>
-  <div class="tv-channels-row">
-    <div class="tv-channel-card">
-      <div class="tv-ch-header"><span class="tv-ch-pill tv-vtex">VTEX</span><span class="tv-ch-name">Canal propio</span></div>
-      <div class="tv-ch-revenue" id="tvChVtexRev">$0</div>
-      <div class="tv-ch-stats"><span class="tv-ch-stat">Órdenes <b id="tvChVtexOrd">0</b></span><span class="tv-ch-stat">Ticket <b id="tvChVtexTick">$0</b></span><span class="tv-ch-stat">Uds <b id="tvChVtexUnd">0</b></span></div>
-    </div>
-    <div class="tv-channel-card">
-      <div class="tv-ch-header"><span class="tv-ch-pill tv-ml1">MeLi #1</span><span class="tv-ch-name">Mercado Libre</span></div>
-      <div class="tv-ch-revenue" id="tvChMl1Rev">$0</div>
-      <div class="tv-ch-stats"><span class="tv-ch-stat">Órdenes <b id="tvChMl1Ord">0</b></span><span class="tv-ch-stat">Ticket <b id="tvChMl1Tick">$0</b></span><span class="tv-ch-stat">Uds <b id="tvChMl1Und">0</b></span></div>
-    </div>
-    <div class="tv-channel-card">
-      <div class="tv-ch-header"><span class="tv-ch-pill tv-ml2">MeLi #2</span><span class="tv-ch-name">Mercado Libre</span></div>
-      <div class="tv-ch-revenue" id="tvChMl2Rev">$0</div>
-      <div class="tv-ch-stats"><span class="tv-ch-stat">Órdenes <b id="tvChMl2Ord">0</b></span><span class="tv-ch-stat">Ticket <b id="tvChMl2Tick">$0</b></span><span class="tv-ch-stat">Uds <b id="tvChMl2Und">0</b></span></div>
-    </div>
-  </div>
-  <div class="tv-bottom-row">
-    <div class="tv-panel">
-      <div class="tv-panel-title">Últimos pedidos</div>
-      <div id="tvFeed" style="overflow:hidden;flex:1"></div>
-    </div>
-    <div class="tv-panel">
-      <div class="tv-panel-title">Top productos hoy</div>
-      <div id="tvTopProds" style="overflow:hidden;flex:1"></div>
-    </div>
-    <div class="tv-panel">
-      <div class="tv-panel-title">Marketing & CRM</div>
-      <div class="tv-mkt-grid" id="tvMktGrid"></div>
-      <div class="tv-panel-title" style="margin-top:6px">Estado de sync</div>
-      <div id="tvSyncList" style="overflow:hidden;flex:1"></div>
-    </div>
-  </div>
+  <div class="tv-grid" id="tvExtraGrid" style="margin-top:18px;grid-template-columns:1fr 1fr 1fr"></div>
+  <div class="tv-grid" id="tvSoftMetrics" style="margin-top:18px;grid-template-columns:repeat(5,1fr)"></div>
 </div>
 
 <!-- ===== ADMIN MODAL ===== -->
@@ -2678,6 +2602,7 @@ async function loadMktData() {
   const cacheKey = `${mktState.dateFrom}|${mktState.dateTo}|meta:${mktMetaPage}|perfit:${mktPerfitPage}`;
   if (mktDataCacheKey === cacheKey && mktMetaData && mktPerfitData && mktGoogleData && mktKommoData) return;
 
+  // Reset a estado vacío antes de cargar — evita mostrar datos de período anterior
   mktMetaData = getMktMetaData();
   mktPerfitData = getMktPerfitData();
   mktGoogleData = getGoogleData();
@@ -2686,13 +2611,20 @@ async function loadMktData() {
   const qs = `date_from=${mktState.dateFrom}&date_to=${mktState.dateTo}`;
   const qsMetaPage20 = qs + '&per_page=20&limit=20&page=' + mktMetaPage;
   const qsPerfitPage20 = qs + '&per_page=20&limit=20&page=' + mktPerfitPage;
-  const [overview, metaCamps, perfitCamps, google, kommo] = await Promise.all([
-    fetchAPI('/marketing/overview?' + qs),
-    fetchAPI('/marketing/meta/campaigns?' + qsMetaPage20),
-    fetchAPI('/marketing/perfit/campaigns?' + qsPerfitPage20),
-    fetchAPI('/marketing/google-ads?' + qs),
-    fetchAPI('/marketing/kommo?' + qs),
-  ]);
+  let overview, metaCamps, perfitCamps, google, kommo;
+  try {
+    [overview, metaCamps, perfitCamps, google, kommo] = await Promise.all([
+      fetchAPI('/marketing/overview?' + qs),
+      fetchAPI('/marketing/meta/campaigns?' + qsMetaPage20),
+      fetchAPI('/marketing/perfit/campaigns?' + qsPerfitPage20),
+      fetchAPI('/marketing/google-ads?' + qs),
+      fetchAPI('/marketing/kommo?' + qs),
+    ]);
+  } catch(e) {
+    console.warn('[Marketing] Error cargando datos:', e.message);
+    // No cachear — permitir reintento
+    return;
+  }
 
   const rows = overview?.data || [];
   const pick = src => rows.find(r => String(r.source||'').toLowerCase() === src) || {};
@@ -2725,7 +2657,7 @@ async function loadMktData() {
   mktGoogleData.campaigns = gRows.map(c=>({name:c.campaign_name||'Google Ads',spend:Number(c.spend||0),clicks:Number(c.clicks||0),ctr:Number(c.ctr||0),convs:Number(c.conversions||0),cpa:Number(c.cpa||0),roas:Number(c.roas||0)}));
   mktGoogleData.totals = mktGoogleData.campaigns.reduce((a,c)=>({spend:a.spend+c.spend,clicks:a.clicks+c.clicks,impressions:a.impressions,convs:a.convs+c.convs,revenue:a.revenue+(c.spend*c.roas)}),{spend:0,clicks:0,impressions:0,convs:0,revenue:0});
 
-  const ks = kommo?.summary || {};
+  const ks = kommo?.summary || kommo || {};
   const kd = kommo?.by_day || [];
   mktKommoData.totals = {newLeads:Number(ks.total_leads||0), wonLeads:Number(ks.won_leads||0), openLeads:Number(ks.open_leads||0), lostLeads:Number(ks.lost_leads||0), revenue:Number(ks.won_revenue||0), pipeline:Number(ks.pipeline_value||0)};
   mktKommoData.newLeads = mktKommoData.days.map(label => {
@@ -2888,12 +2820,12 @@ async function renderMarketing() {
   const roas=totalSpend>0?(totalRev/totalSpend).toFixed(1):'—';
   const cpa=meta.totals.convs>0?totalSpend/meta.totals.convs:0;
   const kpisComb=[
-    {l:'Inversión total',v:fmtM(totalSpend),d:'+12.4%',up:true,c:'#1877f2'},
-    {l:'Revenue atribuido',v:fmtM(totalRev),d:'+19.2%',up:true,c:'#10b981'},
-    {l:'ROAS combinado',v:roas+'x',d:'+0.4x',up:true,c:'#8b5cf6'},
+    {l:'Inversión total',v:fmtM(totalSpend),d:'real',up:true,c:'#1877f2'},
+    {l:'Revenue atribuido',v:fmtM(totalRev),d:'real',up:true,c:'#10b981'},
+    {l:'ROAS combinado',v:roas==='—'?'—':roas+'x',d:'real',up:true,c:'#8b5cf6'},
     {l:'Total leads',v:numM(meta.totals.leads + (mktKommoData?.totals?.newLeads||0)),d:'real',up:true,c:'#f59e0b'},
-    {l:'CPA Meta',v:fmtM(cpa),d:'-8.3%',up:true,c:'#14b8a6'},
-    {l:'Conv. rate',v:(meta.totals.convs/(meta.totals.clicks||1)*100).toFixed(2)+'%',d:'+0.3pp',up:true,c:'#ec4899'},
+    {l:'CPA Meta',v:cpa?fmtM(cpa):'—',d:'real',up:true,c:'#14b8a6'},
+    {l:'Conv. rate',v:(meta.totals.convs/(meta.totals.clicks||1)*100).toFixed(2)+'%',d:'real',up:true,c:'#ec4899'},
   ];
   document.getElementById('mktKpisCombined').innerHTML=kpisComb.map(k=>`
     <div class="metric-card" style="--accent-color:${k.c}">
@@ -2907,14 +2839,14 @@ async function renderMarketing() {
   if(show!=='perfit'){
     const t=meta.totals;
     const kpisMeta=[
-      {l:'Inversión Meta',v:fmtM(t.spend),d:'+14.2%',up:true,c:'#1877f2'},
-      {l:'Impresiones',v:t.impr>999999?(t.impr/1000000).toFixed(1)+'M':numM(t.impr),d:'+8.6%',up:true,c:'#60a5fa'},
-      {l:'Clics',v:numM(t.clicks),d:'+11.3%',up:true,c:'#3b82f6'},
-      {l:'CTR',v:(t.clicks/(t.impr||1)*100).toFixed(2)+'%',d:'+0.2pp',up:true,c:'#14b8a6'},
-      {l:'Conversiones',v:numM(t.convs),d:'+18.4%',up:true,c:'#10b981'},
-      {l:'ROAS Meta',v:t.spend>0?(t.revenue/t.spend).toFixed(1)+'x':'—',d:'+0.6x',up:true,c:'#8b5cf6'},
-      {l:'CPA',v:t.convs?fmtM(t.spend/t.convs):'—',d:'-11%',up:true,c:'#f59e0b'},
-      {l:'CPM',v:fmtM(t.spend/(t.impr||1)*1000),d:'-4.1%',up:true,c:'#coral'},
+      {l:'Inversión Meta',v:fmtM(t.spend),d:'real',up:true,c:'#1877f2'},
+      {l:'Impresiones',v:t.impr>999999?(t.impr/1000000).toFixed(1)+'M':numM(t.impr),d:'real',up:true,c:'#60a5fa'},
+      {l:'Clics',v:numM(t.clicks),d:'real',up:true,c:'#3b82f6'},
+      {l:'CTR',v:(t.clicks/(t.impr||1)*100).toFixed(2)+'%',d:'real',up:true,c:'#14b8a6'},
+      {l:'Conversiones',v:numM(t.convs),d:'real',up:true,c:'#10b981'},
+      {l:'ROAS Meta',v:t.spend>0?(t.revenue/t.spend).toFixed(1)+'x':'—',d:'real',up:true,c:'#8b5cf6'},
+      {l:'CPA',v:t.convs?fmtM(t.spend/t.convs):'—',d:'real',up:true,c:'#f59e0b'},
+      {l:'CPM',v:fmtM(t.spend/(t.impr||1)*1000),d:'real',up:true,c:'#6b7280'},
     ];
     document.getElementById('mktKpisMeta').innerHTML=kpisMeta.map(k=>`
       <div class="metric-card" style="--accent-color:${k.c}">
@@ -3266,135 +3198,65 @@ function closeTV() {
 }
 async function updateTV() {
   const tvToday = today();
-  // Una sola llamada al endpoint tv (no 3 veces la misma)
-  const [tvData, channelsRes, topRes, kommoRes, syncRes, mktRes] = await Promise.all([
+  const [exec, channelsRes, topRes, liveRes, kommoRes, syncRes, mktRes] = await Promise.all([
     fetchAPI('/dashboard/tv?date_from=' + tvToday + '&date_to=' + tvToday),
     fetchAPI('/dashboard/channels?date_from=' + tvToday + '&date_to=' + tvToday),
-    fetchAPI('/dashboard/top-products?date_from=' + tvToday + '&date_to=' + tvToday + '&limit=12'),
+    fetchAPI('/dashboard/top-products?date_from=' + tvToday + '&date_to=' + tvToday + '&limit=40'),
+    fetchAPI('/dashboard/tv?date_from=' + tvToday + '&date_to=' + tvToday),
     fetchAPI('/marketing/kommo?date_from=' + tvToday + '&date_to=' + tvToday),
-    fetchAPI('/sync/status'),
-    fetchAPI('/marketing/meta?date_from=' + tvToday + '&date_to=' + tvToday),
+    fetchAPI('/dashboard/tv?date_from=' + tvToday + '&date_to=' + tvToday),
+    fetchAPI('/marketing/overview?date_from=' + tvToday + '&date_to=' + tvToday),
   ]);
-
-  // --- Datos summary ---
-  const execTv = tvData?.summary || tvData?.data || tvData || {};
+  const tvPayload = exec || {};
+  const execTv = tvPayload.summary || tvPayload.data || tvPayload || {};
   const revenue = Number(execTv.total_revenue || 0);
-  const orders  = Number(execTv.orders_count || 0);
-  const units   = Number(execTv.units_sold || 0);
-  const ticket  = orders > 0 ? revenue / orders : 0;
-
-  // KPIs totales
+  const orders = Number(execTv.orders_count || 0);
+  const units = Number(execTv.units_sold || 0);
+  const ticket = Number(execTv.avg_ticket || 0);
   document.getElementById('tvRevenue').textContent = fmt(revenue);
-  document.getElementById('tvOrders').textContent  = orders;
-  document.getElementById('tvDelta').textContent   = units.toLocaleString('es-AR') + ' unidades';
-  document.getElementById('tvTicket').textContent  = 'Ticket ' + fmt(ticket);
-  document.getElementById('tvDate').textContent    = new Date().toLocaleString('es-AR',{weekday:'long',day:'numeric',month:'long',hour:'2-digit',minute:'2-digit'});
+  document.getElementById('tvOrders').textContent = orders;
+  document.getElementById('tvTicket').textContent = fmt(ticket);
+  document.getElementById('tvDelta').textContent = units.toLocaleString('es-AR') + ' unidades';
+  document.getElementById('tvDate').textContent = new Date().toLocaleString('es-AR',{weekday:'long',day:'numeric',month:'long',hour:'2-digit',minute:'2-digit'});
 
-  // --- Kommo ---
-  const kommo = kommoRes?.summary || {};
-  const totalLeads = Number(kommo.total_leads || 0);
-  const wonLeads   = Number(kommo.won_leads || 0);
-  document.getElementById('tvLeads').textContent   = totalLeads;
-  document.getElementById('tvLeadsSub').textContent = wonLeads + ' ganados';
-
-  // --- Marketing ---
-  const mktRows = mktRes?.data || tvData?.marketing || [];
-  const spend = mktRows.reduce((a,r)=>a+Number(r.spend||0),0);
-  const convVal = mktRows.reduce((a,r)=>a+Number(r.purchase_value||r.conv_value||0),0);
-  const roas = spend > 0 ? (convVal / spend).toFixed(2) : '—';
-  document.getElementById('tvSpend').textContent = fmt(spend);
-  document.getElementById('tvRoas').textContent  = 'ROAS ' + (spend > 0 ? roas + 'x' : '—');
-
-  // --- Sync ---
-  const syncList = Array.isArray(syncRes) ? syncRes : [];
-  const syncOk   = syncList.filter(s => s.status === 'success' || s.status === 'partial').length;
-  document.getElementById('tvSync').textContent    = syncOk + '/' + syncList.length;
-  document.getElementById('tvSyncSub').textContent = 'fuentes OK';
-
-  // --- Canales ---
-  const channels = Array.isArray(channelsRes) ? channelsRes : (channelsRes?.data || tvData?.channels || []);
-  function chData(sources) {
-    const rows = channels.filter(c => sources.includes(c.source));
-    const rev  = rows.reduce((a,r)=>a+Number(r.revenue||0),0);
-    const ord  = rows.reduce((a,r)=>a+Number(r.orders_count||0),0);
-    const und  = rows.reduce((a,r)=>a+Number(r.units_sold||0),0);
-    const tick = ord > 0 ? rev / ord : 0;
-    return { rev, ord, und, tick };
-  }
-  const vtex = chData(['vtex']);
-  const ml1  = chData(['meli_1','ml_1','mercadolibre_1']);
-  const ml2  = chData(['meli_2','ml_2','mercadolibre_2']);
-
-  document.getElementById('tvChVtexRev').textContent  = fmt(vtex.rev);
-  document.getElementById('tvChVtexOrd').textContent  = vtex.ord;
-  document.getElementById('tvChVtexTick').textContent = fmt(vtex.tick);
-  document.getElementById('tvChVtexUnd').textContent  = vtex.und;
-
-  document.getElementById('tvChMl1Rev').textContent   = fmt(ml1.rev);
-  document.getElementById('tvChMl1Ord').textContent   = ml1.ord;
-  document.getElementById('tvChMl1Tick').textContent  = fmt(ml1.tick);
-  document.getElementById('tvChMl1Und').textContent   = ml1.und;
-
-  document.getElementById('tvChMl2Rev').textContent   = fmt(ml2.rev);
-  document.getElementById('tvChMl2Ord').textContent   = ml2.ord;
-  document.getElementById('tvChMl2Tick').textContent  = fmt(ml2.tick);
-  document.getElementById('tvChMl2Und').textContent   = ml2.und;
-
-  // --- Feed últimos pedidos ---
   const feed = document.getElementById('tvFeed');
-  const recent = Array.isArray(tvData?.recent_orders) ? tvData.recent_orders : [];
-  feed.innerHTML = recent.length ? recent.slice(0,12).map(o => {
+  const recent = Array.isArray(liveRes) ? liveRes : (liveRes?.recent_orders || []);
+  feed.innerHTML = recent.length ? recent.map(o => {
     const name = o.products?.[0] || 'Orden';
-    const src  = (o.source||'').toLowerCase();
-    const pillCls = src.includes('vtex') ? 'tv-vtex' : src.includes('meli_1')||src.includes('ml_1') ? 'tv-ml1' : src.includes('meli_2')||src.includes('ml_2') ? 'tv-ml2' : 'tv-other';
-    const label = src.includes('vtex') ? 'VTEX' : src.includes('meli_1')||src.includes('ml_1') ? 'ML#1' : src.includes('meli_2')||src.includes('ml_2') ? 'ML#2' : o.source||'—';
-    return `<div class="tv-order-row">
-      <span class="tv-ch-pill ${pillCls}" style="font-size:8px;padding:1px 5px">${label}</span>
-      <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#d1d5db">${name}</span>
-      <span style="font-family:var(--mono);font-weight:600;color:#fff;flex-shrink:0">${fmt(Number(o.total_amount||0))}</span>
+    const ch = normalizeChannelLabel(o.channel_name || o.source);
+    return `<div style="display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid var(--border)">
+      <span class="channel-pill ${channelClass(ch)}" style="font-size:9px">${ch}</span>
+      <span style="flex:1;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${name}</span>
+      <span style="font-family:var(--mono);font-size:12px;font-weight:500">${fmt(Number(o.total_amount||0))}</span>
     </div>`;
-  }).join('') : '<div style="color:#4b5563;font-size:12px;padding:8px 0">Sin pedidos recientes</div>';
+  }).join('') : emptyHTML();
 
-  // --- Top productos ---
   const top = Array.isArray(topRes) ? topRes : (topRes?.data || []);
-  const prods = document.getElementById('tvTopProds');
-  prods.innerHTML = top.length ? top.slice(0,12).map((p,i) => {
-    const src  = (p.source||'').toLowerCase();
-    const pillCls = src.includes('vtex') ? 'tv-vtex' : src.includes('meli_1')||src.includes('ml_1') ? 'tv-ml1' : src.includes('meli_2')||src.includes('ml_2') ? 'tv-ml2' : 'tv-other';
-    return `<div class="tv-prod-row">
-      <span class="tv-prod-num">${i+1}</span>
-      <span class="tv-ch-pill ${pillCls}" style="font-size:8px;padding:1px 4px;flex-shrink:0">${src.includes('vtex')?'VT':src.includes('1')?'M1':'M2'}</span>
-      <span class="tv-prod-name">${p.product_name||p.name||'Producto'}</span>
-      <span class="tv-prod-qty">${Number(p.quantity||0)} ud</span>
-    </div>`;
-  }).join('') : '<div style="color:#4b5563;font-size:12px;padding:8px 0">Sin datos</div>';
+  const byChannel = ['VTEX','MeLi #1','MeLi #2'].map(ch => {
+    const list = top.filter(p => productChannel(p) === ch).slice(0,10);
+    return `<div class="tv-orders-feed"><div class="tv-metric-label" style="margin-bottom:10px">Top 10 ${ch}</div>` +
+      (list.length ? list.map((p,i)=>`<div style="display:flex;gap:8px;align-items:center;padding:5px 0;border-bottom:1px solid var(--border)"><span style="width:18px;color:var(--text3);font-family:var(--mono)">${i+1}</span><span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${p.product_name||p.name||'Producto'}</span><b style="font-family:var(--mono)">${productQty(p)}</b></div>`).join('') : emptyHTML()) + '</div>';
+  }).join('');
+  const tvExtra = document.getElementById('tvExtraGrid');
+  if (tvExtra) tvExtra.innerHTML = byChannel;
 
-  // --- Marketing KPIs ---
-  const mktGrid = document.getElementById('tvMktGrid');
-  const metaSpend  = mktRows.filter(r=>(r.source||'').includes('meta')).reduce((a,r)=>a+Number(r.spend||0),0);
-  const metaConvs  = mktRows.filter(r=>(r.source||'').includes('meta')).reduce((a,r)=>a+Number(r.conversions||0),0);
-  const perfitRows = mktRows.filter(r=>(r.source||'').includes('perfit'));
-  const opens      = perfitRows.reduce((a,r)=>a+Number(r.opens||0),0);
-  mktGrid.innerHTML = `
-    <div class="tv-mkt-kpi"><div class="tv-mkt-label">Meta spend</div><div class="tv-mkt-val">${fmt(metaSpend)}</div></div>
-    <div class="tv-mkt-kpi"><div class="tv-mkt-label">Meta conv.</div><div class="tv-mkt-val">${metaConvs}</div></div>
-    <div class="tv-mkt-kpi"><div class="tv-mkt-label">Kommo pipeline</div><div class="tv-mkt-val">${fmt(Number(kommo.pipeline_value||0))}</div></div>
-    <div class="tv-mkt-kpi"><div class="tv-mkt-label">Perfit aperturas</div><div class="tv-mkt-val">${opens.toLocaleString('es-AR')}</div></div>`;
-
-  // --- Sync list ---
-  const syncEl = document.getElementById('tvSyncList');
-  const srcLabels = {vtex:'VTEX',meli_1:'MeLi #1',meli_2:'MeLi #2',kommo:'Kommo',meta:'Meta',perfit:'Perfit',google_ads:'Google Ads',logistics:'Logística'};
-  syncEl.innerHTML = syncList.length ? syncList.map(s => {
-    const ok = s.status === 'success' || s.status === 'partial';
-    const run = s.status === 'running';
-    const color = ok ? '#22c55e' : run ? '#f59e0b' : '#ef4444';
-    const ago = s.finished_at ? (() => {
-      const diff = Math.round((Date.now() - new Date(s.finished_at)) / 60000);
-      return diff < 60 ? diff + 'min' : Math.round(diff/60) + 'h';
-    })() : '—';
-    return `<div class="tv-sync-row"><div class="tv-sync-dot" style="background:${color}"></div><span style="flex:1">${srcLabels[s.source]||s.source}</span><span>${run?'syncing':ago}</span></div>`;
-  }).join('') : '<div style="color:#4b5563;font-size:11px">Sin datos de sync</div>';
+  const channels = Array.isArray(channelsRes) ? channelsRes : (channelsRes?.data || tvPayload.channels || []);
+  const mktRows = mktRes?.data || tvPayload.marketing || [];
+  const spend = mktRows.reduce((a,r)=>a+Number(r.spend||0),0);
+  const purchaseValue = mktRows.reduce((a,r)=>a+Number(r.purchase_value||r.conv_value||0),0);
+  const roas = spend > 0 ? purchaseValue / spend : 0;
+  const kommo = kommoRes?.summary || {};
+  const syncList = Array.isArray(syncRes) ? syncRes : [];
+  const syncOk = syncList.filter(s => s.status === 'success').length;
+  const soft = document.getElementById('tvSoftMetrics');
+  if (soft) soft.innerHTML = `
+    <div class="tv-big-metric"><div class="tv-metric-label">Canales con venta</div><div class="tv-metric-value" style="font-size:34px">${channels.length}</div></div>
+    <div class="tv-big-metric"><div class="tv-metric-label">Leads Kommo hoy</div><div class="tv-metric-value" style="font-size:34px">${Number(kommo.total_leads||0)}</div></div>
+    <div class="tv-big-metric"><div class="tv-metric-label">Inversión marketing hoy</div><div class="tv-metric-value" style="font-size:34px">${fmt(spend)}</div></div>
+    <div class="tv-big-metric"><div class="tv-metric-label">ROAS hoy</div><div class="tv-metric-value" style="font-size:34px">${roas.toFixed(2)}x</div></div>
+    <div class="tv-big-metric"><div class="tv-metric-label">Sync OK</div><div class="tv-metric-value" style="font-size:34px">${syncOk}/${syncList.length}</div></div>`;
 }
+
 setInterval(() => { if(document.getElementById('tvOverlay')?.classList.contains('active')) updateTV(); }, 60000);
 
 // ============================================================
