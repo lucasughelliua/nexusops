@@ -1,16 +1,15 @@
 {
-  "name": "nexusops-jobs",
+  "name": "nexusops-marketing-sync",
   "version": "1.0.0",
+  "type": "module",
   "private": true,
   "scripts": {
-    "sync:marketing": "node sync-marketing.js all",
+    "sync": "node sync-marketing.js all",
     "sync:google_ads": "node sync-marketing.js google_ads",
     "sync:perfit": "node sync-marketing.js perfit",
-    "sync:kommo": "node sync-marketing.js kommo",
-    "sync:meta_ads": "node sync-marketing.js meta_ads"
+    "sync:kommo": "node sync-marketing.js kommo"
   },
   "dependencies": {
-    "googleapis": "^144.0.0",
     "pg": "^8.12.0"
   }
 }
