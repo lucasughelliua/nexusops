@@ -1,86 +1,46 @@
-name: NexusOps Marketing Sync
+name: Sync Marketing
 
 on:
-  schedule:
-    - cron: '0 */3 * * *'
   workflow_dispatch:
+    inputs:
+      source:
+        description: "Fuente a sincronizar: google_ads, perfit, kommo o all"
+        required: true
+        default: "all"
+
+  schedule:
+    - cron: "*/30 * * * *"
 
 jobs:
-  sync-meta:
-    name: Sync Meta Ads
+  sync-marketing:
     runs-on: ubuntu-latest
-    timeout-minutes: 35
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'npm'
-          cache-dependency-path: jobs/package.json
-      - run: cd jobs && npm install
-      - run: cd jobs && node sync-marketing.js meta_full
-        env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          META_ACCESS_TOKEN: ${{ secrets.META_ACCESS_TOKEN }}
-          META_AD_ACCOUNT_ID: ${{ secrets.META_AD_ACCOUNT_ID }}
-          META_PAGE_ID: ${{ secrets.META_PAGE_ID }}
-          META_IG_USER_ID: ${{ secrets.META_IG_USER_ID }}
-          META_DAYS_BACK: '30'
 
-  sync-perfit:
-    name: Sync Perfit
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
         with:
-          node-version: '20'
-          cache: 'npm'
-          cache-dependency-path: jobs/package.json
-      - run: cd jobs && npm install
-      - run: cd jobs && node sync-marketing.js perfit
+          node-version: 20
+
+      - name: Install dependencies
+        working-directory: jobs
+        run: npm install
+
+      - name: Sync marketing sources
+        working-directory: jobs
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          PERFIT_API_KEY: ${{ secrets.PERFIT_API_KEY }}
+
+          GOOGLE_SHEETS_WEBAPP_URL: ${{ secrets.GOOGLE_SHEETS_WEBAPP_URL }}
+          GOOGLE_SHEETS_WEBAPP_TOKEN: ${{ secrets.GOOGLE_SHEETS_WEBAPP_TOKEN }}
+
           PERFIT_ACCOUNT: ${{ secrets.PERFIT_ACCOUNT }}
-          PERFIT_DAYS_BACK: '30'
+          PERFIT_API_KEY: ${{ secrets.PERFIT_API_KEY }}
 
-  sync-google-ads:
-    name: Sync Google Ads (via GA4 Sheet export)
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'npm'
-          cache-dependency-path: jobs/package.json
-      - run: cd jobs && npm install
-      - run: cd jobs && node sync-marketing.js google_ads
-        env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          GA4_SPREADSHEET_ID: 1ldZHPTpoiN6OgyMy4zY2GYiYnNj9X6cgIk5Gqv8G40g
-          GA4_SHEET_NAME: ga4_marketing
-          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
-          GOOGLE_ADS_DAYS_BACK: '90'
-
-  sync-kommo:
-    name: Sync Kommo CRM
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'npm'
-          cache-dependency-path: jobs/package.json
-      - run: cd jobs && npm install
-      - run: cd jobs && node sync-marketing.js kommo
-        env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
           KOMMO_SUBDOMAIN: ${{ secrets.KOMMO_SUBDOMAIN }}
-          KOMMO_LONG_LIVED_TOKEN: ${{ secrets.KOMMO_LONG_LIVED_TOKEN }}
-          KOMMO_DAYS_BACK: '30'
+          KOMMO_ACCESS_TOKEN: ${{ secrets.KOMMO_ACCESS_TOKEN }}
+
+          SYNC_DAYS_BACK: 45
+        run: node sync-marketing.js ${{ github.event.inputs.source || 'all' }}
