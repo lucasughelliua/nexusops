@@ -2863,7 +2863,7 @@ async function renderMarketing() {
     </div>`).join('');
 
   // ---- KPIs Meta ----
-  if(show!=='perfit'){
+  if(show!=='perfit' && show !== 'kommo'){
     const t=meta.totals;
     const kpisMeta=[
       {l:'Inversión Meta',v:fmtM(t.spend),d:'real',up:true,c:'#1877f2'},
@@ -3215,9 +3215,8 @@ function renderAlerts() {
 // TV MODE
 // ============================================================
 function openTV() {
-  document.getElementById('tvOverlay').classList.add('active');
-  document.body.style.overflow='hidden';
-  updateTV();
+  // Abrir el nuevo TV mode en ventana nueva
+  window.open('/tv.html', 'NexusOps-TV', 'width=1920,height=1080,menubar=no,toolbar=no,location=no');
 }
 function closeTV() {
   document.getElementById('tvOverlay').classList.remove('active');
@@ -5775,7 +5774,7 @@ async function renderMarketing() {
     </div>`).join('');
 
   // ---- KPIs Meta ----
-  if(show!=='perfit'){
+  if(show!=='perfit' && show !== 'kommo'){
     const t=meta.totals;
     const kpisMeta=[
       {l:'Inversión Meta',v:fmtM(t.spend),d:'real',up:true,c:'#1877f2'},
@@ -6127,9 +6126,8 @@ function renderAlerts() {
 // TV MODE
 // ============================================================
 function openTV() {
-  document.getElementById('tvOverlay').classList.add('active');
-  document.body.style.overflow='hidden';
-  updateTV();
+  // Abrir el nuevo TV mode en ventana nueva
+  window.open('/tv.html', 'NexusOps-TV', 'width=1920,height=1080,menubar=no,toolbar=no,location=no');
 }
 function closeTV() {
   document.getElementById('tvOverlay').classList.remove('active');
