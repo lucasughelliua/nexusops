@@ -9,6 +9,33 @@
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;1,9..40,300&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <style>
+    
+:root {
+  --bg: #0a0a0f;
+  --bg2: #111118;
+  --bg3: #1a1a2e;
+  --text: #d1d5db;
+  --text2: #9ca3af;
+  --text3: #6b7280;
+  --border: #1e1e2e;
+  --border2: #2d2d45;
+  --accent: #6366f1;
+  --accent-dark: #4f46e5;
+}
+
+html.light-mode {
+  --bg: #fff;
+  --bg2: #f9fafb;
+  --bg3: #f3f4f6;
+  --text: #1f2937;
+  --text2: #374151;
+  --text3: #6b7280;
+  --border: #e5e7eb;
+  --border2: #d1d5db;
+  --accent: #6366f1;
+  --accent-dark: #4f46e5;
+}
+
 :root {
   --bg: #0a0f1e;
   --bg2: #0e1525;
@@ -3299,6 +3326,8 @@ function triggerSync() {
 // INIT
 // ============================================================
 document.addEventListener('DOMContentLoaded', async () => {
+  initTheme();
+
   // Check session storage for auto-login
   const savedUsername = sessionStorage.getItem('nexusops_user');
   if(savedUsername) {
@@ -6292,6 +6321,32 @@ function logout() {
     location.href = '/login';
   }
 }
+
+
+// ===== THEME MANAGER =====
+function initTheme() {
+  const saved = localStorage.getItem('nexusops-theme') || 'dark';
+  setTheme(saved);
+}
+
+function setTheme(theme) {
+  localStorage.setItem('nexusops-theme', theme);
+  const html = document.documentElement;
+  if (theme === 'light') {
+    html.classList.add('light-mode');
+  } else {
+    html.classList.remove('light-mode');
+  }
+  
+  // Actualizar checkmarks del menú
+  document.getElementById('themeDarkIcon').textContent = theme === 'dark' ? '✓' : '⭕';
+  document.getElementById('themeLightIcon').textContent = theme === 'light' ? '✓' : '⭕';
+  
+  // Cerrar menú
+  const menu = document.getElementById('userMenu');
+  if (menu) menu.style.display = 'none';
+}
+
 </script>
 </div><!-- /dashboardApp -->
 </body>
