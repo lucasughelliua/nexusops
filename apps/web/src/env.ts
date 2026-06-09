@@ -3,7 +3,7 @@ import { z } from "zod";
 const envSchema = z.object({
   DATABASE_URL: z.string().url(),
   NEXTAUTH_SECRET: z.string().min(32),
-  NEXTAUTH_URL: z.string().url().default("http://localhost:3000"),
+  NEXTAUTH_URL: z.string().url().default("https://nexusops-puce.vercel.app/"),
   ENCRYPTION_KEY: z.string().min(32),
   GITHUB_ID: z.string().optional(),
   GITHUB_SECRET: z.string().optional(),
