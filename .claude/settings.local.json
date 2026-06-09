@@ -7,7 +7,20 @@
       "Bash(npm install *)",
       "Bash(npx shadcn-ui@latest init --yes)",
       "Bash(npx shadcn@latest init --yes)",
-      "Bash(cd \"/c/Users/UA-ADM004/Desktop/nexusops/apps/web\" && mkdir -p src/components/dashboard src/components/tables src/components/charts src/components/forms src/components/ui src/lib/integrations src/lib/db src/lib/auth src/lib/validators src/lib/excel prisma .github/workflows && echo \"Directories created\")"
+      "Bash(cd \"/c/Users/UA-ADM004/Desktop/nexusops/apps/web\" && mkdir -p src/components/dashboard src/components/tables src/components/charts src/components/forms src/components/ui src/lib/integrations src/lib/db src/lib/auth src/lib/validators src/lib/excel prisma .github/workflows && echo \"Directories created\")",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(git rm *)",
+      "Bash(npm view *)",
+      "Read(//tmp/**)",
+      "Bash(npm pack *)",
+      "Bash(tar -xzf prisma-adapter-pg-7.8.0.tgz)",
+      "Bash(cat package/dist/index.d.ts)",
+      "Bash(tar -xzf prisma-client-7.8.0.tgz)",
+      "Bash(xargs grep -l \"PrismaClientOptions\")",
+      "Bash(rm -rf pkg-config)",
+      "Bash(mkdir pkg-config *)",
+      "Bash(tar -xzf prisma-config-7.8.0.tgz -C pkg-config)"
     ]
   }
 }

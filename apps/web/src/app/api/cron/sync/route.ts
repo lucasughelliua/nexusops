@@ -3,15 +3,10 @@ import { syncService } from "@/lib/sync-service";
 
 /**
  * POST /api/cron/sync
- * Sincronizar todas las métricas (llamado por Vercel Cron cada 15 minutos)
+ * Sincronizar todas las metricas (llamado por Vercel Cron cada 15 minutos)
  *
  * Vercel Cron configuration (vercel.json):
- * {
- *   "crons": [{
- *     "path": "/api/cron/sync",
- *     "schedule": "*/15 * * * *"  // Cada 15 minutos
- *   }]
- * }
+ * crons: [{ path: "/api/cron/sync", schedule: "(every 15 min)" }]
  */
 export async function POST(request: NextRequest) {
   try {

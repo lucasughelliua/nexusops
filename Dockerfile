@@ -3,10 +3,13 @@ FROM node:20-alpine AS builder
 
 WORKDIR /app
 
-# Copy package files
+# Copy package files and Prisma schema/config first
+# (required for `prisma generate` to run via the postinstall script)
 COPY apps/web/package*.json ./
+COPY apps/web/prisma ./prisma
+COPY apps/web/prisma.config.ts ./
 
-# Install dependencies
+# Install dependencies (also runs `prisma generate`)
 RUN npm ci
 
 # Copy source
@@ -20,16 +23,19 @@ FROM node:20-alpine
 
 WORKDIR /app
 
-# Copy package files
+# Copy package files and Prisma schema/config first
+# (required for `prisma generate` to run via the postinstall script)
 COPY apps/web/package*.json ./
+COPY apps/web/prisma ./prisma
+COPY apps/web/prisma.config.ts ./
 
-# Install production dependencies only
-RUN npm ci --only=production
+# Install production dependencies only (also runs `prisma generate`)
+RUN npm ci --omit=dev
 
 # Copy built app from builder
 COPY --from=builder /app/.next ./.next
 COPY --from=builder /app/public ./public
-COPY --from=builder /app/prisma ./prisma
+COPY --from=builder /app/next.config.js ./next.config.js
 
 # Expose port
 EXPOSE 3000

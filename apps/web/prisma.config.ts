@@ -1,9 +1,10 @@
-import { defineConfig } from "@prisma/internals";
+import { defineConfig } from "prisma/config";
 
 export default defineConfig({
-  sdk: {
-    engine: {
-      type: "library",
-    },
+  schema: "prisma/schema.prisma",
+  datasource: {
+    url:
+      process.env.DATABASE_URL ??
+      "postgresql://placeholder:placeholder@localhost:5432/placeholder",
   },
 });
