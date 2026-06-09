@@ -1,25 +1,8 @@
 {
-  "buildCommand": "npm run build",
-  "installCommand": "npm install",
-  "outputDirectory": ".next",
-  "framework": "nextjs",
-  "root": "apps/web",
-  "regions": ["iad1"],
   "crons": [
     {
       "path": "/api/cron/sync",
       "schedule": "*/15 * * * *"
     }
-  ],
-  "env": {
-    "NEXTAUTH_SECRET": "@nextauth_secret",
-    "NEXTAUTH_URL": "@nextauth_url",
-    "DATABASE_URL": "@database_url",
-    "ENCRYPTION_KEY": "@encryption_key"
-  },
-  "git": {
-    "deploymentEnabled": {
-      "main": true
-    }
-  }
+  ]
 }
