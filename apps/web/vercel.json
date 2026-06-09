@@ -1,0 +1,16 @@
+{
+  "buildCommand": "npm run build",
+  "installCommand": "npm install",
+  "env": {
+    "DATABASE_URL": "@database_url",
+    "NEXTAUTH_SECRET": "@nextauth_secret",
+    "NEXTAUTH_URL": "@nextauth_url",
+    "ENCRYPTION_KEY": "@encryption_key"
+  },
+  "crons": [
+    {
+      "path": "/api/cron/sync",
+      "schedule": "*/15 * * * *"
+    }
+  ]
+}

@@ -1,0 +1,187 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Usuarios
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  password      String    // hashed
+  name          String
+  role          Role      @default(USER)
+  status        Boolean   @default(true)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  accounts      Account[]
+  metrics       Metric[]
+  objectives    Objective[]
+  credentials   Credential[]
+
+  @@index([email])
+}
+
+// Cuentas de negocios
+model Account {
+  id            String    @id @default(cuid())
+  name          String
+  description   String?
+  status        Boolean   @default(true)
+  userId        String
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  credentials   Credential[]
+  metrics       Metric[]
+  objectives    Objective[]
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@unique([userId, name])
+  @@index([userId])
+}
+
+// Credenciales / API Keys (encriptadas)
+model Credential {
+  id            String    @id @default(cuid())
+  accountId     String
+  account       Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  userId        String
+  user          User      @relation(fields: [userId], references: [id])
+
+  platform      Platform
+  type          String    // access_token, client_id, refresh_token, etc
+  name          String    // "VTEX Token Prod", "ML Cuenta 1", etc
+  value         String    // encrypted
+  expiresAt     DateTime?
+  lastSyncAt    DateTime?
+  nextSyncAt    DateTime?
+  syncStatus    SyncStatus @default(PENDING)
+  syncError     String?
+  syncCount     Int       @default(0)
+
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@unique([accountId, platform, name])
+  @@index([accountId, platform])
+  @@index([syncStatus])
+}
+
+// Objetivos
+model Objective {
+  id            String    @id @default(cuid())
+  accountId     String
+  account       Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  userId        String
+  user          User      @relation(fields: [userId], references: [id])
+
+  name          String
+  description   String?
+  metric        String    // "revenue", "orders", "conversions", etc
+  targetValue   Float
+  period        Period
+  startDate     DateTime
+  endDate       DateTime
+  status        Boolean   @default(true)
+
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([accountId])
+  @@index([status])
+}
+
+// Métricas capturadas
+model Metric {
+  id            String    @id @default(cuid())
+  accountId     String
+  account       Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  userId        String
+  user          User      @relation(fields: [userId], references: [id])
+
+  platform      Platform
+  metricType    String    // "revenue", "orders", "clicks", "impressions", etc
+  value         Float
+  currency      String    @default("USD")
+  date          DateTime
+  dimensions    Json?     // {category, channel, vendor, source, etc}
+  rawData       Json?     // Original API response
+
+  createdAt     DateTime  @default(now())
+
+  @@index([accountId, date])
+  @@index([platform, metricType, date])
+  @@index([accountId, platform, date])
+}
+
+// Sync Logs para auditoría
+model SyncLog {
+  id            String    @id @default(cuid())
+  credentialId  String
+  platform      Platform
+  status        SyncStatus
+  recordsCount  Int       @default(0)
+  errorMessage  String?
+  duration      Int       // milliseconds
+  startedAt     DateTime  @default(now())
+  completedAt   DateTime?
+
+  @@index([credentialId])
+  @@index([platform])
+  @@index([status])
+  @@index([startedAt])
+}
+
+// Audit Logs
+model AuditLog {
+  id            String    @id @default(cuid())
+  userId        String
+  action        String    // "CREATE", "UPDATE", "DELETE", "LOGIN", etc
+  resource      String    // "Account", "Credential", "Objective", etc
+  resourceId    String?
+  details       Json?
+  ipAddress     String?
+  createdAt     DateTime  @default(now())
+
+  @@index([userId])
+  @@index([action])
+  @@index([createdAt])
+}
+
+enum Platform {
+  VTEX
+  MERCADO_LIBRE
+  META
+  GOOGLE_ADS
+  KOMMO_CRM
+  PERFIT
+  GOOGLE_SHEETS
+}
+
+enum Role {
+  ADMIN
+  MANAGER
+  ANALYST
+  USER
+}
+
+enum SyncStatus {
+  PENDING
+  SYNCING
+  SUCCESS
+  ERROR
+  PARTIAL
+}
+
+enum Period {
+  DAILY
+  WEEKLY
+  MONTHLY
+  QUARTERLY
+  YEARLY
+}
