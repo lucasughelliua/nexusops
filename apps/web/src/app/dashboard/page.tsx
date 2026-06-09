@@ -132,8 +132,8 @@ export default function DashboardPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-3xl font-bold text-gray-900">Dashboard</h1>
-        <p className="text-gray-600 mt-2">Real-time metrics from all your platforms</p>
+        <h1 className="text-3xl font-bold text-gray-900">📊 NexusOps Dashboard</h1>
+        <p className="text-gray-600 mt-2">✨ Real-time metrics from VTEX, Mercado Libre, Meta, Google Ads & more</p>
       </div>
 
       {/* Filter Bar */}
