@@ -1,17 +1,19 @@
 import { type NextAuthOptions } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
-import { PrismaAdapter } from "@next-auth/prisma-adapter";
-import { prisma } from "./db";
 import { z } from "zod";
-import type { Role } from "@prisma/client";
 
 const credentialsSchema = z.object({
   username: z.string().min(1),
   pin: z.string().regex(/^\d{4}$/, "PIN must be 4 digits"),
 });
 
+// Hardcoded test users (for now - until DB schema is fixed)
+const TEST_USERS: Record<string, { pin: string; name: string; role: string }> = {
+  admin: { pin: "1234", name: "Administrador", role: "ADMIN" },
+  lucas: { pin: "5678", name: "Lucas", role: "ADMIN" },
+};
+
 export const authOptions: NextAuthOptions = {
-  adapter: PrismaAdapter(prisma),
   providers: [
     CredentialsProvider({
       name: "Credentials",
@@ -26,17 +28,14 @@ export const authOptions: NextAuthOptions = {
         }
 
         const { username, pin } = validatedCredentials.data;
+        const user = TEST_USERS[username];
 
-        const user = await prisma.user.findUnique({
-          where: { username },
-        });
-
-        if (!user || user.pin !== pin || !user.status) {
+        if (!user || user.pin !== pin) {
           return null;
         }
 
         return {
-          id: user.id,
+          id: username,
           name: user.name,
           role: user.role,
         };
@@ -47,14 +46,14 @@ export const authOptions: NextAuthOptions = {
     async jwt({ token, user }) {
       if (user) {
         token.id = user.id;
-        token.role = (user as any).role;
+        token.role = user.role;
       }
       return token;
     },
     async session({ session, token }) {
       if (session.user) {
         session.user.id = token.id as string;
-        session.user.role = token.role as Role;
+        session.user.role = token.role as string;
       }
       return session;
     },
@@ -65,14 +64,9 @@ export const authOptions: NextAuthOptions = {
   },
   session: {
     strategy: "jwt",
-    maxAge: 30 * 24 * 60 * 60, // 30 days
+    maxAge: 30 * 24 * 60 * 60,
   },
   jwt: {
     secret: process.env.NEXTAUTH_SECRET,
-  },
-  events: {
-    async signIn({ user }) {
-      console.log(`User signed in: ${user.name}`);
-    },
   },
 };
