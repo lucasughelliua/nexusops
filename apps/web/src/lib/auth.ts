@@ -2,13 +2,12 @@ import { type NextAuthOptions } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
 import { PrismaAdapter } from "@next-auth/prisma-adapter";
 import { prisma } from "./db";
-import { verifyPassword } from "./crypto";
 import { z } from "zod";
 import type { Role } from "@prisma/client";
 
 const credentialsSchema = z.object({
-  email: z.string().email(),
-  password: z.string().min(8),
+  username: z.string().min(1),
+  pin: z.string().regex(/^\d{4}$/, "PIN must be 4 digits"),
 });
 
 export const authOptions: NextAuthOptions = {
@@ -17,8 +16,8 @@ export const authOptions: NextAuthOptions = {
     CredentialsProvider({
       name: "Credentials",
       credentials: {
-        email: { label: "Email", type: "email" },
-        password: { label: "Password", type: "password" },
+        username: { label: "Username", type: "text" },
+        pin: { label: "PIN (4 digits)", type: "password" },
       },
       async authorize(credentials) {
         const validatedCredentials = credentialsSchema.safeParse(credentials);
@@ -26,24 +25,18 @@ export const authOptions: NextAuthOptions = {
           return null;
         }
 
-        const { email, password } = validatedCredentials.data;
+        const { username, pin } = validatedCredentials.data;
 
         const user = await prisma.user.findUnique({
-          where: { email },
+          where: { username },
         });
 
-        if (!user || !user.password) {
-          return null;
-        }
-
-        const isPasswordValid = await verifyPassword(password, user.password);
-        if (!isPasswordValid) {
+        if (!user || user.pin !== pin || !user.status) {
           return null;
         }
 
         return {
           id: user.id,
-          email: user.email,
           name: user.name,
           role: user.role,
         };
@@ -79,8 +72,7 @@ export const authOptions: NextAuthOptions = {
   },
   events: {
     async signIn({ user }) {
-      // Log sign in
-      console.log(`User signed in: ${user.email}`);
+      console.log(`User signed in: ${user.name}`);
     },
   },
 };

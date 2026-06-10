@@ -3,7 +3,6 @@
 import { signIn } from "next-auth/react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useState } from "react";
-import Link from "next/link";
 
 function LoginForm() {
   const router = useRouter();
@@ -11,8 +10,8 @@ function LoginForm() {
   const error = searchParams.get("error");
 
   const [isLoading, setIsLoading] = useState(false);
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
+  const [username, setUsername] = useState("");
+  const [pin, setPin] = useState("");
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -20,13 +19,12 @@ function LoginForm() {
 
     try {
       const result = await signIn("credentials", {
-        email,
-        password,
+        username,
+        pin,
         redirect: false,
       });
 
       if (result?.error) {
-        // Error is handled by the error param in searchParams
         router.push("/login?error=Invalid credentials");
       } else if (result?.ok) {
         router.push("/dashboard");
@@ -52,40 +50,48 @@ function LoginForm() {
           {error && (
             <div className="mb-4 p-3 bg-red-100 border border-red-400 text-red-700 rounded">
               {error === "CredentialsSignin"
-                ? "Invalid email or password"
+                ? "Invalid username or PIN"
                 : "An error occurred during login"}
             </div>
           )}
 
+          {/* Test Credentials Info */}
+          <div className="mb-6 p-3 bg-blue-50 border border-blue-200 rounded text-sm text-blue-700">
+            <strong>Test credentials:</strong><br />
+            Username: <code>admin</code><br />
+            PIN: <code>1234</code>
+          </div>
+
           {/* Form */}
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
-              <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-1">
-                Email
+              <label htmlFor="username" className="block text-sm font-medium text-gray-700 mb-1">
+                Username
               </label>
               <input
-                id="email"
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
+                id="username"
+                type="text"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
                 required
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition"
-                placeholder="your@email.com"
+                placeholder="admin"
               />
             </div>
 
             <div>
-              <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-1">
-                Password
+              <label htmlFor="pin" className="block text-sm font-medium text-gray-700 mb-1">
+                PIN (4 digits)
               </label>
               <input
-                id="password"
+                id="pin"
                 type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
+                value={pin}
+                onChange={(e) => setPin(e.target.value.slice(0, 4))}
+                maxLength={4}
                 required
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition"
-                placeholder="••••••••"
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition text-center text-2xl tracking-widest"
+                placeholder="••••"
               />
             </div>
 
@@ -97,14 +103,6 @@ function LoginForm() {
               {isLoading ? "Signing in..." : "Sign In"}
             </button>
           </form>
-
-          {/* Sign Up Link */}
-          <div className="mt-6 text-center text-sm text-gray-600">
-            Don't have an account?{" "}
-            <Link href="/register" className="text-blue-600 hover:text-blue-700 font-medium">
-              Sign up
-            </Link>
-          </div>
         </div>
 
         {/* Footer */}

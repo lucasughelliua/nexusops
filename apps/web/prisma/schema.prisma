@@ -9,8 +9,8 @@ datasource db {
 // Usuarios
 model User {
   id            String    @id @default(cuid())
-  email         String    @unique
-  password      String    // hashed
+  username      String    @unique
+  pin           String    // 4-digit PIN (plain text)
   name          String
   role          Role      @default(USER)
   status        Boolean   @default(true)
@@ -22,7 +22,7 @@ model User {
   objectives    Objective[]
   credentials   Credential[]
 
-  @@index([email])
+  @@index([username])
 }
 
 // Cuentas de negocios

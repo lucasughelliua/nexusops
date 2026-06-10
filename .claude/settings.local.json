@@ -20,7 +20,9 @@
       "Bash(xargs grep -l \"PrismaClientOptions\")",
       "Bash(rm -rf pkg-config)",
       "Bash(mkdir pkg-config *)",
-      "Bash(tar -xzf prisma-config-7.8.0.tgz -C pkg-config)"
+      "Bash(tar -xzf prisma-config-7.8.0.tgz -C pkg-config)",
+      "Bash(npm run *)",
+      "Bash(git push *)"
     ]
   }
 }
