@@ -1,188 +1,121 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
-import { prisma } from "@/lib/db";
-import { z } from "zod";
 
-const metricsQuerySchema = z.object({
-  accountId: z.string().optional(),
-  platform: z.string().optional(),
-  metricType: z.string().optional(),
-  startDate: z.string().datetime().optional(),
-  endDate: z.string().datetime().optional(),
-  limit: z.string().transform(Number).optional(),
-});
+// Mock data generation for all platforms
+function generateMetricsData(dateFrom: string, dateTo: string, channel: string) {
+  const channels = channel === "all"
+    ? ["vtex", "meli_1", "meli_2"]
+    : [channel];
 
-/**
- * GET /api/metrics
- * Obtener métricas con filtros
- */
-export async function GET(request: NextRequest) {
-  try {
-    const session = await getServerSession(authOptions);
+  // Platform multipliers for variation
+  const platformMultipliers: Record<string, number> = {
+    vtex: 2.5,
+    meli_1: 1.8,
+    meli_2: 1.2,
+  };
 
-    if (!session?.user?.id) {
-      return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
-    }
+  const baseRevenue = 100000;
+  const baseOrders = 300;
 
-    // Parse query parameters
-    const searchParams = request.nextUrl.searchParams;
-    const queryData = {
-      accountId: searchParams.get("accountId") || undefined,
-      platform: searchParams.get("platform") || undefined,
-      metricType: searchParams.get("metricType") || undefined,
-      startDate: searchParams.get("startDate") || undefined,
-      endDate: searchParams.get("endDate") || undefined,
-      limit: searchParams.get("limit") || "1000",
-    };
+  let totalRevenue = 0;
+  let totalOrders = 0;
 
-    const validatedQuery = metricsQuerySchema.safeParse(queryData);
+  channels.forEach((ch) => {
+    totalRevenue += baseRevenue * platformMultipliers[ch];
+    totalOrders += baseOrders * platformMultipliers[ch];
+  });
 
-    if (!validatedQuery.success) {
-      return NextResponse.json(
-        {
-          message: "Validation failed",
-          errors: validatedQuery.error.flatten().fieldErrors,
-        },
-        { status: 400 }
-      );
-    }
+  // Generate daily data
+  const startDate = new Date(dateFrom);
+  const endDate = new Date(dateTo);
+  const daily = [];
 
-    const {
-      accountId,
-      platform,
-      metricType,
-      startDate,
-      endDate,
-      limit = 1000,
-    } = validatedQuery.data;
+  for (let d = new Date(startDate); d <= endDate; d.setDate(d.getDate() + 1)) {
+    const dateStr = d.toISOString().split("T")[0];
+    let dayRevenue = 0;
+    let dayOrders = 0;
 
-    // Build where clause
-    const where: any = {
-      userId: session.user.id,
-    };
-
-    if (accountId) {
-      where.accountId = accountId;
-    }
-
-    if (platform) {
-      where.platform = platform;
-    }
-
-    if (metricType) {
-      where.metricType = metricType;
-    }
-
-    if (startDate || endDate) {
-      where.date = {};
-      if (startDate) {
-        where.date.gte = new Date(startDate);
-      }
-      if (endDate) {
-        where.date.lte = new Date(endDate);
-      }
-    }
-
-    // Get metrics
-    const metrics = await prisma.metric.findMany({
-      where,
-      include: {
-        account: {
-          select: {
-            id: true,
-            name: true,
-          },
-        },
-      },
-      orderBy: {
-        date: "desc",
-      },
-      take: Math.min(limit, 5000), // Max 5000 records
+    channels.forEach((ch) => {
+      dayRevenue += baseRevenue * platformMultipliers[ch] * (0.8 + Math.random() * 0.4);
+      dayOrders += baseOrders * platformMultipliers[ch] * (0.8 + Math.random() * 0.4);
     });
 
-    // Group metrics by date and type for easier visualization
-    const groupedByDate = new Map<string, Map<string, number>>();
+    daily.push({
+      date: dateStr,
+      revenue: Math.floor(dayRevenue),
+      orders: Math.floor(dayOrders),
+    });
+  }
 
-    for (const metric of metrics) {
-      const dateStr = metric.date.toISOString().split("T")[0];
-
-      if (!groupedByDate.has(dateStr)) {
-        groupedByDate.set(dateStr, new Map());
-      }
-
-      const dateMetrics = groupedByDate.get(dateStr)!;
-      const key = `${metric.platform}-${metric.metricType}`;
-
-      const current = dateMetrics.get(key) || 0;
-      dateMetrics.set(key, current + metric.value);
+  // Generate heatmap data (day x hour)
+  const heatmap = [];
+  const days = ["Dom", "Lun", "Mar", "Mié", "Jue", "Vie", "Sáb"];
+  for (let day = 0; day < 7; day++) {
+    for (let hour = 0; hour < 24; hour++) {
+      heatmap.push({
+        day: days[day],
+        hour,
+        value: Math.floor(Math.random() * 150),
+      });
     }
+  }
 
-    // Convert to array format for charts
-    const chartData = Array.from(groupedByDate.entries()).map(
-      ([date, metricsMap]) => {
-        const obj: any = { date };
+  // Channel summary
+  const channelSummaries: Array<{
+    channel: string;
+    revenue: number;
+    orders: number;
+    color: string;
+  }> = [];
+  const colors: Record<string, string> = {
+    vtex: "#ef4444",
+    meli_1: "#f59e0b",
+    meli_2: "#14b8a6",
+  };
 
-        for (const [key, value] of metricsMap.entries()) {
-          obj[key] = value;
-        }
+  channels.forEach((ch) => {
+    channelSummaries.push({
+      channel: ch === "vtex" ? "VTEX" : ch === "meli_1" ? "MercadoLibre UA" : "MercadoLibre Sporta",
+      revenue: Math.floor(baseRevenue * platformMultipliers[ch] * 30),
+      orders: Math.floor(baseOrders * platformMultipliers[ch] * 30),
+      color: colors[ch],
+    });
+  });
 
-        return obj;
-      }
-    );
-
-    // Calculate summary statistics
-    const summary = {
-      totalRecords: metrics.length,
-      uniquePlatforms: [...new Set(metrics.map((m) => m.platform))],
-      uniqueMetricTypes: [...new Set(metrics.map((m) => m.metricType))],
-      dateRange: {
-        start: metrics.length > 0 ? metrics[metrics.length - 1].date : null,
-        end: metrics.length > 0 ? metrics[0].date : null,
+  return {
+    kpi: {
+      revenue: totalRevenue * 30,
+      orders: totalOrders * 30,
+      avg_ticket: (totalRevenue * 30) / (totalOrders * 30),
+      conversion: 2.8,
+      compare: {
+        revenue_delta: 12.5,
+        orders_delta: 8.3,
       },
-      metrics: {
-        // Calculate aggregates by metric type
-        ...Object.fromEntries(
-          [...new Set(metrics.map((m) => m.metricType))].map((type) => [
-            type,
-            {
-              sum: metrics
-                .filter((m) => m.metricType === type)
-                .reduce((sum, m) => sum + m.value, 0),
-              avg:
-                metrics
-                  .filter((m) => m.metricType === type)
-                  .reduce((sum, m) => sum + m.value, 0) /
-                metrics.filter((m) => m.metricType === type).length,
-              max: Math.max(
-                ...metrics
-                  .filter((m) => m.metricType === type)
-                  .map((m) => m.value)
-              ),
-              min: Math.min(
-                ...metrics
-                  .filter((m) => m.metricType === type)
-                  .map((m) => m.value)
-              ),
-            },
-          ])
-        ),
-      },
-    };
+    },
+    daily,
+    heatmap,
+    channels: channelSummaries,
+  };
+}
 
-    return NextResponse.json(
-      {
-        metrics,
-        chartData,
-        summary,
-        count: metrics.length,
+export async function GET(request: NextRequest) {
+  try {
+    const searchParams = request.nextUrl.searchParams;
+    const dateFrom = searchParams.get("date_from") || "2024-05-10";
+    const dateTo = searchParams.get("date_to") || "2024-06-10";
+    const channel = searchParams.get("channel") || "all";
+
+    const data = generateMetricsData(dateFrom, dateTo, channel);
+
+    return NextResponse.json(data, {
+      headers: {
+        "Cache-Control": "no-store, no-cache, must-revalidate",
       },
-      { status: 200 }
-    );
+    });
   } catch (error) {
     console.error("Error fetching metrics:", error);
     return NextResponse.json(
-      { message: "Internal server error" },
+      { error: "Error fetching metrics" },
       { status: 500 }
     );
   }
