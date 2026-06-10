@@ -40,9 +40,9 @@ COPY --from=builder /app/next.config.js ./next.config.js
 # Expose port
 EXPOSE 3000
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-  CMD node -e "require('http').get('http://localhost:3000', (r) => {if (r.statusCode !== 200) throw new Error(r.statusCode)})"
+# Health check (Railway injects a dynamic PORT env var; next start listens on it)
+HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
+  CMD node -e "require('http').get('http://localhost:' + (process.env.PORT || 3000), (r) => { if (r.statusCode !== 200) process.exit(1) })"
 
 # Start
 CMD ["npm", "start"]
