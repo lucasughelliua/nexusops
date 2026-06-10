@@ -8,9 +8,9 @@ const credentialsSchema = z.object({
 });
 
 // Hardcoded test users (for now - until DB schema is fixed)
-const TEST_USERS: Record<string, { pin: string; name: string; role: string }> = {
-  admin: { pin: "1234", name: "Administrador", role: "ADMIN" },
-  lucas: { pin: "5678", name: "Lucas", role: "ADMIN" },
+const TEST_USERS: Record<string, { pin: string; name: string; role: string; email: string }> = {
+  admin: { pin: "1234", name: "Administrador", role: "ADMIN", email: "admin@nexusops.local" },
+  lucas: { pin: "5678", name: "Lucas", role: "ADMIN", email: "lucas@nexusops.local" },
 };
 
 export const authOptions: NextAuthOptions = {
@@ -36,6 +36,7 @@ export const authOptions: NextAuthOptions = {
 
         return {
           id: username,
+          email: user.email,
           name: user.name,
           role: user.role,
         };
