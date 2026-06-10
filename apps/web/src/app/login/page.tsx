@@ -3,6 +3,7 @@
 import { signIn } from "next-auth/react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useState } from "react";
+import { Lock, Mail, AlertCircle } from "lucide-react";
 
 function LoginForm() {
   const router = useRouter();
@@ -10,8 +11,8 @@ function LoginForm() {
   const error = searchParams.get("error");
 
   const [isLoading, setIsLoading] = useState(false);
-  const [username, setUsername] = useState("");
-  const [pin, setPin] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -19,13 +20,13 @@ function LoginForm() {
 
     try {
       const result = await signIn("credentials", {
-        username,
-        pin,
+        email,
+        password,
         redirect: false,
       });
 
       if (result?.error) {
-        router.push("/login?error=Invalid credentials");
+        router.push("/login?error=Credenciales inválidas");
       } else if (result?.ok) {
         router.push("/dashboard");
       }
@@ -37,78 +38,132 @@ function LoginForm() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-900 to-slate-800">
-      <div className="w-full max-w-md">
-        <div className="bg-white rounded-lg shadow-xl p-8">
-          {/* Header */}
-          <div className="mb-8 text-center">
-            <h1 className="text-3xl font-bold text-gray-900">NexusOps</h1>
-            <p className="text-gray-600 mt-2">Metrics Dashboard</p>
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-[#040c05] via-[#0c1a0d] to-[#040c05]">
+      {/* Background decoration */}
+      <div className="absolute inset-0 overflow-hidden">
+        <div className="absolute -top-40 -right-40 w-80 h-80 bg-[#00A651] rounded-full mix-blend-multiply filter blur-3xl opacity-10 animate-blob"></div>
+        <div className="absolute -bottom-40 -left-40 w-80 h-80 bg-[#00A651] rounded-full mix-blend-multiply filter blur-3xl opacity-10 animate-blob animation-delay-2000"></div>
+      </div>
+
+      {/* Login Container */}
+      <div className="relative w-full max-w-md mx-4 z-10">
+        {/* Card */}
+        <div className="bg-[#071409] border border-[rgba(0,166,81,0.2)] rounded-2xl shadow-2xl overflow-hidden">
+          {/* Header with gradient */}
+          <div className="h-2 bg-gradient-to-r from-[#00A651] to-[#00C65E]"></div>
+
+          <div className="px-8 py-12">
+            {/* Logo and Title */}
+            <div className="mb-8 text-center">
+              <div className="inline-flex items-center justify-center w-12 h-12 rounded-lg bg-gradient-to-br from-[#00A651] to-[#00C65E] mb-4">
+                <span className="text-white font-bold text-lg">N</span>
+              </div>
+              <h1 className="text-3xl font-bold text-gray-100 tracking-tight">NexusOps</h1>
+              <p className="text-gray-500 text-sm mt-2">Centro de Control eCommerce</p>
+            </div>
+
+            {/* Error Message */}
+            {error && (
+              <div className="mb-6 p-4 bg-red-900/20 border border-red-700/50 text-red-300 rounded-lg flex items-start gap-3">
+                <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
+                <div>
+                  <p className="font-medium">Error de autenticación</p>
+                  <p className="text-sm mt-1">
+                    {error === "CredentialsSignin"
+                      ? "Email o contraseña incorrectos"
+                      : error}
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* Form */}
+            <form onSubmit={handleSubmit} className="space-y-5">
+              {/* Email */}
+              <div>
+                <label htmlFor="email" className="block text-sm font-medium text-gray-300 mb-2">
+                  Email
+                </label>
+                <div className="relative">
+                  <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-500" />
+                  <input
+                    id="email"
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    required
+                    disabled={isLoading}
+                    className="w-full pl-11 pr-4 py-3 bg-[#0c1a0d] border border-[rgba(0,166,81,0.15)] rounded-lg text-gray-100 placeholder-gray-600 focus:border-[#00A651] focus:ring-1 focus:ring-[#00A651] outline-none transition disabled:opacity-50"
+                    placeholder="tu@email.com"
+                  />
+                </div>
+              </div>
+
+              {/* Password */}
+              <div>
+                <label htmlFor="password" className="block text-sm font-medium text-gray-300 mb-2">
+                  Contraseña
+                </label>
+                <div className="relative">
+                  <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-500" />
+                  <input
+                    id="password"
+                    type="password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    required
+                    disabled={isLoading}
+                    className="w-full pl-11 pr-4 py-3 bg-[#0c1a0d] border border-[rgba(0,166,81,0.15)] rounded-lg text-gray-100 placeholder-gray-600 focus:border-[#00A651] focus:ring-1 focus:ring-[#00A651] outline-none transition disabled:opacity-50"
+                    placeholder="Ingresa tu contraseña"
+                  />
+                </div>
+              </div>
+
+              {/* Submit Button */}
+              <button
+                type="submit"
+                disabled={isLoading}
+                className="w-full mt-8 px-4 py-3 bg-gradient-to-r from-[#00A651] to-[#00C65E] text-white font-semibold rounded-lg hover:shadow-lg hover:shadow-[rgba(0,166,81,0.3)] disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200"
+              >
+                {isLoading ? (
+                  <div className="flex items-center justify-center gap-2">
+                    <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                    Iniciando sesión...
+                  </div>
+                ) : (
+                  "Iniciar sesión"
+                )}
+              </button>
+            </form>
+
+            {/* Test Credentials */}
+            <div className="mt-8 p-4 bg-[#0c1a0d] border border-[rgba(0,166,81,0.1)] rounded-lg">
+              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
+                📝 Credenciales de prueba
+              </p>
+              <div className="space-y-2 text-xs text-gray-500">
+                <p>
+                  <span className="text-gray-400">Email:</span>{" "}
+                  <code className="text-[#00C65E] font-mono">admin@nexusops.local</code>
+                </p>
+                <p>
+                  <span className="text-gray-400">Contraseña:</span>{" "}
+                  <code className="text-[#00C65E] font-mono">Admin@123</code>
+                </p>
+              </div>
+            </div>
           </div>
-
-          {/* Error Message */}
-          {error && (
-            <div className="mb-4 p-3 bg-red-100 border border-red-400 text-red-700 rounded">
-              {error === "CredentialsSignin"
-                ? "Invalid username or PIN"
-                : "An error occurred during login"}
-            </div>
-          )}
-
-          {/* Test Credentials Info */}
-          <div className="mb-6 p-3 bg-blue-50 border border-blue-200 rounded text-sm text-blue-700">
-            <strong>Test credentials:</strong><br />
-            Username: <code>admin</code><br />
-            PIN: <code>1234</code>
-          </div>
-
-          {/* Form */}
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div>
-              <label htmlFor="username" className="block text-sm font-medium text-gray-700 mb-1">
-                Username
-              </label>
-              <input
-                id="username"
-                type="text"
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                required
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition"
-                placeholder="admin"
-              />
-            </div>
-
-            <div>
-              <label htmlFor="pin" className="block text-sm font-medium text-gray-700 mb-1">
-                PIN (4 digits)
-              </label>
-              <input
-                id="pin"
-                type="password"
-                value={pin}
-                onChange={(e) => setPin(e.target.value.slice(0, 4))}
-                maxLength={4}
-                required
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition text-center text-2xl tracking-widest"
-                placeholder="••••"
-              />
-            </div>
-
-            <button
-              type="submit"
-              disabled={isLoading}
-              className="w-full px-4 py-2 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition"
-            >
-              {isLoading ? "Signing in..." : "Sign In"}
-            </button>
-          </form>
         </div>
 
         {/* Footer */}
-        <p className="text-center text-gray-400 text-xs mt-6">
-          © 2024 NexusOps. All rights reserved.
-        </p>
+        <div className="mt-8 text-center">
+          <p className="text-gray-600 text-xs">
+            © 2024 NexusOps • Universo Aventura
+          </p>
+          <p className="text-gray-700 text-xs mt-1">
+            Protegido por autenticación de empresa
+          </p>
+        </div>
       </div>
     </div>
   );
@@ -118,8 +173,8 @@ export default function LoginPage() {
   return (
     <Suspense
       fallback={
-        <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-900 to-slate-800">
-          <div className="text-white">Loading...</div>
+        <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-[#040c05] to-[#0c1a0d]">
+          <div className="text-gray-400">Cargando...</div>
         </div>
       }
     >
