@@ -55,6 +55,11 @@ const parsed = envSchema.safeParse(processEnv);
 
 if (!parsed.success) {
   console.error("❌ Invalid environment variables:", parsed.error.flatten().fieldErrors);
+  console.error("DEBUG: process.env keys available:", Object.keys(process.env).filter(k => k.includes('DATABASE') || k.includes('NEXTAUTH') || k.includes('ENCRYPTION') || k.includes('NODE')));
+  console.error("DEBUG: DATABASE_URL exists?", !!process.env.DATABASE_URL, "first 50 chars:", process.env.DATABASE_URL?.substring(0, 50));
+  console.error("DEBUG: NEXTAUTH_SECRET exists?", !!process.env.NEXTAUTH_SECRET, "length:", process.env.NEXTAUTH_SECRET?.length);
+  console.error("DEBUG: ENCRYPTION_KEY exists?", !!process.env.ENCRYPTION_KEY, "length:", process.env.ENCRYPTION_KEY?.length);
+  console.error("DEBUG: NEXTAUTH_URL =", process.env.NEXTAUTH_URL);
   throw new Error("Invalid environment variables");
 }
 
