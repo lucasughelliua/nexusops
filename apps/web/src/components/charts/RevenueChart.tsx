@@ -35,7 +35,6 @@ export function RevenueChart({
   currency = 'USD',
 }: RevenueChartProps) {
   const ChartComponent = type === 'area' ? AreaChart : LineChart;
-  const ContentComponent = type === 'area' ? Area : Line;
 
   return (
     <div className="bg-white rounded-lg shadow p-6">
@@ -73,16 +72,26 @@ export function RevenueChart({
             }}
           />
           <Legend />
-          <ContentComponent
-            dataKey="value"
-            stroke="#3b82f6"
-            fill="#3b82f6"
-            strokeWidth={2}
-            isAnimationActive={true}
-            dot={type === 'line' ? { fill: '#3b82f6', r: 4 } : false}
-            activeDot={{ r: 6 }}
-            opacity={type === 'area' ? 0.3 : 1}
-          />
+          {type === 'area' ? (
+            <Area
+              dataKey="value"
+              stroke="#3b82f6"
+              fill="#3b82f6"
+              strokeWidth={2}
+              isAnimationActive={true}
+              activeDot={{ r: 6 }}
+              opacity={0.3}
+            />
+          ) : (
+            <Line
+              dataKey="value"
+              stroke="#3b82f6"
+              strokeWidth={2}
+              isAnimationActive={true}
+              dot={{ fill: '#3b82f6', r: 4 }}
+              activeDot={{ r: 6 }}
+            />
+          )}
         </ChartComponent>
       </ResponsiveContainer>
     </div>

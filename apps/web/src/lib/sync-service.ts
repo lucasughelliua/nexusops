@@ -1,7 +1,7 @@
 import { prisma } from "./db";
 import { decrypt } from "./crypto";
 import { createIntegrationClient } from "./integrations";
-import { Platform } from "@prisma/client";
+import { Platform, Prisma } from "@prisma/client";
 
 /**
  * Servicio de sincronización de métricas
@@ -19,7 +19,7 @@ export class SyncService {
       const credentials = await prisma.credential.findMany({
         where: {
           userId,
-          syncStatus: { ne: "ERROR" }, // No sincronizar si hay error persistente
+          syncStatus: { not: "ERROR" }, // No sincronizar si hay error persistente
         },
         include: {
           account: true,
@@ -93,8 +93,8 @@ export class SyncService {
             value: metric.value,
             currency: metric.currency || "USD",
             date: metric.date,
-            dimensions: metric.dimensions,
-            rawData: metric.rawData,
+            dimensions: metric.dimensions as Prisma.InputJsonValue | undefined,
+            rawData: metric.rawData as Prisma.InputJsonValue | undefined,
           },
         });
         recordsCount++;
@@ -201,11 +201,14 @@ export class SyncService {
    * Obtener estadísticas de sincronización de un usuario
    */
   async getSyncStats(userId: string) {
+    const userCredentials = await prisma.credential.findMany({
+      where: { userId },
+      select: { id: true },
+    });
+
     const syncLogs = await prisma.syncLog.findMany({
       where: {
-        credential: {
-          userId,
-        },
+        credentialId: { in: userCredentials.map((c) => c.id) },
       },
       orderBy: {
         startedAt: "desc",

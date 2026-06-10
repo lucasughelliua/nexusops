@@ -64,7 +64,6 @@ export function MetricsChart({
   }
 
   const ChartComponent = type === 'bar' ? BarChart : LineChart;
-  const ContentComponent = type === 'bar' ? Bar : Line;
 
   return (
     <div className="bg-white rounded-lg shadow p-6">
@@ -98,15 +97,22 @@ export function MetricsChart({
             }}
           />
           <Legend />
-          <ContentComponent
-            dataKey={dataKey}
-            fill={colors[0]}
-            stroke={colors[0]}
-            strokeWidth={2}
-            isAnimationActive={true}
-            dot={type === 'line' ? { fill: colors[0], r: 4 } : undefined}
-            activeDot={{ r: 6 }}
-          />
+          {type === 'line' ? (
+            <Line
+              dataKey={dataKey}
+              stroke={colors[0]}
+              strokeWidth={2}
+              isAnimationActive={true}
+              dot={{ fill: colors[0], r: 4 }}
+              activeDot={{ r: 6 }}
+            />
+          ) : (
+            <Bar
+              dataKey={dataKey}
+              fill={colors[0]}
+              isAnimationActive={true}
+            />
+          )}
         </ChartComponent>
       </ResponsiveContainer>
     </div>
