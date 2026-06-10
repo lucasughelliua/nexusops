@@ -1,21 +1,23 @@
 import type { Metadata } from "next";
-import { Inter, Roboto_Mono } from "next/font/google";
+import { DM_Sans, DM_Mono } from "next/font/google";
 import "./globals.css";
 import { Providers } from "./providers";
 
-const geistSans = Inter({
-  variable: "--font-geist-sans",
+const dmSans = DM_Sans({
   subsets: ["latin"],
+  variable: "--font-dm-sans",
+  weight: ["300", "400", "500", "600", "700"],
 });
 
-const geistMono = Roboto_Mono({
-  variable: "--font-geist-mono",
+const dmMono = DM_Mono({
   subsets: ["latin"],
+  variable: "--font-dm-mono",
+  weight: ["400", "500"],
 });
 
 export const metadata: Metadata = {
-  title: "NexusOps - Metrics Dashboard",
-  description: "Multi-platform metrics management and analytics dashboard",
+  title: "NexusOps — Universo Aventura",
+  description: "Centro de control eCommerce",
 };
 
 export default function RootLayout({
@@ -24,11 +26,8 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html
-      lang="en"
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
-    >
-      <body className="min-h-full flex flex-col">
+    <html lang="es-AR" className={`${dmSans.variable} ${dmMono.variable}`}>
+      <body className="bg-[#040c05] text-gray-100 antialiased">
         <Providers>
           {children}
         </Providers>
