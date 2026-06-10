@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { PHASE_PRODUCTION_BUILD } from "next/constants";
 
 const envSchema = z.object({
   DATABASE_URL: z.string().url(),
@@ -19,11 +20,25 @@ const envSchema = z.object({
 
 type EnvInput = z.input<typeof envSchema>;
 
+// During `next build` (Docker image build on Railway/etc.), real secrets are
+// not available yet - they're injected as runtime environment variables.
+// Fall back to harmless placeholders ONLY during the build phase so that
+// `next build` (page data collection / static generation) doesn't crash.
+// At runtime (`next start`), NEXT_PHASE is no longer "phase-production-build",
+// so missing real env vars will still correctly fail validation below.
+const isBuildPhase = process.env.NEXT_PHASE === PHASE_PRODUCTION_BUILD;
+
 const processEnv: EnvInput = {
-  DATABASE_URL: process.env.DATABASE_URL || "",
-  NEXTAUTH_SECRET: process.env.NEXTAUTH_SECRET || "",
+  DATABASE_URL:
+    process.env.DATABASE_URL ||
+    (isBuildPhase ? "postgresql://user:password@localhost:5432/db" : ""),
+  NEXTAUTH_SECRET:
+    process.env.NEXTAUTH_SECRET ||
+    (isBuildPhase ? "build-time-placeholder-secret-00000000" : ""),
   NEXTAUTH_URL: process.env.NEXTAUTH_URL,
-  ENCRYPTION_KEY: process.env.ENCRYPTION_KEY || "",
+  ENCRYPTION_KEY:
+    process.env.ENCRYPTION_KEY ||
+    (isBuildPhase ? "build-time-placeholder-key-000000000000" : ""),
   GITHUB_ID: process.env.GITHUB_ID,
   GITHUB_SECRET: process.env.GITHUB_SECRET,
   GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID,
