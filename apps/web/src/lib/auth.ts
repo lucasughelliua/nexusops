@@ -1,6 +1,7 @@
 import { type NextAuthOptions } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
 import { z } from "zod";
+import type { Role } from "@prisma/client";
 
 const credentialsSchema = z.object({
   username: z.string().min(1),
@@ -38,7 +39,7 @@ export const authOptions: NextAuthOptions = {
           id: username,
           email: user.email,
           name: user.name,
-          role: user.role,
+          role: user.role as Role,
         };
       },
     }),
