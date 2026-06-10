@@ -41,7 +41,7 @@ COPY --from=builder /app/next.config.js ./next.config.js
 ENV DATABASE_URL="postgresql://neondb_owner:npg_ShDEnBCxev64@ep-misty-firefly-aqxr8adn-pooler.c-8.us-east-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require"
 ENV NEXTAUTH_SECRET="3D91Gm1BFRJ7kIjr+N8EEQX0Z2QEGLQVTjE2eNyHgVo="
 ENV ENCRYPTION_KEY="+BBtP/vJymUo3wp8xi/o93SMCY6HbmpYyU6luAQffIw="
-ENV NEXTAUTH_URL="https://nexusops-production-8f71.up.railway.app"
+ENV NEXTAUTH_URL=""
 ENV NODE_ENV="production"
 
 # Expose port
