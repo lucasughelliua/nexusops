@@ -15,13 +15,16 @@ function generateMetricsData(dateFrom: string, dateTo: string, channel: string) 
 
   const baseRevenue = 100000;
   const baseOrders = 300;
+  const baseUnits = 450;
 
   let totalRevenue = 0;
   let totalOrders = 0;
+  let totalUnits = 0;
 
   channels.forEach((ch) => {
     totalRevenue += baseRevenue * platformMultipliers[ch];
     totalOrders += baseOrders * platformMultipliers[ch];
+    totalUnits += baseUnits * platformMultipliers[ch];
   });
 
   // Generate daily data
@@ -59,37 +62,45 @@ function generateMetricsData(dateFrom: string, dateTo: string, channel: string) 
     }
   }
 
-  // Channel summary
-  const channelSummaries: Array<{
-    channel: string;
-    revenue: number;
-    orders: number;
-    color: string;
-  }> = [];
-  const colors: Record<string, string> = {
+  // Channel summary with all required fields
+  const totalRevenue30 = totalRevenue * 30;
+  const totalOrders30 = totalOrders * 30;
+  const totalUnits30 = totalUnits * 30;
+  const avgTicket = totalRevenue30 / totalOrders30;
+
+  const channelMap: Record<string, string> = {
+    vtex: "VTEX",
+    meli_1: "MercadoLibre UA",
+    meli_2: "MercadoLibre Sporta",
+  };
+
+  const colorMap: Record<string, string> = {
     vtex: "#ef4444",
     meli_1: "#f59e0b",
     meli_2: "#14b8a6",
   };
 
-  channels.forEach((ch) => {
-    channelSummaries.push({
-      channel: ch === "vtex" ? "VTEX" : ch === "meli_1" ? "MercadoLibre UA" : "MercadoLibre Sporta",
-      revenue: Math.floor(baseRevenue * platformMultipliers[ch] * 30),
-      orders: Math.floor(baseOrders * platformMultipliers[ch] * 30),
-      color: colors[ch],
-    });
+  const channelSummaries = channels.map((ch) => {
+    const chRevenue = Math.floor(baseRevenue * platformMultipliers[ch] * 30);
+    const chOrders = Math.floor(baseOrders * platformMultipliers[ch] * 30);
+    return {
+      channel: channelMap[ch],
+      revenue: chRevenue,
+      orders: chOrders,
+      color: colorMap[ch],
+      pct_revenue: (chRevenue / totalRevenue30) * 100,
+      avg_ticket: chRevenue / chOrders,
+    };
   });
-
-  const totalRevenue30 = totalRevenue * 30;
-  const totalOrders30 = totalOrders * 30;
 
   return {
     kpi: {
       revenue: Math.floor(totalRevenue30),
       orders: Math.floor(totalOrders30),
-      avg_ticket: Math.round((totalRevenue30 / totalOrders30) * 100) / 100,
+      units: Math.floor(totalUnits30),
+      avg_ticket: Math.round(avgTicket * 100) / 100,
       conversion: 2.8,
+      cancellations: Math.floor(totalOrders30 * 0.02),
       compare: {
         revenue_delta: 12.5,
         orders_delta: 8.3,
