@@ -83,6 +83,11 @@ function AdminPageContent() {
   const [meli1Form, setMeli1Form] = useState({ clientId: '', clientSecret: '' })
   const [meli2Form, setMeli2Form] = useState({ clientId: '', clientSecret: '' })
 
+  const [metaForm, setMetaForm] = useState({ adAccountId: '', accessToken: '' })
+  const [googleForm, setGoogleForm] = useState({ sheetsUrl: '', apiKey: '' })
+  const [perfitForm, setPerfitForm] = useState({ apiKey: '', subdomain: '' })
+  const [kommoForm, setKommoForm] = useState({ subdomain: '', accessToken: '' })
+
   const loadUsers = useCallback(async () => {
     setLoadingUsers(true)
     try {
@@ -521,6 +526,193 @@ function AdminPageContent() {
               </div>
             )
           })}
+
+          {/* Marketing Channels Header */}
+          <div className="mt-8 pt-6 border-t border-[rgba(0,166,81,0.15)]">
+            <h3 className="text-sm font-semibold text-gray-200 mb-4">Marketing & CRM</h3>
+            <p className="text-xs text-gray-400 mb-4">Conectá tus plataformas de marketing para traer campañas, montos y métricas</p>
+          </div>
+
+          {/* Meta */}
+          {(() => {
+            const status = statusFor('meta')
+            return (
+              <div className="bg-[#0c1a0d] border border-[rgba(0,166,81,0.15)] rounded-xl p-6 space-y-4">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-semibold text-gray-200">Meta (Facebook Ads)</h3>
+                  {status?.syncStatus && (
+                    <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${SYNC_STATUS_PILL[status.syncStatus] ?? ''}`}>
+                      {SYNC_STATUS_LABEL[status.syncStatus] ?? status.syncStatus}
+                    </span>
+                  )}
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">Ad Account ID</label>
+                    <input
+                      value={metaForm.adAccountId}
+                      onChange={(e) => setMetaForm({ ...metaForm, adAccountId: e.target.value })}
+                      placeholder="act_1234567890"
+                      className="w-full bg-[#071409] border border-[rgba(0,166,81,0.2)] rounded-lg px-3 py-2 text-sm text-gray-200 outline-none focus:border-[#00A651] transition-colors font-mono"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">Access Token</label>
+                    <input
+                      type="password"
+                      value={metaForm.accessToken}
+                      onChange={(e) => setMetaForm({ ...metaForm, accessToken: e.target.value })}
+                      className="w-full bg-[#071409] border border-[rgba(0,166,81,0.2)] rounded-lg px-3 py-2 text-sm text-gray-200 outline-none focus:border-[#00A651] transition-colors font-mono"
+                    />
+                  </div>
+                </div>
+                {status?.syncError && <p className="text-xs text-red-400">{status.syncError}</p>}
+                <button
+                  disabled={savingChannel === 'meta' || !metaForm.adAccountId || !metaForm.accessToken}
+                  onClick={() => saveChannel('meta', metaForm)}
+                  className="px-5 py-2.5 bg-[#00A651] text-white rounded-lg text-sm font-semibold hover:bg-[#007A3D] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  {savingChannel === 'meta' ? 'Guardando…' : 'Guardar y probar conexión'}
+                </button>
+              </div>
+            )
+          })()}
+
+          {/* Google Ads / Google Sheets */}
+          {(() => {
+            const status = statusFor('google')
+            return (
+              <div className="bg-[#0c1a0d] border border-[rgba(0,166,81,0.15)] rounded-xl p-6 space-y-4">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-semibold text-gray-200">Google Ads</h3>
+                  {status?.syncStatus && (
+                    <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${SYNC_STATUS_PILL[status.syncStatus] ?? ''}`}>
+                      {SYNC_STATUS_LABEL[status.syncStatus] ?? status.syncStatus}
+                    </span>
+                  )}
+                </div>
+                <p className="text-xs text-gray-400">Cargá los datos desde una Google Sheet con tus campañas y gastos</p>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">URL de Google Sheet</label>
+                    <input
+                      value={googleForm.sheetsUrl}
+                      onChange={(e) => setGoogleForm({ ...googleForm, sheetsUrl: e.target.value })}
+                      placeholder="https://docs.google.com/spreadsheets/d/..."
+                      className="w-full bg-[#071409] border border-[rgba(0,166,81,0.2)] rounded-lg px-3 py-2 text-sm text-gray-200 outline-none focus:border-[#00A651] transition-colors text-xs"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">API Key (Google Sheets)</label>
+                    <input
+                      type="password"
+                      value={googleForm.apiKey}
+                      onChange={(e) => setGoogleForm({ ...googleForm, apiKey: e.target.value })}
+                      className="w-full bg-[#071409] border border-[rgba(0,166,81,0.2)] rounded-lg px-3 py-2 text-sm text-gray-200 outline-none focus:border-[#00A651] transition-colors font-mono"
+                    />
+                  </div>
+                </div>
+                {status?.syncError && <p className="text-xs text-red-400">{status.syncError}</p>}
+                <button
+                  disabled={savingChannel === 'google' || !googleForm.sheetsUrl || !googleForm.apiKey}
+                  onClick={() => saveChannel('google', googleForm)}
+                  className="px-5 py-2.5 bg-[#00A651] text-white rounded-lg text-sm font-semibold hover:bg-[#007A3D] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  {savingChannel === 'google' ? 'Guardando…' : 'Guardar y probar conexión'}
+                </button>
+              </div>
+            )
+          })()}
+
+          {/* Perfit */}
+          {(() => {
+            const status = statusFor('perfit')
+            return (
+              <div className="bg-[#0c1a0d] border border-[rgba(0,166,81,0.15)] rounded-xl p-6 space-y-4">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-semibold text-gray-200">Perfit</h3>
+                  {status?.syncStatus && (
+                    <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${SYNC_STATUS_PILL[status.syncStatus] ?? ''}`}>
+                      {SYNC_STATUS_LABEL[status.syncStatus] ?? status.syncStatus}
+                    </span>
+                  )}
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">Subdominio</label>
+                    <input
+                      value={perfitForm.subdomain}
+                      onChange={(e) => setPerfitForm({ ...perfitForm, subdomain: e.target.value })}
+                      placeholder="tunegocio"
+                      className="w-full bg-[#071409] border border-[rgba(0,166,81,0.2)] rounded-lg px-3 py-2 text-sm text-gray-200 outline-none focus:border-[#00A651] transition-colors"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">API Key</label>
+                    <input
+                      type="password"
+                      value={perfitForm.apiKey}
+                      onChange={(e) => setPerfitForm({ ...perfitForm, apiKey: e.target.value })}
+                      className="w-full bg-[#071409] border border-[rgba(0,166,81,0.2)] rounded-lg px-3 py-2 text-sm text-gray-200 outline-none focus:border-[#00A651] transition-colors font-mono"
+                    />
+                  </div>
+                </div>
+                {status?.syncError && <p className="text-xs text-red-400">{status.syncError}</p>}
+                <button
+                  disabled={savingChannel === 'perfit' || !perfitForm.subdomain || !perfitForm.apiKey}
+                  onClick={() => saveChannel('perfit', perfitForm)}
+                  className="px-5 py-2.5 bg-[#00A651] text-white rounded-lg text-sm font-semibold hover:bg-[#007A3D] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  {savingChannel === 'perfit' ? 'Guardando…' : 'Guardar y probar conexión'}
+                </button>
+              </div>
+            )
+          })()}
+
+          {/* Kommo (CRM) */}
+          {(() => {
+            const status = statusFor('kommo')
+            return (
+              <div className="bg-[#0c1a0d] border border-[rgba(0,166,81,0.15)] rounded-xl p-6 space-y-4">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-semibold text-gray-200">Kommo CRM</h3>
+                  {status?.syncStatus && (
+                    <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${SYNC_STATUS_PILL[status.syncStatus] ?? ''}`}>
+                      {SYNC_STATUS_LABEL[status.syncStatus] ?? status.syncStatus}
+                    </span>
+                  )}
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">Subdominio</label>
+                    <input
+                      value={kommoForm.subdomain}
+                      onChange={(e) => setKommoForm({ ...kommoForm, subdomain: e.target.value })}
+                      placeholder="tunegocio"
+                      className="w-full bg-[#071409] border border-[rgba(0,166,81,0.2)] rounded-lg px-3 py-2 text-sm text-gray-200 outline-none focus:border-[#00A651] transition-colors"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">Access Token</label>
+                    <input
+                      type="password"
+                      value={kommoForm.accessToken}
+                      onChange={(e) => setKommoForm({ ...kommoForm, accessToken: e.target.value })}
+                      className="w-full bg-[#071409] border border-[rgba(0,166,81,0.2)] rounded-lg px-3 py-2 text-sm text-gray-200 outline-none focus:border-[#00A651] transition-colors font-mono"
+                    />
+                  </div>
+                </div>
+                {status?.syncError && <p className="text-xs text-red-400">{status.syncError}</p>}
+                <button
+                  disabled={savingChannel === 'kommo' || !kommoForm.subdomain || !kommoForm.accessToken}
+                  onClick={() => saveChannel('kommo', kommoForm)}
+                  className="px-5 py-2.5 bg-[#00A651] text-white rounded-lg text-sm font-semibold hover:bg-[#007A3D] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  {savingChannel === 'kommo' ? 'Guardando…' : 'Guardar y probar conexión'}
+                </button>
+              </div>
+            )
+          })()}
         </div>
       )}
 

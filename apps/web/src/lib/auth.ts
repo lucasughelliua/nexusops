@@ -45,49 +45,66 @@ export const authOptions: NextAuthOptions = {
         }
 
         const { email, password } = validatedCredentials.data;
-        const user = TEST_USERS[email];
 
-        if (!user) {
+        // Primero intentar con TEST_USERS (hardcodeados)
+        const testUser = TEST_USERS[email];
+        if (testUser) {
+          const isPasswordValid = await bcrypt.compare(password, testUser.passwordHash);
+          if (!isPasswordValid) {
+            return null;
+          }
+
+          // Sincronizar con BD
+          let userId: string = email;
+          try {
+            const dbUser = await prisma.user.upsert({
+              where: { username: email },
+              update: {
+                name: testUser.name,
+                role: testUser.role as Role,
+                status: true,
+              },
+              create: {
+                username: email,
+                pin: "0000",
+                name: testUser.name,
+                role: testUser.role as Role,
+                status: true,
+              },
+            });
+            userId = dbUser.id;
+          } catch (error) {
+            console.error("Error sincronizando usuario TEST_USER:", error);
+          }
+
+          return {
+            id: userId,
+            email: testUser.email,
+            name: testUser.name,
+            role: testUser.role as Role,
+          };
+        }
+
+        // Si no está en TEST_USERS, buscar en BD (usuarios creados vía /api/users)
+        // Validar contra PIN (4 dígitos simples)
+        const dbUser = await prisma.user.findUnique({
+          where: { username: email },
+        });
+
+        if (!dbUser || !dbUser.status) {
           return null;
         }
 
-        const isPasswordValid = await bcrypt.compare(password, user.passwordHash);
-        if (!isPasswordValid) {
+        // Validar PIN simple (sin hash)
+        if (password !== dbUser.pin) {
           return null;
-        }
-
-        // Bridge: estos usuarios viven hardcodeados en TEST_USERS, pero las
-        // tablas Account/Credential/Metric requieren un User real (FK) en la
-        // base. Garantizamos que exista una fila User con el mismo email
-        // como username, y devolvemos su id real para usarlo como
-        // session.user.id en el resto de la app.
-        let userId: string = email;
-        try {
-          const dbUser = await prisma.user.upsert({
-            where: { username: email },
-            update: {
-              name: user.name,
-              role: user.role as Role,
-              status: true,
-            },
-            create: {
-              username: email,
-              pin: "0000",
-              name: user.name,
-              role: user.role as Role,
-              status: true,
-            },
-          });
-          userId = dbUser.id;
-        } catch (error) {
-          console.error("No se pudo sincronizar el usuario con la base de datos:", error);
         }
 
         return {
-          id: userId,
-          email: user.email,
-          name: user.name,
-          role: user.role as Role,
+          id: dbUser.id,
+          email: dbUser.username,
+          name: dbUser.name,
+          role: dbUser.role as Role,
         };
       },
     }),
