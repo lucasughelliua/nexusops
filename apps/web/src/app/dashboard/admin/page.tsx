@@ -1,6 +1,17 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
+import { ProtectedAdminRoute } from '@/components/ProtectedAdminRoute'
+
+interface User {
+  id: string
+  username: string
+  name: string
+  role: 'ADMIN' | 'USER'
+  status: boolean
+  pin?: string
+  createdAt?: string
+}
 
 interface ChannelStatus {
   channel: string
@@ -50,12 +61,18 @@ const ROLE_PILL: Record<string, string> = {
 
 const ALL_PAGES = ['metricas', 'live', 'canales', 'marketing', 'logistica', 'reportes', 'admin']
 
-export default function AdminPage() {
+function AdminPageContent() {
   const [activeTab, setActiveTab] = useState<'users' | 'invite' | 'settings' | 'integraciones'>('users')
   const [goal, setGoal]           = useState('4500000')
   const [name, setName]           = useState('')
-  const [role, setRole]           = useState('gerente')
+  const [role, setRole]           = useState('USER')
   const [pin, setPin]             = useState('')
+  const [username, setUsername]   = useState('')
+
+  const [users, setUsers] = useState<User[]>([])
+  const [loadingUsers, setLoadingUsers] = useState(false)
+  const [editingUser, setEditingUser] = useState<User | null>(null)
+  const [savingUser, setSavingUser] = useState(false)
 
   const [integrations, setIntegrations] = useState<ChannelStatus[]>([])
   const [loadingInt, setLoadingInt] = useState(false)
@@ -65,6 +82,61 @@ export default function AdminPage() {
   const [vtexForm, setVtexForm] = useState({ accountName: '', appKey: '', appToken: '' })
   const [meli1Form, setMeli1Form] = useState({ clientId: '', clientSecret: '' })
   const [meli2Form, setMeli2Form] = useState({ clientId: '', clientSecret: '' })
+
+  const loadUsers = useCallback(async () => {
+    setLoadingUsers(true)
+    try {
+      const res = await fetch('/api/users')
+      if (res.ok) {
+        const data = await res.json()
+        setUsers(data.users ?? [])
+      }
+    } finally {
+      setLoadingUsers(false)
+    }
+  }, [])
+
+  async function saveUser(user: Partial<User> & { id?: string }) {
+    setSavingUser(true)
+    try {
+      if (user.id) {
+        // Editar usuario existente
+        const res = await fetch(`/api/users/${user.id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name: user.name,
+            role: user.role,
+            pin: user.pin || undefined,
+          }),
+        })
+        if (res.ok) {
+          await loadUsers()
+          setEditingUser(null)
+        }
+      } else {
+        // Crear nuevo usuario
+        const res = await fetch('/api/users', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            username: user.username,
+            name: user.name,
+            pin: user.pin,
+            role: user.role || 'USER',
+          }),
+        })
+        if (res.ok) {
+          await loadUsers()
+          setName('')
+          setPin('')
+          setRole('gerente')
+        }
+      }
+    } finally {
+      setSavingUser(false)
+    }
+  }
 
   const loadIntegrations = useCallback(async () => {
     setLoadingInt(true)
@@ -82,8 +154,10 @@ export default function AdminPage() {
   useEffect(() => {
     if (activeTab === 'integraciones') {
       loadIntegrations()
+    } else if (activeTab === 'users') {
+      loadUsers()
     }
-  }, [activeTab, loadIntegrations])
+  }, [activeTab, loadIntegrations, loadUsers])
 
   // Maneja el redirect de vuelta de /api/integrations/meli/callback
   useEffect(() => {
@@ -157,37 +231,89 @@ export default function AdminPage() {
       {/* Users list */}
       {activeTab === 'users' && (
         <div className="space-y-3">
-          {USERS.map(u => (
+          {loadingUsers && <div className="text-sm text-gray-500">Cargando usuarios…</div>}
+          {users.length === 0 && !loadingUsers && (
+            <div className="text-sm text-gray-500">No hay usuarios creados aún.</div>
+          )}
+          {users.map(u => (
             <div
               key={u.id}
               className="bg-[#0c1a0d] border border-[rgba(0,166,81,0.15)] rounded-xl p-4 flex items-center gap-4"
             >
               <div
-                className="w-10 h-10 rounded-full flex items-center justify-center text-white text-sm font-bold flex-shrink-0"
-                style={{ background: u.color }}
+                className="w-10 h-10 rounded-full flex items-center justify-center text-white text-sm font-bold flex-shrink-0 bg-[#007A3D]"
               >
-                {u.initials}
+                {u.name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)}
               </div>
               <div className="flex-1">
                 <div className="text-sm font-semibold text-gray-200">{u.name}</div>
-                <div className="flex items-center gap-2 mt-1 flex-wrap">
-                  {u.perms.map(p => (
-                    <span key={p} className="text-[10px] px-1.5 py-0.5 rounded bg-[rgba(0,166,81,0.1)] text-[#00A651]">
-                      {p}
-                    </span>
-                  ))}
-                </div>
+                <div className="text-xs text-gray-500">{u.username}</div>
               </div>
               <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${ROLE_PILL[u.role] ?? ''}`}>
                 {ROLE_LABELS[u.role]}
               </span>
               <div className="flex gap-2">
-                <button className="text-xs px-2.5 py-1 rounded bg-[#1a2e1b] text-gray-400 hover:text-gray-200 transition-colors">
+                <button
+                  onClick={() => setEditingUser(u)}
+                  className="text-xs px-2.5 py-1 rounded bg-[#1a2e1b] text-gray-400 hover:text-gray-200 transition-colors"
+                >
                   Editar
                 </button>
               </div>
             </div>
           ))}
+
+          {/* Edit modal */}
+          {editingUser && (
+            <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+              <div className="bg-[#0c1a0d] border border-[rgba(0,166,81,0.15)] rounded-xl p-6 max-w-sm w-full mx-4 space-y-4">
+                <h2 className="text-lg font-bold text-gray-100">Editar usuario</h2>
+                <div>
+                  <label className="block text-xs text-gray-500 mb-1">Nombre</label>
+                  <input
+                    value={editingUser.name}
+                    onChange={(e) => setEditingUser({ ...editingUser, name: e.target.value })}
+                    className="w-full bg-[#071409] border border-[rgba(0,166,81,0.2)] rounded-lg px-3 py-2 text-sm text-gray-200 outline-none focus:border-[#00A651]"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-500 mb-1">PIN (opcional)</label>
+                  <input
+                    type="password"
+                    maxLength={6}
+                    placeholder="Dejar en blanco para no cambiar"
+                    className="w-full bg-[#071409] border border-[rgba(0,166,81,0.2)] rounded-lg px-3 py-2 text-sm text-gray-200 outline-none focus:border-[#00A651] font-mono"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-500 mb-1">Rol</label>
+                  <select
+                    value={editingUser.role}
+                    onChange={(e) => setEditingUser({ ...editingUser, role: e.target.value as 'ADMIN' | 'USER' })}
+                    className="w-full bg-[#071409] border border-[rgba(0,166,81,0.2)] rounded-lg px-3 py-2 text-sm text-gray-200 outline-none focus:border-[#00A651]"
+                  >
+                    <option value="USER">Usuario</option>
+                    <option value="ADMIN">Administrador</option>
+                  </select>
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setEditingUser(null)}
+                    className="flex-1 px-3 py-2 rounded bg-[#1a2e1b] text-gray-400 hover:text-gray-200 transition-colors text-sm"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    disabled={savingUser}
+                    onClick={() => saveUser(editingUser)}
+                    className="flex-1 px-3 py-2 rounded bg-[#00A651] text-white hover:bg-[#007A3D] transition-colors text-sm font-semibold disabled:opacity-50"
+                  >
+                    {savingUser ? 'Guardando…' : 'Guardar'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -197,6 +323,15 @@ export default function AdminPage() {
           <p className="text-sm text-gray-400">Creá un nuevo usuario con acceso al dashboard.</p>
           <div className="grid grid-cols-2 gap-4">
             <div>
+              <label className="block text-xs text-gray-500 mb-1">Email/Usuario</label>
+              <input
+                value={username} onChange={e => setUsername(e.target.value)}
+                className="w-full bg-[#071409] border border-[rgba(0,166,81,0.2)] rounded-lg px-3 py-2
+                           text-sm text-gray-200 outline-none focus:border-[#00A651] transition-colors"
+                placeholder="usuario@empresa.com"
+              />
+            </div>
+            <div>
               <label className="block text-xs text-gray-500 mb-1">Nombre</label>
               <input
                 value={name} onChange={e => setName(e.target.value)}
@@ -205,6 +340,8 @@ export default function AdminPage() {
                 placeholder="Ej: Laura García"
               />
             </div>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-xs text-gray-500 mb-1">PIN (4-6 dígitos)</label>
               <input
@@ -214,35 +351,24 @@ export default function AdminPage() {
                 placeholder="1234"
               />
             </div>
-          </div>
-          <div>
-            <label className="block text-xs text-gray-500 mb-1">Rol</label>
-            <select
-              value={role} onChange={e => setRole(e.target.value)}
-              className="w-full bg-[#071409] border border-[rgba(0,166,81,0.2)] rounded-lg px-3 py-2
-                         text-sm text-gray-200 outline-none focus:border-[#00A651] transition-colors"
-            >
-              {Object.entries(ROLE_LABELS).map(([k, v]) => (
-                <option key={k} value={k}>{v}</option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="block text-xs text-gray-500 mb-2">Permisos de vista</label>
-            <div className="grid grid-cols-2 gap-2">
-              {ALL_PAGES.map(p => (
-                <label key={p} className="flex items-center gap-2 text-sm text-gray-400 cursor-pointer">
-                  <input type="checkbox" className="accent-[#00A651]" defaultChecked={p !== 'admin'} />
-                  {p.charAt(0).toUpperCase() + p.slice(1)}
-                </label>
-              ))}
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">Rol</label>
+              <select
+                value={role} onChange={e => setRole(e.target.value)}
+                className="w-full bg-[#071409] border border-[rgba(0,166,81,0.2)] rounded-lg px-3 py-2
+                           text-sm text-gray-200 outline-none focus:border-[#00A651] transition-colors"
+              >
+                <option value="USER">Usuario</option>
+                <option value="ADMIN">Administrador</option>
+              </select>
             </div>
           </div>
           <button
-            onClick={() => alert(`Usuario "${name}" creado (demo). Integrar con backend para persistir.`)}
-            className="w-full py-2.5 bg-[#00A651] text-white rounded-lg text-sm font-semibold hover:bg-[#007A3D] transition-colors"
+            disabled={savingUser || !username || !name || !pin}
+            onClick={() => saveUser({ username, name, role: role as 'ADMIN' | 'USER', pin })}
+            className="w-full py-2.5 bg-[#00A651] text-white rounded-lg text-sm font-semibold hover:bg-[#007A3D] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            Crear usuario
+            {savingUser ? 'Creando…' : 'Crear usuario'}
           </button>
         </div>
       )}
@@ -430,5 +556,13 @@ export default function AdminPage() {
         </div>
       )}
     </div>
+  )
+}
+
+export default function AdminPage() {
+  return (
+    <ProtectedAdminRoute>
+      <AdminPageContent />
+    </ProtectedAdminRoute>
   )
 }

@@ -2,7 +2,9 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
+import { useSession, signOut } from 'next-auth/react'
 import { cn } from '@/lib/utils'
+import { useState } from 'react'
 
 const NAV = [
   {
@@ -31,6 +33,11 @@ const NAV = [
 
 export default function Sidebar() {
   const pathname = usePathname()
+  const { data: session } = useSession()
+  const [showMenu, setShowMenu] = useState(false)
+
+  const userInitials = session?.user?.name?.split(' ').map(n => n[0]).join('').toUpperCase() || '?'
+  const userRole = session?.user?.role === 'ADMIN' ? 'Administrador' : 'Usuario'
 
   return (
     <aside className="w-60 flex-shrink-0 bg-[#071409] border-r border-[rgba(0,166,81,0.12)]
@@ -88,14 +95,33 @@ export default function Sidebar() {
 
       {/* User pill */}
       <div className="px-3 py-4 border-t border-[rgba(0,166,81,0.12)]">
-        <div className="flex items-center gap-2.5 px-2 py-2 rounded-lg hover:bg-[#0c1a0d] cursor-pointer">
-          <div className="w-8 h-8 rounded-full bg-[#007A3D] flex items-center justify-center
-                          text-white text-xs font-bold">LU</div>
-          <div className="flex-1 min-w-0">
-            <div className="text-xs font-medium text-gray-200 truncate">Lucas U.</div>
-            <div className="text-[10px] text-gray-500">Administrador</div>
-          </div>
-          <div className="w-1.5 h-1.5 rounded-full bg-[#00A651]" />
+        <div className="relative">
+          <button
+            onClick={() => setShowMenu(!showMenu)}
+            className="w-full flex items-center gap-2.5 px-2 py-2 rounded-lg hover:bg-[#0c1a0d] cursor-pointer transition-colors"
+          >
+            <div className="w-8 h-8 rounded-full bg-[#007A3D] flex items-center justify-center
+                            text-white text-xs font-bold">{userInitials}</div>
+            <div className="flex-1 min-w-0">
+              <div className="text-xs font-medium text-gray-200 truncate">{session?.user?.name || 'Usuario'}</div>
+              <div className="text-[10px] text-gray-500">{userRole}</div>
+            </div>
+            <div className="w-1.5 h-1.5 rounded-full bg-[#00A651]" />
+          </button>
+
+          {showMenu && (
+            <div className="absolute bottom-full left-0 right-0 mb-2 bg-[#0c1a0d] border border-[rgba(0,166,81,0.2)] rounded-lg shadow-lg overflow-hidden">
+              <button
+                onClick={() => {
+                  setShowMenu(false)
+                  signOut({ callbackUrl: '/login' })
+                }}
+                className="w-full px-4 py-2.5 text-left text-sm text-gray-300 hover:bg-[#1a2e1b] hover:text-gray-100 transition-colors text-red-400 hover:text-red-300"
+              >
+                Cerrar sesión
+              </button>
+            </div>
+          )}
         </div>
       </div>
     </aside>
