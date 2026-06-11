@@ -1,6 +1,9 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
+
+/* Explicitly register source files so Tailwind v4 generates utility
+   classes used across pages/components/lib (auto-detection can miss
+   files in monorepo setups). Path is relative to this file. */
+@source "../**/*.{js,ts,jsx,tsx,mdx}";
 
 :root {
   --ua-green: #00A651;
