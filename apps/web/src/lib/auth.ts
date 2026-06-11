@@ -3,6 +3,7 @@ import CredentialsProvider from "next-auth/providers/credentials";
 import { z } from "zod";
 import type { Role } from "@prisma/client";
 import bcrypt from "bcryptjs";
+import { prisma } from "@/lib/db";
 import "@/lib/auth.types";
 
 const credentialsSchema = z.object({
@@ -55,8 +56,35 @@ export const authOptions: NextAuthOptions = {
           return null;
         }
 
+        // Bridge: estos usuarios viven hardcodeados en TEST_USERS, pero las
+        // tablas Account/Credential/Metric requieren un User real (FK) en la
+        // base. Garantizamos que exista una fila User con el mismo email
+        // como username, y devolvemos su id real para usarlo como
+        // session.user.id en el resto de la app.
+        let userId: string = email;
+        try {
+          const dbUser = await prisma.user.upsert({
+            where: { username: email },
+            update: {
+              name: user.name,
+              role: user.role as Role,
+              status: true,
+            },
+            create: {
+              username: email,
+              pin: "0000",
+              name: user.name,
+              role: user.role as Role,
+              status: true,
+            },
+          });
+          userId = dbUser.id;
+        } catch (error) {
+          console.error("No se pudo sincronizar el usuario con la base de datos:", error);
+        }
+
         return {
-          id: email,
+          id: userId,
           email: user.email,
           name: user.name,
           role: user.role as Role,

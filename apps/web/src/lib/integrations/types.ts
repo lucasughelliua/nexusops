@@ -53,6 +53,32 @@ export interface SyncResult {
 }
 
 /**
+ * Item normalizado dentro de una orden (línea de pedido).
+ */
+export interface NormalizedOrderItem {
+  sku: string;
+  name: string;
+  qty: number;
+  unitPrice: number; // en la moneda de la cuenta (ARS)
+}
+
+/**
+ * Orden normalizada, independiente de la plataforma de origen.
+ * Es la unidad mínima sobre la que se calculan KPIs, series diarias,
+ * heatmaps, top productos, feed de "live" y logística.
+ */
+export interface NormalizedOrder {
+  id: string;
+  channelKey: "vtex" | "meli_1" | "meli_2";
+  channel: string; // label legible: "VTEX" | "MercadoLibre UA" | "MercadoLibre Sporta"
+  date: string; // ISO 8601
+  status: string; // status crudo de la plataforma de origen
+  statusBucket: "pending" | "dispatched" | "in_transit" | "delivered" | "delayed" | "cancelled";
+  total: number; // ARS
+  items: NormalizedOrderItem[];
+}
+
+/**
  * Error de integración
  */
 export class IntegrationError extends Error {

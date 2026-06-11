@@ -5,6 +5,7 @@ import {
   MetricsOptions,
   MetricData,
   CredentialValue,
+  NormalizedOrder,
 } from "./types";
 import { Platform } from "@prisma/client";
 
@@ -12,6 +13,51 @@ interface MercadoLibreCredentials {
   accessToken: string;
   userId?: string;
   refreshToken?: string;
+  clientId?: string;
+  clientSecret?: string;
+  expiresAt?: string;
+  sellerId?: string;
+  channelKey?: "meli_1" | "meli_2";
+  channelLabel?: string;
+}
+
+export interface MeliRefreshedTokens {
+  accessToken: string;
+  refreshToken?: string;
+  expiresAt: string;
+}
+
+export type MeliTokenRefreshHandler = (tokens: MeliRefreshedTokens) => void | Promise<void>;
+
+/**
+ * Mapea status de orden + status de envío a los buckets genéricos del
+ * dashboard (Live / Logística).
+ */
+function meliStatusBucket(status: string, shippingStatus?: string): NormalizedOrder["statusBucket"] {
+  if (status === "cancelled" || status === "invalid") return "cancelled";
+
+  switch (shippingStatus) {
+    case "delivered":
+      return "delivered";
+    case "shipped":
+      return "in_transit";
+    case "ready_to_ship":
+    case "handling":
+      return "dispatched";
+    case "pending":
+    case "not_delivered":
+      return "pending";
+  }
+
+  switch (status) {
+    case "payment_required":
+    case "payment_in_process":
+      return "pending";
+    case "paid":
+    case "confirmed":
+    default:
+      return "dispatched";
+  }
 }
 
 /**
@@ -22,9 +68,25 @@ export class MercadoLibreClient implements IntegrationClient {
   platform = Platform.MERCADO_LIBRE;
   private client: AxiosInstance;
   private accessToken: string;
+  private refreshToken?: string;
+  private clientId?: string;
+  private clientSecret?: string;
+  private expiresAt?: string;
+  private sellerId?: string;
+  private channelKey: "meli_1" | "meli_2";
+  private channelLabel: string;
+  private onTokenRefresh?: MeliTokenRefreshHandler;
 
-  constructor(credentials: MercadoLibreCredentials) {
+  constructor(credentials: MercadoLibreCredentials, onTokenRefresh?: MeliTokenRefreshHandler) {
     this.accessToken = credentials.accessToken;
+    this.refreshToken = credentials.refreshToken;
+    this.clientId = credentials.clientId;
+    this.clientSecret = credentials.clientSecret;
+    this.expiresAt = credentials.expiresAt;
+    this.sellerId = credentials.sellerId;
+    this.channelKey = credentials.channelKey ?? "meli_1";
+    this.channelLabel = credentials.channelLabel ?? "MercadoLibre";
+    this.onTokenRefresh = onTokenRefresh;
 
     this.client = axios.create({
       baseURL: "https://api.mercadolibre.com",
@@ -36,10 +98,66 @@ export class MercadoLibreClient implements IntegrationClient {
   }
 
   /**
+   * Refresca el access token si está vencido (o por vencer) usando el
+   * refresh_token + client_id/client_secret. Si se proveyó
+   * `onTokenRefresh`, se notifican los nuevos tokens para persistirlos.
+   */
+  private async ensureFreshToken(): Promise<void> {
+    if (!this.refreshToken || !this.clientId || !this.clientSecret) return;
+
+    const expiresAtMs = this.expiresAt ? new Date(this.expiresAt).getTime() : 0;
+    const fiveMinutes = 5 * 60 * 1000;
+    if (expiresAtMs - Date.now() > fiveMinutes) return;
+
+    try {
+      const body = new URLSearchParams({
+        grant_type: "refresh_token",
+        client_id: this.clientId,
+        client_secret: this.clientSecret,
+        refresh_token: this.refreshToken,
+      });
+
+      const response = await axios.post("https://api.mercadolibre.com/oauth/token", body.toString(), {
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          Accept: "application/json",
+        },
+      });
+
+      const { access_token, refresh_token, expires_in } = response.data;
+      this.accessToken = access_token;
+      this.refreshToken = refresh_token ?? this.refreshToken;
+      this.expiresAt = new Date(Date.now() + (expires_in ?? 21600) * 1000).toISOString();
+      this.client.defaults.headers.common.Authorization = `Bearer ${this.accessToken}`;
+
+      if (this.onTokenRefresh) {
+        await this.onTokenRefresh({
+          accessToken: this.accessToken,
+          refreshToken: this.refreshToken,
+          expiresAt: this.expiresAt,
+        });
+      }
+    } catch (error) {
+      console.warn("No se pudo refrescar el token de Mercado Libre:", error);
+    }
+  }
+
+  /**
+   * Resuelve (y cachea) el ID numérico del vendedor.
+   */
+  private async getSellerId(): Promise<string> {
+    if (this.sellerId) return this.sellerId;
+    const { data } = await this.client.get("/users/me");
+    this.sellerId = String(data.id);
+    return this.sellerId;
+  }
+
+  /**
    * Test de conexión
    */
   async testConnection(): Promise<boolean> {
     try {
+      await this.ensureFreshToken();
       // GET /users/me - obtener datos del usuario actual
       const response = await this.client.get("/users/me");
       return response.status === 200;
@@ -51,6 +169,73 @@ export class MercadoLibreClient implements IntegrationClient {
         error
       );
     }
+  }
+
+  /**
+   * Trae las órdenes creadas en el rango [dateFrom, dateTo] normalizadas
+   * para el dashboard (KPIs, serie diaria, heatmap, logística, live feed).
+   */
+  async getOrders(
+    dateFrom: Date,
+    dateTo: Date,
+    options: { maxPages?: number } = {}
+  ): Promise<NormalizedOrder[]> {
+    await this.ensureFreshToken();
+    const sellerId = await this.getSellerId();
+
+    const limit = 50;
+    const maxPages = options.maxPages ?? 10; // hasta 500 órdenes
+    const raw: any[] = [];
+
+    for (let page = 0; page < maxPages; page++) {
+      const offset = page * limit;
+      let data: any;
+      try {
+        const response = await this.client.get("/orders/search", {
+          params: {
+            seller: sellerId,
+            "order.date_created.from": dateFrom.toISOString(),
+            "order.date_created.to": dateTo.toISOString(),
+            sort: "date_desc",
+            limit,
+            offset,
+          },
+        });
+        data = response.data;
+      } catch (error) {
+        if (page === 0) {
+          throw new IntegrationError(
+            this.platform,
+            "Failed to fetch Mercado Libre orders",
+            axios.isAxiosError(error) ? error.response?.status : undefined,
+            error
+          );
+        }
+        break;
+      }
+
+      const results: any[] = data?.results ?? [];
+      raw.push(...results);
+
+      const total = data?.paging?.total ?? results.length;
+      if (offset + limit >= total || results.length === 0) break;
+    }
+
+    return raw.map((o) => ({
+      id: String(o.id),
+      channelKey: this.channelKey,
+      channel: this.channelLabel,
+      date: o.date_created,
+      status: o.status,
+      statusBucket: meliStatusBucket(o.status, o.shipping?.status),
+      total: Number(o.total_amount ?? o.paid_amount ?? 0),
+      items: (o.order_items ?? []).map((it: any) => ({
+        sku: it.item?.seller_sku || it.item?.id || "—",
+        name: it.item?.title ?? "Producto",
+        qty: Number(it.quantity ?? 1),
+        unitPrice: Number(it.unit_price ?? it.full_unit_price ?? 0),
+      })),
+    }));
   }
 
   /**
@@ -176,35 +361,46 @@ export class MercadoLibreClient implements IntegrationClient {
    * Parse credentials
    */
   private parseCredentials(creds: CredentialValue): MercadoLibreCredentials {
-    if (typeof creds === "string") {
-      const parsed = JSON.parse(creds);
-      return {
-        accessToken: parsed.accessToken,
-        userId: parsed.userId,
-        refreshToken: parsed.refreshToken,
-      };
-    }
-
+    const parsed: any = typeof creds === "string" ? JSON.parse(creds) : creds;
     return {
-      accessToken: creds.accessToken as string,
-      userId: creds.userId as string,
-      refreshToken: creds.refreshToken as string,
+      accessToken: parsed.accessToken,
+      userId: parsed.userId,
+      refreshToken: parsed.refreshToken,
+      clientId: parsed.clientId,
+      clientSecret: parsed.clientSecret,
+      expiresAt: parsed.expiresAt,
+      sellerId: parsed.sellerId,
+      channelKey: parsed.channelKey,
+      channelLabel: parsed.channelLabel,
     };
   }
 }
 
 /**
- * Factory para crear cliente Mercado Libre
+ * Factory para crear cliente Mercado Libre. `credentials` puede incluir
+ * clientId/clientSecret/expiresAt/sellerId/channelKey/channelLabel para
+ * habilitar el refresh automático de tokens y la normalización de
+ * órdenes; `onTokenRefresh` permite persistir los tokens renovados.
  */
 export function createMercadoLibreClient(
-  credentials: CredentialValue
+  credentials: CredentialValue,
+  onTokenRefresh?: MeliTokenRefreshHandler
 ): MercadoLibreClient {
-  const creds =
+  const creds: any =
     typeof credentials === "string" ? JSON.parse(credentials) : credentials;
 
-  return new MercadoLibreClient({
-    accessToken: creds.accessToken,
-    userId: creds.userId,
-    refreshToken: creds.refreshToken,
-  });
+  return new MercadoLibreClient(
+    {
+      accessToken: creds.accessToken,
+      userId: creds.userId,
+      refreshToken: creds.refreshToken,
+      clientId: creds.clientId,
+      clientSecret: creds.clientSecret,
+      expiresAt: creds.expiresAt,
+      sellerId: creds.sellerId,
+      channelKey: creds.channelKey,
+      channelLabel: creds.channelLabel,
+    },
+    onTokenRefresh
+  );
 }
