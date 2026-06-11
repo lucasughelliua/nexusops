@@ -84,5 +84,5 @@ export async function POST(request: NextRequest) {
   }
 
   const channels = await getAllChannelStatuses();
-  return NextResponse.json({ tested, success, channels });
+  return NextResponse.json({ tested, success, channels, testError: testError ?? undefined });
 }
