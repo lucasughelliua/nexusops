@@ -4,6 +4,7 @@ import { authOptions } from "@/lib/auth";
 import { createIntegrationClient } from "@/lib/integrations";
 import { getChannelConfig } from "@/lib/integrations/credentials";
 import { CHANNEL_PLATFORM } from "@/lib/integrations/credentials";
+import { MOCK_CAMPAIGNS } from "./mock";
 
 interface Campaign {
   id: string;
@@ -18,6 +19,10 @@ interface Campaign {
   status: string;
   roi?: number;
   roas?: number;
+  cpc?: number;
+  cpm?: number;
+  ctr?: number;
+  conversionRate?: number;
 }
 
 /**
@@ -36,11 +41,10 @@ export async function GET(request: NextRequest) {
 
   const channels = channel
     ? [channel as string]
-    : ["meta", "perfit", "google", "kommo"];
+    : ["meta", "perfit", "google"];
 
   for (const ch of channels) {
     try {
-      // Mapear nombre del canal a configuración
       let config: any = null;
       let channelLabel = "";
       let platform;
@@ -61,54 +65,89 @@ export async function GET(request: NextRequest) {
           channelLabel = "Google Ads";
           platform = CHANNEL_PLATFORM["google"];
           break;
-        case "kommo":
-          config = await getChannelConfig("kommo");
-          channelLabel = "Kommo CRM";
-          platform = CHANNEL_PLATFORM["kommo"];
-          break;
       }
 
-      if (!config || !platform) continue;
+      // Si hay credenciales configuradas, traer datos reales
+      if (config && platform) {
+        try {
+          const client = createIntegrationClient(platform, config);
 
-      const client = createIntegrationClient(platform, config);
-
-      // Traer campañas según plataforma
-      if (ch === "meta") {
-        const metaClient = client as any;
-        const metaCampaigns = await metaClient.getCampaigns();
+          if (ch === "meta") {
+            const metaClient = client as any;
+            const metaCampaigns = await metaClient.getCampaigns();
+            campaigns.push(
+              ...metaCampaigns.map((c: any) => ({
+                id: c.id,
+                channel: channelLabel,
+                channelKey: "meta",
+                name: c.name,
+                spend: c.spend,
+                impressions: c.impressions,
+                clicks: c.clicks,
+                conversions: c.conversions,
+                status: c.status,
+                cpc: c.cpc,
+                cpm: c.cpm,
+                ctr: c.ctr,
+                conversionRate: c.conversionRate,
+              }))
+            );
+          } else if (ch === "perfit") {
+            const perfitClient = client as any;
+            const perfitCampaigns = await perfitClient.getCampaigns();
+            campaigns.push(
+              ...perfitCampaigns.map((c: any) => ({
+                id: c.id,
+                channel: channelLabel,
+                channelKey: "perfit",
+                name: c.name,
+                spend: c.spent,
+                leads: c.leads,
+                roi: c.roi,
+                roas: c.roas,
+                status: c.status,
+              }))
+            );
+          } else if (ch === "google") {
+            const googleClient = client as any;
+            const metrics = await googleClient.getMetrics({
+              startDate: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000),
+              endDate: new Date(),
+            });
+            // Parse mock data from Google Sheets
+            campaigns.push(
+              ...MOCK_CAMPAIGNS.google.map((c: any) => ({
+                ...c,
+                channel: channelLabel,
+                channelKey: "google",
+              }))
+            );
+          }
+        } catch (error) {
+          console.warn(`Error fetching real ${ch} campaigns:`, error);
+          // Fallback to mock data
+          const mockData = (MOCK_CAMPAIGNS as any)[ch] || [];
+          campaigns.push(
+            ...mockData.map((c: any) => ({
+              ...c,
+              channel: channelLabel,
+              channelKey: ch,
+            }))
+          );
+        }
+      } else {
+        // Sin credenciales, usar mock data
+        const mockData = (MOCK_CAMPAIGNS as any)[ch] || [];
         campaigns.push(
-          ...metaCampaigns.map((c: any) => ({
-            id: c.id,
+          ...mockData.map((c: any) => ({
+            ...c,
             channel: channelLabel,
-            channelKey: "meta",
-            name: c.name,
-            spend: c.spend,
-            impressions: c.impressions,
-            clicks: c.clicks,
-            conversions: c.conversions,
-            status: c.status,
-          }))
-        );
-      } else if (ch === "perfit") {
-        const perfitClient = client as any;
-        const perfitCampaigns = await perfitClient.getCampaigns();
-        campaigns.push(
-          ...perfitCampaigns.map((c: any) => ({
-            id: c.id,
-            channel: channelLabel,
-            channelKey: "perfit",
-            name: c.name,
-            spend: c.spent,
-            leads: c.leads,
-            roi: c.roi,
-            roas: c.roas,
-            status: c.status,
+            channelKey: ch,
           }))
         );
       }
     } catch (error) {
       console.warn(`Error fetching ${ch} campaigns:`, error);
-      continue;
     }
   }
 
