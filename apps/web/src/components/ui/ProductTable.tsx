@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { fmtARSCompact, fmtNum } from '@/lib/utils'
 import { type TopProduct } from '@/types'
 
@@ -18,6 +18,9 @@ const CHANNEL_PILL: Record<string, string> = {
   'MeLi Sporta': 'bg-teal-900/30 text-teal-400 border border-teal-800/40',
 }
 
+type SortColumn = 'name' | 'qty' | 'revenue' | 'pct'
+type SortDirection = 'asc' | 'desc'
+
 export default function ProductTable({
   products,
   total,
@@ -26,7 +29,58 @@ export default function ProductTable({
   pageSize = 20,
 }: ProductTableProps) {
   const [currentPage, setCurrentPage] = useState(1)
+  const [sortColumn, setSortColumn] = useState<SortColumn>('revenue')
+  const [sortDirection, setSortDirection] = useState<SortDirection>('desc')
   const totalPages = Math.max(1, Math.ceil(total / pageSize))
+
+  const sortedProducts = useMemo(() => {
+    const sorted = [...products]
+    sorted.sort((a, b) => {
+      let aVal: number | string = 0
+      let bVal: number | string = 0
+
+      switch (sortColumn) {
+        case 'name':
+          aVal = a.name.toLowerCase()
+          bVal = b.name.toLowerCase()
+          break
+        case 'qty':
+          aVal = a.qty
+          bVal = b.qty
+          break
+        case 'revenue':
+          aVal = a.revenue
+          bVal = b.revenue
+          break
+        case 'pct':
+          aVal = a.pct
+          bVal = b.pct
+          break
+      }
+
+      const comparison = aVal < bVal ? -1 : aVal > bVal ? 1 : 0
+      return sortDirection === 'asc' ? comparison : -comparison
+    })
+    return sorted
+  }, [products, sortColumn, sortDirection])
+
+  function toggleSort(column: SortColumn) {
+    if (sortColumn === column) {
+      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc')
+    } else {
+      setSortColumn(column)
+      setSortDirection('desc')
+    }
+  }
+
+  const SortIcon = ({ column }: { column: SortColumn }) => {
+    if (sortColumn !== column) return <span className="text-gray-600 text-xs ml-1">↕</span>
+    return (
+      <span className={`text-[#00A651] text-xs ml-1 ${sortDirection === 'asc' ? '' : 'rotate-180'}`}>
+        {sortDirection === 'asc' ? '↑' : '↓'}
+      </span>
+    )
+  }
 
   function goToPage(page: number) {
     setCurrentPage(page)
@@ -52,11 +106,31 @@ export default function ProductTable({
           <thead>
             <tr className="bg-[#071409]">
               <th className="px-5 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-gray-500">#</th>
-              <th className="px-3 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-gray-500">Producto</th>
+              <th
+                className="px-3 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-gray-500 cursor-pointer hover:text-gray-300 transition-colors"
+                onClick={() => toggleSort('name')}
+              >
+                Producto <SortIcon column="name" />
+              </th>
               <th className="px-3 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-gray-500">Canal</th>
-              <th className="px-3 py-3 text-right text-[11px] font-semibold uppercase tracking-wider text-gray-500">Unidades</th>
-              <th className="px-3 py-3 text-right text-[11px] font-semibold uppercase tracking-wider text-gray-500">Revenue</th>
-              <th className="px-5 py-3 text-right text-[11px] font-semibold uppercase tracking-wider text-gray-500">% Total</th>
+              <th
+                className="px-3 py-3 text-right text-[11px] font-semibold uppercase tracking-wider text-gray-500 cursor-pointer hover:text-gray-300 transition-colors"
+                onClick={() => toggleSort('qty')}
+              >
+                Unidades <SortIcon column="qty" />
+              </th>
+              <th
+                className="px-3 py-3 text-right text-[11px] font-semibold uppercase tracking-wider text-gray-500 cursor-pointer hover:text-gray-300 transition-colors"
+                onClick={() => toggleSort('revenue')}
+              >
+                Revenue <SortIcon column="revenue" />
+              </th>
+              <th
+                className="px-5 py-3 text-right text-[11px] font-semibold uppercase tracking-wider text-gray-500 cursor-pointer hover:text-gray-300 transition-colors"
+                onClick={() => toggleSort('pct')}
+              >
+                % Total <SortIcon column="pct" />
+              </th>
             </tr>
           </thead>
           <tbody>
@@ -70,7 +144,7 @@ export default function ProductTable({
                     ))}
                   </tr>
                 ))
-              : products.map((p, i) => (
+              : sortedProducts.map((p, i) => (
                   <tr
                     key={p.id}
                     className="border-t border-[rgba(0,166,81,0.06)] hover:bg-[#112011] transition-colors"
