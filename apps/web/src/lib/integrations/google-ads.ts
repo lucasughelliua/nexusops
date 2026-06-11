@@ -1,4 +1,4 @@
-import axios, { AxiosInstance } from "axios";
+import axios from "axios";
 import {
   IntegrationClient,
   IntegrationError,
@@ -9,40 +9,54 @@ import {
 import { Platform } from "@prisma/client";
 
 interface GoogleAdsCredentials {
-  customerId: string;
-  accessToken: string;
-  developerToken: string;
+  sheetsUrl: string;
+  apiKey: string;
 }
 
-/**
- * Google Ads Integration Client
- */
+export interface GoogleAdsCampaign {
+  id: string;
+  name: string;
+  spend: number;
+  impressions: number;
+  clicks: number;
+  conversions: number;
+  cpc: number;
+  cpm: number;
+  roi: number;
+}
+
 export class GoogleAdsClient implements IntegrationClient {
   platform = Platform.GOOGLE_ADS;
-  private client: AxiosInstance;
+  private sheetsUrl: string;
+  private apiKey: string;
+  private spreadsheetId: string;
 
   constructor(credentials: GoogleAdsCredentials) {
-    this.client = axios.create({
-      baseURL: "https://googleads.googleapis.com/v13",
-      headers: {
-        Authorization: `Bearer ${credentials.accessToken}`,
-        "developer-token": credentials.developerToken,
-        "Content-Type": "application/json",
-      },
-    });
+    this.sheetsUrl = credentials.sheetsUrl;
+    this.apiKey = credentials.apiKey;
+    // Extraer spreadsheet ID de la URL
+    const match = credentials.sheetsUrl.match(/\/spreadsheets\/d\/([^\/]+)/);
+    this.spreadsheetId = match ? match[1] : "";
   }
 
   async testConnection(): Promise<boolean> {
     try {
-      // Test con un simple GET de campaigns
-      const response = await this.client.post("/customers/search", {
-        query: "SELECT customer.id LIMIT 1",
-      });
+      if (!this.spreadsheetId) {
+        throw new Error("Invalid Google Sheets URL");
+      }
+
+      const response = await axios.get(
+        `https://sheets.googleapis.com/v4/spreadsheets/${this.spreadsheetId}`,
+        {
+          params: { key: this.apiKey },
+        }
+      );
+
       return response.status === 200;
     } catch (error) {
       throw new IntegrationError(
         this.platform,
-        "Failed to connect to Google Ads",
+        "Failed to connect to Google Sheets",
         axios.isAxiosError(error) ? error.response?.status : undefined,
         error
       );
@@ -60,68 +74,37 @@ export class GoogleAdsClient implements IntegrationClient {
   }
 
   async getMetrics(options: MetricsOptions): Promise<MetricData[]> {
-    const metrics: MetricData[] = [];
-
     try {
-      // Obtener métricas de campañas
-      const campaignsMetrics = await this.getCampaignMetrics(options);
-      metrics.push(...campaignsMetrics);
+      if (!this.spreadsheetId) {
+        return [];
+      }
 
-      return metrics;
-    } catch (error) {
-      throw new IntegrationError(
-        this.platform,
-        `Failed to fetch metrics: ${error instanceof Error ? error.message : String(error)}`,
-        undefined,
-        error
-      );
-    }
-  }
-
-  private async getCampaignMetrics(
-    options: MetricsOptions
-  ): Promise<MetricData[]> {
-    const metrics: MetricData[] = [];
-
-    try {
-      // Query GAQL para obtener métricas de campañas
-      const query = `
-        SELECT campaign.name, metrics.impressions, metrics.clicks, metrics.cost_micros
-        FROM campaign
-        WHERE campaign.status = 'ENABLED'
-      `;
-
-      const response = await this.client.post("/customers/search", {
-        query,
-      });
-
-      if (response.data?.results) {
-        for (const result of response.data.results) {
-          const metrics_data = result.campaign?.metrics;
-          if (metrics_data) {
-            metrics.push({
-              metricType: "impressions",
-              value: parseInt(metrics_data.impressions) || 0,
-              date: new Date(),
-              dimensions: { campaign_name: result.campaign.name },
-            });
-
-            metrics.push({
-              metricType: "clicks",
-              value: parseInt(metrics_data.clicks) || 0,
-              date: new Date(),
-              dimensions: { campaign_name: result.campaign.name },
-            });
-
-            metrics.push({
-              metricType: "spend",
-              value: (metrics_data.cost_micros || 0) / 1000000,
-              date: new Date(),
-              currency: "USD",
-              dimensions: { campaign_name: result.campaign.name },
-            });
-          }
+      // Leer datos de la primer sheet (Google Ads campaigns)
+      const response = await axios.get(
+        `https://sheets.googleapis.com/v4/spreadsheets/${this.spreadsheetId}/values/A1:H100`,
+        {
+          params: { key: this.apiKey },
         }
+      );
+
+      const rows = response.data?.values || [];
+      const metrics: MetricData[] = [];
+
+      // Saltear header (fila 0) y procesar filas
+      for (let i = 1; i < rows.length; i++) {
+        const row = rows[i];
+        if (!row || row.length < 2) continue;
+
+        const spend = parseFloat(row[2] || "0");
+        metrics.push({
+          metricType: "campaign_spend",
+          value: spend,
+          date: new Date(),
+          dimensions: {
+            campaign: row[0],
+            platform: "google_ads",
+          },
+        });
       }
 
       return metrics;
@@ -132,32 +115,18 @@ export class GoogleAdsClient implements IntegrationClient {
   }
 
   private parseCredentials(creds: CredentialValue): GoogleAdsCredentials {
-    if (typeof creds === "string") {
-      const parsed = JSON.parse(creds);
-      return {
-        customerId: parsed.customerId,
-        accessToken: parsed.accessToken,
-        developerToken: parsed.developerToken,
-      };
-    }
-
+    const parsed = typeof creds === "string" ? JSON.parse(creds) : creds;
     return {
-      customerId: creds.customerId as string,
-      accessToken: creds.accessToken as string,
-      developerToken: creds.developerToken as string,
+      sheetsUrl: parsed.sheetsUrl,
+      apiKey: parsed.apiKey,
     };
   }
 }
 
-export function createGoogleAdsClient(
-  credentials: CredentialValue
-): GoogleAdsClient {
-  const creds =
-    typeof credentials === "string" ? JSON.parse(credentials) : credentials;
-
+export function createGoogleAdsClient(credentials: CredentialValue): GoogleAdsClient {
+  const creds = typeof credentials === "string" ? JSON.parse(credentials) : credentials;
   return new GoogleAdsClient({
-    customerId: creds.customerId,
-    accessToken: creds.accessToken,
-    developerToken: creds.developerToken,
+    sheetsUrl: creds.sheetsUrl,
+    apiKey: creds.apiKey,
   });
 }

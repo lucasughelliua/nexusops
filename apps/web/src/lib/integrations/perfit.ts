@@ -9,19 +9,29 @@ import {
 import { Platform } from "@prisma/client";
 
 interface PerfitCredentials {
+  subdomain: string;
   apiKey: string;
 }
 
-/**
- * Perfit Integration Client
- */
+export interface PerfitCampaign {
+  id: string;
+  name: string;
+  status: "active" | "paused" | "completed" | "archived";
+  budget: number;
+  spent: number;
+  leads: number;
+  costPerLead: number;
+  roi: number;
+  roas: number;
+}
+
 export class PerfitClient implements IntegrationClient {
   platform = Platform.PERFIT;
   private client: AxiosInstance;
 
   constructor(credentials: PerfitCredentials) {
     this.client = axios.create({
-      baseURL: "https://api.perfit.com.br/v1",
+      baseURL: `https://${credentials.subdomain}.myperfit.com/api/v1`,
       headers: {
         Authorization: `Bearer ${credentials.apiKey}`,
         "Content-Type": "application/json",
@@ -31,12 +41,46 @@ export class PerfitClient implements IntegrationClient {
 
   async testConnection(): Promise<boolean> {
     try {
-      const response = await this.client.get("/account");
+      const response = await this.client.get("/me");
       return response.status === 200;
     } catch (error) {
       throw new IntegrationError(
         this.platform,
         "Failed to connect to Perfit",
+        axios.isAxiosError(error) ? error.response?.status : undefined,
+        error
+      );
+    }
+  }
+
+  async getCampaigns(dateFrom?: Date, dateTo?: Date): Promise<PerfitCampaign[]> {
+    try {
+      const params: Record<string, any> = {
+        limit: 100,
+      };
+
+      if (dateFrom && dateTo) {
+        params.date_from = dateFrom.toISOString().split("T")[0];
+        params.date_to = dateTo.toISOString().split("T")[0];
+      }
+
+      const response = await this.client.get("/campaigns", { params });
+
+      return (response.data?.campaigns || []).map((c: any) => ({
+        id: c.id,
+        name: c.name,
+        status: c.status,
+        budget: parseFloat(c.budget || "0"),
+        spent: parseFloat(c.spent || "0"),
+        leads: parseInt(c.leads || "0"),
+        costPerLead: parseFloat(c.cost_per_lead || "0"),
+        roi: parseFloat(c.roi || "0"),
+        roas: parseFloat(c.roas || "0"),
+      }));
+    } catch (error) {
+      throw new IntegrationError(
+        this.platform,
+        "Failed to fetch Perfit campaigns",
         axios.isAxiosError(error) ? error.response?.status : undefined,
         error
       );
@@ -54,113 +98,33 @@ export class PerfitClient implements IntegrationClient {
   }
 
   async getMetrics(options: MetricsOptions): Promise<MetricData[]> {
-    const metrics: MetricData[] = [];
-
-    try {
-      // Obtener métricas de campaña
-      const campaignMetrics = await this.getCampaignMetrics(options);
-      metrics.push(...campaignMetrics);
-
-      return metrics;
-    } catch (error) {
-      throw new IntegrationError(
-        this.platform,
-        `Failed to fetch metrics: ${error instanceof Error ? error.message : String(error)}`,
-        undefined,
-        error
-      );
-    }
-  }
-
-  private async getCampaignMetrics(
-    options: MetricsOptions
-  ): Promise<MetricData[]> {
-    const metrics: MetricData[] = [];
-
-    try {
-      // GET /campaigns
-      const response = await this.client.get("/campaigns", {
-        params: {
-          limit: 100,
-          period: {
-            from: options.startDate.toISOString().split("T")[0],
-            to: options.endDate.toISOString().split("T")[0],
-          },
-        },
-      });
-
-      if (response.data?.campaigns) {
-        const campaigns = response.data.campaigns;
-
-        for (const campaign of campaigns) {
-          const stats = campaign.stats;
-
-          if (stats?.sent) {
-            metrics.push({
-              metricType: "emails_sent",
-              value: stats.sent,
-              date: new Date(),
-              dimensions: { campaign_name: campaign.name },
-            });
-          }
-
-          if (stats?.opens) {
-            metrics.push({
-              metricType: "emails_opened",
-              value: stats.opens,
-              date: new Date(),
-              dimensions: { campaign_name: campaign.name },
-            });
-
-            // Calcular open rate
-            if (stats.sent > 0) {
-              const openRate = (stats.opens / stats.sent) * 100;
-              metrics.push({
-                metricType: "open_rate",
-                value: openRate,
-                date: new Date(),
-                dimensions: { campaign_name: campaign.name },
-              });
-            }
-          }
-
-          if (stats?.clicks) {
-            metrics.push({
-              metricType: "clicks",
-              value: stats.clicks,
-              date: new Date(),
-              dimensions: { campaign_name: campaign.name },
-            });
-          }
-        }
-      }
-
-      return metrics;
-    } catch (error) {
-      console.warn("Error fetching Perfit metrics:", error);
-      return [];
-    }
+    const campaigns = await this.getCampaigns(options.startDate, options.endDate);
+    return campaigns.map((c) => ({
+      metricType: "campaign_spend",
+      value: c.spent,
+      date: new Date(),
+      dimensions: {
+        campaignId: c.id,
+        campaignName: c.name,
+        platform: "perfit",
+      },
+      rawData: c,
+    }));
   }
 
   private parseCredentials(creds: CredentialValue): PerfitCredentials {
-    if (typeof creds === "string") {
-      const parsed = JSON.parse(creds);
-      return {
-        apiKey: parsed.apiKey,
-      };
-    }
-
+    const parsed = typeof creds === "string" ? JSON.parse(creds) : creds;
     return {
-      apiKey: creds.apiKey as string,
+      subdomain: parsed.subdomain,
+      apiKey: parsed.apiKey,
     };
   }
 }
 
 export function createPerfitClient(credentials: CredentialValue): PerfitClient {
-  const creds =
-    typeof credentials === "string" ? JSON.parse(credentials) : credentials;
-
+  const creds = typeof credentials === "string" ? JSON.parse(credentials) : credentials;
   return new PerfitClient({
+    subdomain: creds.subdomain,
     apiKey: creds.apiKey,
   });
 }

@@ -9,23 +9,31 @@ import {
 import { Platform } from "@prisma/client";
 
 interface MetaCredentials {
+  adAccountId: string;
   accessToken: string;
-  businessAccountId: string;
-  adAccountId?: string;
 }
 
-/**
- * Meta (Facebook/Instagram) Ads Integration Client
- */
+export interface MetaCampaign {
+  id: string;
+  name: string;
+  status: "ACTIVE" | "PAUSED" | "DELETED" | "ARCHIVED";
+  spend: number;
+  impressions: number;
+  clicks: number;
+  conversions: number;
+  cpc: number;
+  cpm: number;
+  ctr: number;
+  conversionRate: number;
+}
+
 export class MetaClient implements IntegrationClient {
   platform = Platform.META;
   private client: AxiosInstance;
-  private accessToken: string;
-  private businessAccountId: string;
+  private adAccountId: string;
 
   constructor(credentials: MetaCredentials) {
-    this.accessToken = credentials.accessToken;
-    this.businessAccountId = credentials.businessAccountId;
+    this.adAccountId = credentials.adAccountId.replace("act_", "");
 
     this.client = axios.create({
       baseURL: "https://graph.instagram.com/v18.0",
@@ -35,12 +43,11 @@ export class MetaClient implements IntegrationClient {
     });
   }
 
-  /**
-   * Test de conexión
-   */
   async testConnection(): Promise<boolean> {
     try {
-      const response = await this.client.get(`/${this.businessAccountId}`);
+      const response = await this.client.get(`/act_${this.adAccountId}`, {
+        params: { fields: "id,name" },
+      });
       return response.status === 200;
     } catch (error) {
       throw new IntegrationError(
@@ -52,9 +59,63 @@ export class MetaClient implements IntegrationClient {
     }
   }
 
-  /**
-   * Validar credenciales
-   */
+  async getCampaigns(dateFrom?: Date, dateTo?: Date): Promise<MetaCampaign[]> {
+    try {
+      const params: Record<string, any> = {
+        fields: "id,name,status,insights.date_preset(lifetime){spend,impressions,clicks,actions}",
+      };
+
+      if (dateFrom && dateTo) {
+        params.effective_status = ["ACTIVE", "PAUSED"];
+        params.time_range = {
+          since: dateFrom.toISOString().split("T")[0],
+          until: dateTo.toISOString().split("T")[0],
+        };
+      }
+
+      const response = await this.client.get(`/act_${this.adAccountId}/campaigns`, {
+        params,
+      });
+
+      const campaigns: MetaCampaign[] = [];
+
+      if (response.data?.data) {
+        for (const campaign of response.data.data) {
+          const insights = campaign.insights?.data?.[0] || {};
+          const spend = parseFloat(insights.spend || "0");
+          const impressions = parseInt(insights.impressions || "0");
+          const clicks = parseInt(insights.clicks || "0");
+          const conversions = parseInt(
+            insights.actions?.find((a: any) => a.action_type === "purchase")?.value || "0"
+          );
+
+          campaigns.push({
+            id: campaign.id,
+            name: campaign.name,
+            status: campaign.status,
+            spend,
+            impressions,
+            clicks,
+            conversions,
+            cpc: clicks > 0 ? spend / clicks : 0,
+            cpm: impressions > 0 ? (spend / impressions) * 1000 : 0,
+            ctr: impressions > 0 ? (clicks / impressions) * 100 : 0,
+            conversionRate: clicks > 0 ? (conversions / clicks) * 100 : 0,
+          });
+        }
+      }
+
+      return campaigns;
+    } catch (error) {
+      throw new IntegrationError(
+        this.platform,
+        "Failed to fetch Meta campaigns",
+        axios.isAxiosError(error) ? error.response?.status : undefined,
+        error
+      );
+    }
+  }
+
   async validateCredentials(creds: CredentialValue): Promise<boolean> {
     try {
       const credentials = this.parseCredentials(creds);
@@ -65,133 +126,34 @@ export class MetaClient implements IntegrationClient {
     }
   }
 
-  /**
-   * Obtener métricas
-   */
   async getMetrics(options: MetricsOptions): Promise<MetricData[]> {
-    const metrics: MetricData[] = [];
-
-    try {
-      // Obtener insights de ad accounts
-      const insightsMetrics = await this.getInsights(options);
-      metrics.push(...insightsMetrics);
-
-      return metrics;
-    } catch (error) {
-      throw new IntegrationError(
-        this.platform,
-        `Failed to fetch metrics: ${error instanceof Error ? error.message : String(error)}`,
-        undefined,
-        error
-      );
-    }
+    const campaigns = await this.getCampaigns(options.startDate, options.endDate);
+    return campaigns.map((c) => ({
+      metricType: "campaign_spend",
+      value: c.spend,
+      date: new Date(),
+      dimensions: {
+        campaignId: c.id,
+        campaignName: c.name,
+        platform: "meta",
+      },
+      rawData: c,
+    }));
   }
 
-  /**
-   * Obtener insights de campañas/ads
-   */
-  private async getInsights(options: MetricsOptions): Promise<MetricData[]> {
-    const metrics: MetricData[] = [];
-
-    try {
-      // GET /{business_account_id}/campaigns/insights
-      const response = await this.client.get(
-        `/${this.businessAccountId}/campaigns`,
-        {
-          params: {
-            fields:
-              "id,name,insights.date_start(${options.startDate.toISOString()}).date_stop(${options.endDate.toISOString()}){impressions,clicks,spend,actions}",
-          },
-        }
-      );
-
-      if (response.data?.data) {
-        // Procesar datos de insights
-        const campaigns = response.data.data;
-
-        for (const campaign of campaigns) {
-          if (campaign.insights?.data) {
-            // Sumar métricas
-            let totalImpressions = 0;
-            let totalClicks = 0;
-            let totalSpend = 0;
-
-            for (const insight of campaign.insights.data) {
-              totalImpressions += insight.impressions || 0;
-              totalClicks += insight.clicks || 0;
-              totalSpend += parseFloat(insight.spend || "0");
-            }
-
-            if (totalImpressions > 0) {
-              metrics.push({
-                metricType: "impressions",
-                value: totalImpressions,
-                date: new Date(),
-                dimensions: { campaign_id: campaign.id, campaign_name: campaign.name },
-                rawData: campaign.insights,
-              });
-            }
-
-            if (totalClicks > 0) {
-              metrics.push({
-                metricType: "clicks",
-                value: totalClicks,
-                date: new Date(),
-                dimensions: { campaign_id: campaign.id, campaign_name: campaign.name },
-              });
-            }
-
-            if (totalSpend > 0) {
-              metrics.push({
-                metricType: "spend",
-                value: totalSpend,
-                date: new Date(),
-                currency: "USD",
-                dimensions: { campaign_id: campaign.id, campaign_name: campaign.name },
-              });
-            }
-          }
-        }
-      }
-
-      return metrics;
-    } catch (error) {
-      console.warn("Error fetching Meta insights:", error);
-      return [];
-    }
-  }
-
-  /**
-   * Parse credentials
-   */
   private parseCredentials(creds: CredentialValue): MetaCredentials {
-    if (typeof creds === "string") {
-      const parsed = JSON.parse(creds);
-      return {
-        accessToken: parsed.accessToken,
-        businessAccountId: parsed.businessAccountId,
-        adAccountId: parsed.adAccountId,
-      };
-    }
-
+    const parsed = typeof creds === "string" ? JSON.parse(creds) : creds;
     return {
-      accessToken: creds.accessToken as string,
-      businessAccountId: creds.businessAccountId as string,
-      adAccountId: creds.adAccountId as string,
+      adAccountId: parsed.adAccountId,
+      accessToken: parsed.accessToken,
     };
   }
 }
 
-/**
- * Factory para crear cliente Meta
- */
 export function createMetaClient(credentials: CredentialValue): MetaClient {
-  const creds =
-    typeof credentials === "string" ? JSON.parse(credentials) : credentials;
-
+  const creds = typeof credentials === "string" ? JSON.parse(credentials) : credentials;
   return new MetaClient({
-    accessToken: creds.accessToken,
-    businessAccountId: creds.businessAccountId,
     adAccountId: creds.adAccountId,
+    accessToken: creds.accessToken,
   });
 }
