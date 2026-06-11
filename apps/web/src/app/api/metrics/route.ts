@@ -90,14 +90,14 @@ function generateMetricsData(dateFrom: string, dateTo: string, channel: string) 
       orders: Math.floor(totalOrders30),
       avg_ticket: Math.round((totalRevenue30 / totalOrders30) * 100) / 100,
       conversion: 2.8,
+      compare: {
+        revenue_delta: 12.5,
+        orders_delta: 8.3,
+      },
     },
     daily,
     heatmap,
     channels: channelSummaries,
-    compare: {
-      revenue_delta: 12.5,
-      orders_delta: 8.3,
-    },
   };
 }
 
