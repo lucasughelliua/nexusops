@@ -17,13 +17,13 @@ const TEST_USERS: Record<
   { passwordHash: string; name: string; role: string; email: string }
 > = {
   "admin@nexusops.local": {
-    passwordHash: "$2a$10$YqpVQPH3S4kzWJlVwcINZuKNW7P0BHoL3GCB8ZL5rHqRMaZLR1eHm", // "Admin@123"
+    passwordHash: "$2b$10$PfNJcSaWrIjcdJvm9EpOLO1FxhiEJM5gHwmdlLmiFVfB4foD81M0q", // "Admin@123"
     name: "Administrador",
     role: "ADMIN",
     email: "admin@nexusops.local",
   },
   "lucas@universoaventura.com": {
-    passwordHash: "$2a$10$YqpVQPH3S4kzWJlVwcINZuKNW7P0BHoL3GCB8ZL5rHqRMaZLR1eHm", // "Admin@123"
+    passwordHash: "$2b$10$PfNJcSaWrIjcdJvm9EpOLO1FxhiEJM5gHwmdlLmiFVfB4foD81M0q", // "Admin@123"
     name: "Lucas",
     role: "ADMIN",
     email: "lucas@universoaventura.com",
