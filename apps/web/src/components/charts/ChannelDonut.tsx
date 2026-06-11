@@ -15,9 +15,9 @@ const CustomTooltip = ({ active, payload }: any) => {
   return (
     <div className="bg-[#071409] border border-[rgba(0,166,81,0.2)] rounded-lg p-3 text-xs shadow-xl">
       <div className="font-semibold text-gray-200 mb-1">{d.label}</div>
-      <div className="text-gray-400">Revenue: <span className="text-gray-200 font-mono">{fmtARSCompact(d.revenue)}</span></div>
-      <div className="text-gray-400">Órdenes: <span className="text-gray-200 font-mono">{d.orders}</span></div>
-      <div className="text-gray-400">% Revenue: <span className="text-gray-200 font-mono">{d.pct_revenue.toFixed(1)}%</span></div>
+      <div className="text-gray-400">Revenue: <span className="text-gray-200 font-mono">{fmtARSCompact(d.revenue ?? 0)}</span></div>
+      <div className="text-gray-400">Órdenes: <span className="text-gray-200 font-mono">{(d.orders ?? 0).toLocaleString('es-AR')}</span></div>
+      <div className="text-gray-400">% Revenue: <span className="text-gray-200 font-mono">{((d.pct_revenue ?? 0).toFixed(1))}%</span></div>
     </div>
   )
 }
@@ -65,8 +65,8 @@ export default function ChannelDonut({ data, title = 'Canales de venta' }: Chann
               <span className="text-gray-400">{ch.label}</span>
             </div>
             <div className="flex items-center gap-4">
-              <span className="text-gray-300 font-mono">{fmtARSCompact(ch.revenue)}</span>
-              <span className="text-gray-500 w-10 text-right">{ch.pct_revenue.toFixed(0)}%</span>
+              <span className="text-gray-300 font-mono">{fmtARSCompact(ch.revenue ?? 0)}</span>
+              <span className="text-gray-500 w-10 text-right">{((ch.pct_revenue ?? 0).toFixed(0))}%</span>
             </div>
           </div>
         ))}
