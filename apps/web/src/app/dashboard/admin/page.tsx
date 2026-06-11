@@ -80,8 +80,8 @@ function AdminPageContent() {
   const [meliMessage, setMeliMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
 
   const [vtexForm, setVtexForm] = useState({ accountName: '', appKey: '', appToken: '' })
-  const [meli1Form, setMeli1Form] = useState({ clientId: '', clientSecret: '' })
-  const [meli2Form, setMeli2Form] = useState({ clientId: '', clientSecret: '' })
+  const [meli1Form, setMeli1Form] = useState({ accessToken: '' })
+  const [meli2Form, setMeli2Form] = useState({ accessToken: '' })
 
   const [metaForm, setMetaForm] = useState({ adAccountId: '', accessToken: '' })
   const [googleForm, setGoogleForm] = useState({ sheetsUrl: '', apiKey: '' })
@@ -461,8 +461,7 @@ function AdminPageContent() {
             { channel: 'meli_2', label: 'MercadoLibre Sporta', form: meli2Form, setForm: setMeli2Form },
           ] as const).map(({ channel, label, form, setForm }) => {
             const status = statusFor(channel)
-            const hasClientId = !!status?.summary?.['Client ID'] && status.summary['Client ID'] !== '—'
-            const isConnected = status?.summary?.['Token'] === 'Conectado ✓'
+            const isConnected = status?.syncStatus === 'SUCCESS'
             return (
               <div key={channel} className="bg-[#0c1a0d] border border-[rgba(0,166,81,0.15)] rounded-xl p-6 space-y-4">
                 <div className="flex items-center justify-between">
@@ -482,47 +481,25 @@ function AdminPageContent() {
                   </div>
                 )}
 
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-xs text-gray-500 mb-1">Client ID (App ID)</label>
-                    <input
-                      value={form.clientId}
-                      onChange={(e) => setForm({ ...form, clientId: e.target.value })}
-                      placeholder={status?.summary?.['Client ID']}
-                      className="w-full bg-[#071409] border border-[rgba(0,166,81,0.2)] rounded-lg px-3 py-2 text-sm text-gray-200 outline-none focus:border-[#00A651] transition-colors font-mono"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs text-gray-500 mb-1">Client Secret</label>
-                    <input
-                      type="password"
-                      value={form.clientSecret}
-                      onChange={(e) => setForm({ ...form, clientSecret: e.target.value })}
-                      className="w-full bg-[#071409] border border-[rgba(0,166,81,0.2)] rounded-lg px-3 py-2 text-sm text-gray-200 outline-none focus:border-[#00A651] transition-colors font-mono"
-                    />
-                  </div>
+                <div>
+                  <label className="block text-xs text-gray-500 mb-1">Access Token (Larga duración)</label>
+                  <input
+                    type="password"
+                    value={form.accessToken}
+                    onChange={(e) => setForm({ ...form, accessToken: e.target.value })}
+                    placeholder="APP_USR-XXXX..."
+                    className="w-full bg-[#071409] border border-[rgba(0,166,81,0.2)] rounded-lg px-3 py-2 text-sm text-gray-200 outline-none focus:border-[#00A651] transition-colors font-mono"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">Pegá el access token de larga duración de MercadoLibre (formato: APP_USR-XXXX...)</p>
                 </div>
                 {status?.syncError && <p className="text-xs text-red-400">{status.syncError}</p>}
-                <div className="flex gap-3">
-                  <button
-                    disabled={savingChannel === channel || !form.clientId || !form.clientSecret}
-                    onClick={() => saveChannel(channel, form)}
-                    className="px-5 py-2.5 bg-[#00A651] text-white rounded-lg text-sm font-semibold hover:bg-[#007A3D] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-                  >
-                    {savingChannel === channel ? 'Guardando…' : 'Guardar credenciales'}
-                  </button>
-                  <a
-                    href={hasClientId ? `/api/integrations/meli/connect?channel=${channel}` : undefined}
-                    aria-disabled={!hasClientId}
-                    className={`px-5 py-2.5 rounded-lg text-sm font-semibold transition-colors ${
-                      hasClientId
-                        ? 'bg-[#1a2e1b] text-gray-200 hover:bg-[#243826] cursor-pointer'
-                        : 'bg-[#1a2e1b] text-gray-600 cursor-not-allowed pointer-events-none'
-                    }`}
-                  >
-                    {isConnected ? 'Reconectar con Mercado Libre' : 'Conectar con Mercado Libre'}
-                  </a>
-                </div>
+                <button
+                  disabled={savingChannel === channel || !form.accessToken}
+                  onClick={() => saveChannel(channel, form)}
+                  className="px-5 py-2.5 bg-[#00A651] text-white rounded-lg text-sm font-semibold hover:bg-[#007A3D] transition-colors disabled:opacity-40 disabled:cursor-not-allowed w-full"
+                >
+                  {savingChannel === channel ? 'Guardando…' : 'Guardar y probar conexión'}
+                </button>
               </div>
             )
           })}
