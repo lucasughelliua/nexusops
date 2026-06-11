@@ -481,16 +481,29 @@ function AdminPageContent() {
                   </div>
                 )}
 
-                <div>
-                  <label className="block text-xs text-gray-500 mb-1">Access Token (Larga duración)</label>
-                  <input
-                    type="password"
-                    value={form.accessToken}
-                    onChange={(e) => setForm({ ...form, accessToken: e.target.value })}
-                    placeholder="APP_USR-XXXX..."
-                    className="w-full bg-[#071409] border border-[rgba(0,166,81,0.2)] rounded-lg px-3 py-2 text-sm text-gray-200 outline-none focus:border-[#00A651] transition-colors font-mono"
-                  />
-                  <p className="text-xs text-gray-500 mt-1">Pegá el access token de larga duración de MercadoLibre (formato: APP_USR-XXXX...)</p>
+                <div className="space-y-3">
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">Access Token (Larga duración)</label>
+                    <input
+                      type="password"
+                      value={form.accessToken}
+                      onChange={(e) => setForm({ ...form, accessToken: e.target.value })}
+                      placeholder="APP_USR-XXXX..."
+                      className="w-full bg-[#071409] border border-[rgba(0,166,81,0.2)] rounded-lg px-3 py-2 text-sm text-gray-200 outline-none focus:border-[#00A651] transition-colors font-mono"
+                    />
+                    <p className="text-xs text-gray-500 mt-1">Formato: APP_USR-XXXX...</p>
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">Seller ID (opcional - para debugging)</label>
+                    <input
+                      type="text"
+                      value={(form as any).sellerId || ''}
+                      onChange={(e) => setForm({ ...form, sellerId: e.target.value } as any)}
+                      placeholder="Ej: 123456789"
+                      className="w-full bg-[#071409] border border-[rgba(0,166,81,0.2)] rounded-lg px-3 py-2 text-sm text-gray-200 outline-none focus:border-[#00A651] transition-colors font-mono"
+                    />
+                    <p className="text-xs text-gray-500 mt-1">Tu ID numérico de vendedor (lo obtiene automáticamente si está vacío)</p>
+                  </div>
                 </div>
                 {status?.syncError && <p className="text-xs text-red-400">{status.syncError}</p>}
                 <button
