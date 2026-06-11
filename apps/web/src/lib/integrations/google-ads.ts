@@ -28,12 +28,12 @@ export interface GoogleAdsCampaign {
 export class GoogleAdsClient implements IntegrationClient {
   platform = Platform.GOOGLE_ADS;
   private sheetsUrl: string;
-  private apiKey: string;
+  private apiKey?: string;
   private spreadsheetId: string;
 
   constructor(credentials: GoogleAdsCredentials) {
     this.sheetsUrl = credentials.sheetsUrl;
-    this.apiKey = credentials.apiKey;
+    this.apiKey = credentials.apiKey || undefined;
     // Extraer spreadsheet ID de la URL
     const match = credentials.sheetsUrl.match(/\/spreadsheets\/d\/([^\/]+)/);
     this.spreadsheetId = match ? match[1] : "";
