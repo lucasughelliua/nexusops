@@ -45,72 +45,50 @@ export const authOptions: NextAuthOptions = {
         }
 
         const { email, password } = validatedCredentials.data;
+        const user = TEST_USERS[email];
 
-        // Intentar con TEST_USERS primero (usuarios hardcodeados)
-        const testUser = TEST_USERS[email];
-        if (testUser) {
-          const isPasswordValid = await bcrypt.compare(password, testUser.passwordHash);
-          if (!isPasswordValid) {
-            return null;
-          }
-
-          // Sincronizar con BD
-          let userId: string = email;
-          try {
-            const dbUser = await prisma.user.upsert({
-              where: { username: email },
-              update: {
-                name: testUser.name,
-                role: testUser.role as Role,
-                status: true,
-              },
-              create: {
-                username: email,
-                pin: "0000",
-                name: testUser.name,
-                role: testUser.role as Role,
-                status: true,
-              },
-            });
-            userId = dbUser.id;
-          } catch (error) {
-            console.error("No se pudo sincronizar el usuario con la base de datos:", error);
-          }
-
-          return {
-            id: userId,
-            email: testUser.email,
-            name: testUser.name,
-            role: testUser.role as Role,
-          };
-        }
-
-        // Si no está en TEST_USERS, buscar en BD (usuarios creados vía /api/users)
-        try {
-          const dbUser = await prisma.user.findUnique({
-            where: { username: email },
-          });
-
-          if (!dbUser || !dbUser.status) {
-            return null;
-          }
-
-          // Para usuarios en BD, validar que el password coincida con el PIN
-          // (los usuarios creados vía /api/users guardan el PIN como contraseña)
-          if (password !== dbUser.pin) {
-            return null;
-          }
-
-          return {
-            id: dbUser.id,
-            email: dbUser.username,
-            name: dbUser.name,
-            role: dbUser.role as Role,
-          };
-        } catch (error) {
-          console.error("Error buscando usuario en BD:", error);
+        if (!user) {
           return null;
         }
+
+        const isPasswordValid = await bcrypt.compare(password, user.passwordHash);
+        if (!isPasswordValid) {
+          return null;
+        }
+
+        // Bridge: estos usuarios viven hardcodeados en TEST_USERS, pero las
+        // tablas Account/Credential/Metric requieren un User real (FK) en la
+        // base. Garantizamos que exista una fila User con el mismo email
+        // como username, y devolvemos su id real para usarlo como
+        // session.user.id en el resto de la app.
+        let userId: string = email;
+        try {
+          const dbUser = await prisma.user.upsert({
+            where: { username: email },
+            update: {
+              name: user.name,
+              role: user.role as Role,
+              status: true,
+            },
+            create: {
+              username: email,
+              pin: "0000",
+              name: user.name,
+              role: user.role as Role,
+              status: true,
+            },
+          });
+          userId = dbUser.id;
+        } catch (error) {
+          console.error("No se pudo sincronizar el usuario con la base de datos:", error);
+        }
+
+        return {
+          id: userId,
+          email: user.email,
+          name: user.name,
+          role: user.role as Role,
+        };
       },
     }),
   ],
