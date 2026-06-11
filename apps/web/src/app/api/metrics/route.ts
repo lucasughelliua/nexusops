@@ -7,8 +7,12 @@ export async function GET(request: NextRequest) {
     const dateFrom = searchParams.get("date_from") || "2024-05-10";
     const dateTo = searchParams.get("date_to") || "2024-06-10";
     const channel = searchParams.get("channel") || "all";
+    const compareFrom = searchParams.get("compare_from") || undefined;
+    const compareTo = searchParams.get("compare_to") || undefined;
+    const statusFilterRaw = searchParams.get("status_filter");
+    const statusFilter = statusFilterRaw ? statusFilterRaw.split(",") : undefined;
 
-    const data = await getMetricsAnalytics(dateFrom, dateTo, channel);
+    const data = await getMetricsAnalytics(dateFrom, dateTo, channel, { compareFrom, compareTo, statusFilter });
 
     return NextResponse.json(data, {
       headers: {

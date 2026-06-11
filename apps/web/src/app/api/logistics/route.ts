@@ -5,8 +5,10 @@ export async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams;
     const channel = searchParams.get("channel") || "all";
+    const statusFilterRaw = searchParams.get("status_filter");
+    const statusFilter = statusFilterRaw ? statusFilterRaw.split(",") : undefined;
 
-    const data = await getLogisticsAnalytics(channel);
+    const data = await getLogisticsAnalytics(channel, { statusFilter });
 
     return NextResponse.json(data, {
       headers: {

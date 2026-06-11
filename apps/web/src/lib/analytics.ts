@@ -185,14 +185,19 @@ function pctChange(current: number, previous: number): number {
 }
 
 // ─── /api/metrics ───────────────────────────────────────────────────────────────
-export async function getMetricsAnalytics(dateFrom: string, dateTo: string, channel: string) {
+export async function getMetricsAnalytics(
+  dateFrom: string,
+  dateTo: string,
+  channel: string,
+  options: { compareFrom?: string; compareTo?: string; statusFilter?: string[] } = {}
+) {
   const channels = resolveChannels(channel);
   const from = new Date(`${dateFrom}T00:00:00.000Z`);
   const to = new Date(`${dateTo}T23:59:59.999Z`);
 
   const periodMs = to.getTime() - from.getTime();
-  const prevTo = new Date(from.getTime() - 1);
-  const prevFrom = new Date(prevTo.getTime() - periodMs);
+  const prevFrom = options.compareFrom ? new Date(`${options.compareFrom}T00:00:00.000Z`) : new Date(from.getTime() - periodMs);
+  const prevTo = options.compareTo ? new Date(`${options.compareTo}T23:59:59.999Z`) : new Date(from.getTime() - 1);
 
   const ordersByChannel: Record<string, NormalizedOrder[]> = {};
   const prevOrdersByChannel: Record<string, NormalizedOrder[]> = {};
@@ -205,8 +210,10 @@ export async function getMetricsAnalytics(dateFrom: string, dateTo: string, chan
   const allOrders = Object.values(ordersByChannel).flat();
   const prevAllOrders = Object.values(prevOrdersByChannel).flat();
 
-  const validOrders = allOrders.filter((o) => o.statusBucket !== "cancelled");
-  const prevValidOrders = prevAllOrders.filter((o) => o.statusBucket !== "cancelled");
+  // Filtrar por estado si se especifica (por defecto excluye canceladas)
+  const statusFilter = options.statusFilter && options.statusFilter.length > 0 ? options.statusFilter : ["pending", "dispatched", "in_transit", "delivered", "delayed"];
+  const validOrders = allOrders.filter((o) => statusFilter.includes(o.statusBucket));
+  const prevValidOrders = prevAllOrders.filter((o) => statusFilter.includes(o.statusBucket));
 
   const revenue = sum(validOrders.map((o) => o.total));
   const prevRevenue = sum(prevValidOrders.map((o) => o.total));
@@ -288,10 +295,16 @@ export async function getMetricsAnalytics(dateFrom: string, dateTo: string, chan
 }
 
 // ─── /api/products ──────────────────────────────────────────────────────────────
-export async function getTopProductsAnalytics(channel: string, offset: number, limit: number) {
+export async function getTopProductsAnalytics(
+  channel: string,
+  offset: number,
+  limit: number,
+  options: { statusFilter?: string[] } = {}
+) {
   const channels = resolveChannels(channel);
   const to = new Date();
   const from = new Date(to.getTime() - 30 * DAY_MS);
+  const statusFilter = options.statusFilter && options.statusFilter.length > 0 ? options.statusFilter : ["pending", "dispatched", "in_transit", "delivered", "delayed"];
 
   const productMap = new Map<
     string,
@@ -302,7 +315,7 @@ export async function getTopProductsAnalytics(channel: string, offset: number, l
     const orders = await getChannelOrders(ch, from, to);
     const channelLabel = CHANNEL_ACCOUNT_NAME[ch];
     for (const o of orders) {
-      if (o.statusBucket === "cancelled") continue;
+      if (!statusFilter.includes(o.statusBucket)) continue;
       for (const item of o.items) {
         const key = `${ch}:${item.sku}`;
         const existing = productMap.get(key);
@@ -339,15 +352,20 @@ export async function getTopProductsAnalytics(channel: string, offset: number, l
 }
 
 // ─── /api/orders (live feed) ─────────────────────────────────────────────────────
-export async function getLiveOrdersAnalytics(channel: string, limit: number) {
+export async function getLiveOrdersAnalytics(
+  channel: string,
+  limit: number,
+  options: { statusFilter?: string[] } = {}
+) {
   const channels = resolveChannels(channel);
   const to = new Date();
   const from = new Date(to.getTime() - DAY_MS);
+  const statusFilter = options.statusFilter && options.statusFilter.length > 0 ? options.statusFilter : ["pending", "dispatched", "in_transit", "delivered", "delayed"];
 
   const allOrders: NormalizedOrder[] = [];
   for (const ch of channels) {
     const orders = await getChannelOrders(ch, from, to);
-    allOrders.push(...orders);
+    allOrders.push(...orders.filter((o) => statusFilter.includes(o.statusBucket)));
   }
 
   const sorted = allOrders.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()).slice(0, limit);
@@ -365,10 +383,14 @@ export async function getLiveOrdersAnalytics(channel: string, limit: number) {
 }
 
 // ─── /api/logistics ──────────────────────────────────────────────────────────────
-export async function getLogisticsAnalytics(channel: string) {
+export async function getLogisticsAnalytics(
+  channel: string,
+  options: { statusFilter?: string[] } = {}
+) {
   const channels = resolveChannels(channel);
   const to = new Date();
   const from = new Date(to.getTime() - 30 * DAY_MS);
+  const statusFilter = options.statusFilter && options.statusFilter.length > 0 ? options.statusFilter : ["pending", "dispatched", "in_transit", "delivered", "delayed"];
 
   const counts: Record<NormalizedOrder["statusBucket"], number> = {
     pending: 0,
@@ -382,7 +404,9 @@ export async function getLogisticsAnalytics(channel: string) {
   for (const ch of channels) {
     const orders = await getChannelOrders(ch, from, to);
     for (const o of orders) {
-      counts[o.statusBucket] += 1;
+      if (statusFilter.includes(o.statusBucket)) {
+        counts[o.statusBucket] += 1;
+      }
     }
   }
 

@@ -6,8 +6,10 @@ export async function GET(request: NextRequest) {
     const searchParams = request.nextUrl.searchParams;
     const channel = searchParams.get("channel") || "all";
     const limit = Math.min(parseInt(searchParams.get("limit") || "50"), 1000);
+    const statusFilterRaw = searchParams.get("status_filter");
+    const statusFilter = statusFilterRaw ? statusFilterRaw.split(",") : undefined;
 
-    const data = await getLiveOrdersAnalytics(channel, limit);
+    const data = await getLiveOrdersAnalytics(channel, limit, { statusFilter });
 
     return NextResponse.json(data, {
       headers: {
