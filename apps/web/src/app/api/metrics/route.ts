@@ -50,14 +50,19 @@ function generateMetricsData(dateFrom: string, dateTo: string, channel: string) 
   }
 
   // Generate heatmap data (day x hour)
+  // `day` MUST be numeric (0=Dom … 6=Sáb) to match the HeatmapCell type and
+  // the lookup key used by the HeatMap component (`${day}-${hour}`).
   const heatmap = [];
-  const days = ["Dom", "Lun", "Mar", "Mié", "Jue", "Vie", "Sáb"];
   for (let day = 0; day < 7; day++) {
     for (let hour = 0; hour < 24; hour++) {
+      const isPeakHour = hour >= 9 && hour <= 23;
+      const isWeekend = day === 0 || day === 6; // Dom=0, Sáb=6
+      const base = isPeakHour ? 50 : 8;
+      const weekendBoost = isWeekend && isPeakHour ? 1.3 : 1;
       heatmap.push({
-        day: days[day],
+        day,
         hour,
-        value: Math.floor(Math.random() * 150),
+        value: Math.floor((base + Math.random() * 80) * weekendBoost),
       });
     }
   }
