@@ -18,13 +18,20 @@ export const fmtARSCompact = (n: number) => {
   return fmtARS(n)
 }
 
-export const fmtNum = (n: number) => Math.round(n).toLocaleString('es-AR')
+export const fmtNum = (n?: number | null) => {
+  if (n === undefined || n === null || isNaN(n)) return '0'
+  return Math.round(n).toLocaleString('es-AR')
+}
 
-export const fmtPct = (n: number, decimals = 1) =>
-  n.toFixed(decimals) + '%'
+export const fmtPct = (n?: number | null, decimals = 1) => {
+  if (n === undefined || n === null || isNaN(n)) return '0%'
+  return n.toFixed(decimals) + '%'
+}
 
-export const fmtDelta = (n: number) =>
-  (n >= 0 ? '+' : '') + n.toFixed(1) + '%'
+export const fmtDelta = (n?: number | null) => {
+  if (n === undefined || n === null || isNaN(n)) return '→ 0%'
+  return (n >= 0 ? '+' : '') + n.toFixed(1) + '%'
+}
 
 // ─── Date helpers (always Argentina TZ) ───────────────────────────────────────
 const TZ = 'America/Argentina/Buenos_Aires'

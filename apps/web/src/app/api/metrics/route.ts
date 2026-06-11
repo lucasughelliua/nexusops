@@ -81,20 +81,23 @@ function generateMetricsData(dateFrom: string, dateTo: string, channel: string) 
     });
   });
 
+  const totalRevenue30 = totalRevenue * 30;
+  const totalOrders30 = totalOrders * 30;
+
   return {
     kpi: {
-      revenue: totalRevenue * 30,
-      orders: totalOrders * 30,
-      avg_ticket: (totalRevenue * 30) / (totalOrders * 30),
+      revenue: Math.floor(totalRevenue30),
+      orders: Math.floor(totalOrders30),
+      avg_ticket: Math.round((totalRevenue30 / totalOrders30) * 100) / 100,
       conversion: 2.8,
-      compare: {
-        revenue_delta: 12.5,
-        orders_delta: 8.3,
-      },
     },
     daily,
     heatmap,
     channels: channelSummaries,
+    compare: {
+      revenue_delta: 12.5,
+      orders_delta: 8.3,
+    },
   };
 }
 
