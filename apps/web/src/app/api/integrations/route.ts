@@ -17,6 +17,8 @@ import { createMetaClient } from "@/lib/integrations/meta";
 import { createGoogleAdsClient } from "@/lib/integrations/google-ads";
 import { createPerfitClient } from "@/lib/integrations/perfit";
 import { createKommoClient } from "@/lib/integrations/kommo";
+import { IntegrationError } from "@/lib/integrations/types";
+import axios from "axios";
 
 const ALL_CHANNELS: ChannelKey[] = [...ECOMMERCE_CHANNELS, ...MARKETING_CHANNELS];
 
@@ -102,6 +104,17 @@ export async function POST(request: NextRequest) {
     tested = true;
     success = false;
     testError = error instanceof Error ? error.message : String(error);
+
+    // Si es un error de integración con un axios error adentro, sumamos
+    // el status/body de la respuesta para poder diagnosticar sin tener
+    // que armar endpoints de debug aparte.
+    if (error instanceof IntegrationError && axios.isAxiosError(error.originalError)) {
+      const ax = error.originalError;
+      const status = ax.response?.status;
+      const data = ax.response?.data;
+      const dataStr = typeof data === "string" ? data.slice(0, 300) : JSON.stringify(data)?.slice(0, 300);
+      testError = `${testError} (HTTP ${status ?? "?"}: ${dataStr ?? ax.message})`;
+    }
   }
 
   if (tested) {

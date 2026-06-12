@@ -68,7 +68,13 @@ export class PerfitClient implements IntegrationClient {
 
       const response = await this.client.get("/campaigns", { params });
 
-      return (response.data?.campaigns || response.data || []).map((c: any) => ({
+      const list = Array.isArray(response.data?.campaigns)
+        ? response.data.campaigns
+        : Array.isArray(response.data)
+          ? response.data
+          : [];
+
+      return list.map((c: any) => ({
         id: c.id,
         name: c.name,
         status: c.status,

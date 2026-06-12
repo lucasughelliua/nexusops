@@ -64,17 +64,23 @@ export class MetaClient implements IntegrationClient {
 
   async getCampaigns(dateFrom?: Date, dateTo?: Date): Promise<MetaCampaign[]> {
     try {
-      const params: Record<string, any> = {
-        fields: "id,name,status,insights.date_preset(lifetime){spend,impressions,clicks,actions}",
-      };
-
+      // "lifetime" NO es un date_preset válido en la Graph API (el valor
+      // correcto para "todo el tiempo" es "maximum"). Si se pasa un rango
+      // de fechas, usamos insights.time_range({...}) con ese rango en vez
+      // de date_preset.
+      let insightsField: string;
       if (dateFrom && dateTo) {
-        params.effective_status = ["ACTIVE", "PAUSED"];
-        params.time_range = {
-          since: dateFrom.toISOString().split("T")[0],
-          until: dateTo.toISOString().split("T")[0],
-        };
+        const since = dateFrom.toISOString().split("T")[0];
+        const until = dateTo.toISOString().split("T")[0];
+        insightsField = `insights.time_range({'since':'${since}','until':'${until}'}){spend,impressions,clicks,actions}`;
+      } else {
+        insightsField = "insights.date_preset(maximum){spend,impressions,clicks,actions}";
       }
+
+      const params: Record<string, any> = {
+        fields: `id,name,status,${insightsField}`,
+        effective_status: JSON.stringify(["ACTIVE", "PAUSED"]),
+      };
 
       const response = await this.client.get(`/act_${this.adAccountId}/campaigns`, {
         params,
