@@ -205,7 +205,6 @@ export async function getMetricsAnalytics(
 ) {
   const channels = resolveChannels(channel);
   // Convertir a fecha en Buenos Aires (ART, UTC-3)
-  // dateFrom/dateTo llegan como "YYYY-MM-DD" en timezone local del navegador (ART)
   const from = new Date(`${dateFrom}T00:00:00-03:00`);
   const to = new Date(`${dateTo}T23:59:59-03:00`);
 
@@ -224,11 +223,24 @@ export async function getMetricsAnalytics(
   const allOrders = Object.values(ordersByChannel).flat();
   const prevAllOrders = Object.values(prevOrdersByChannel).flat();
 
-  // Filtrar por estado si se especifica (por defecto excluye canceladas)
-  const statusFilter = options.statusFilter && options.statusFilter.length > 0 ? options.statusFilter : ["pending", "dispatched", "in_transit", "delivered", "delayed"];
-  const validOrders = allOrders.filter((o) => statusFilter.includes(o.statusBucket));
-  const prevValidOrders = prevAllOrders.filter((o) => statusFilter.includes(o.statusBucket));
+  // VTEX: aplicar filtro (excluir canceladas). MeLi y otros: contar TODO
+  const vtexOrders = ordersByChannel["vtex"] || [];
+  const meliOrders = (ordersByChannel["meli_1"] || []).concat(ordersByChannel["meli_2"] || []);
+  const otherOrders = allOrders.filter((o) => !vtexOrders.includes(o) && !meliOrders.includes(o));
 
+  // Para VTEX: excluir canceladas
+  const vtexValidOrders = vtexOrders.filter((o) => o.statusBucket !== "cancelled");
+  // Para MeLi y otros: incluir TODO
+  const validOrders = [...vtexValidOrders, ...meliOrders, ...otherOrders];
+
+  // Mismo para período anterior
+  const prevVtexOrders = prevOrdersByChannel["vtex"] || [];
+  const prevMeliOrders = (prevOrdersByChannel["meli_1"] || []).concat(prevOrdersByChannel["meli_2"] || []);
+  const prevOtherOrders = prevAllOrders.filter((o) => !prevVtexOrders.includes(o) && !prevMeliOrders.includes(o));
+  const prevVtexValidOrders = prevVtexOrders.filter((o) => o.statusBucket !== "cancelled");
+  const prevValidOrders = [...prevVtexValidOrders, ...prevMeliOrders, ...prevOtherOrders];
+
+  // Métricas principales
   const revenue = sum(validOrders.map((o) => o.total));
   const prevRevenue = sum(prevValidOrders.map((o) => o.total));
 
@@ -236,56 +248,105 @@ export async function getMetricsAnalytics(
   const prevOrdersCount = prevValidOrders.length;
 
   const units = sum(validOrders.flatMap((o) => o.items.map((it) => it.qty)));
-  const cancellations = allOrders.length - validOrders.length;
-  const avgTicket = ordersCount > 0 ? revenue / ordersCount : 0;
+  const prevUnits = sum(prevValidOrders.flatMap((o) => o.items.map((it) => it.qty)));
 
-  // Serie diaria (TZ Argentina)
-  const dailyMap = new Map<string, { revenue: number; orders: number }>();
+  // Cancelaciones: solo contar en MeLi y otros (VTEX las excluye)
+  const meliCancellations = meliOrders.filter((o) => o.statusBucket === "cancelled").length;
+  const otherCancellations = otherOrders.filter((o) => o.statusBucket === "cancelled").length;
+  const cancellations = meliCancellations + otherCancellations;
+
+  const avgTicket = ordersCount > 0 ? revenue / ordersCount : 0;
+  const cancellationRate = (allOrders.length > 0) ? (cancellations / allOrders.length) * 100 : 0;
+
+  // Breakdown por estado
+  const stateBreakdown = {
+    pending: validOrders.filter((o) => o.statusBucket === "pending").length,
+    dispatched: validOrders.filter((o) => o.statusBucket === "dispatched").length,
+    in_transit: validOrders.filter((o) => o.statusBucket === "in_transit").length,
+    delivered: validOrders.filter((o) => o.statusBucket === "delivered").length,
+    delayed: validOrders.filter((o) => o.statusBucket === "delayed").length,
+    cancelled: cancellations,
+  };
+
+  const unitsBreakdown = {
+    pending: sum(validOrders.filter((o) => o.statusBucket === "pending").flatMap((o) => o.items.map((it) => it.qty))),
+    dispatched: sum(validOrders.filter((o) => o.statusBucket === "dispatched").flatMap((o) => o.items.map((it) => it.qty))),
+    in_transit: sum(validOrders.filter((o) => o.statusBucket === "in_transit").flatMap((o) => o.items.map((it) => it.qty))),
+    delivered: sum(validOrders.filter((o) => o.statusBucket === "delivered").flatMap((o) => o.items.map((it) => it.qty))),
+    delayed: sum(validOrders.filter((o) => o.statusBucket === "delayed").flatMap((o) => o.items.map((it) => it.qty))),
+  };
+
+  const revenueBreakdown = {
+    pending: sum(validOrders.filter((o) => o.statusBucket === "pending").map((o) => o.total)),
+    dispatched: sum(validOrders.filter((o) => o.statusBucket === "dispatched").map((o) => o.total)),
+    in_transit: sum(validOrders.filter((o) => o.statusBucket === "in_transit").map((o) => o.total)),
+    delivered: sum(validOrders.filter((o) => o.statusBucket === "delivered").map((o) => o.total)),
+    delayed: sum(validOrders.filter((o) => o.statusBucket === "delayed").map((o) => o.total)),
+  };
+
+  // Serie diaria mejorada
+  const dailyMap = new Map<string, { revenue: number; orders: number; units: number; cancelled: number }>();
   for (let t = from.getTime(); t <= to.getTime(); t += DAY_MS) {
-    dailyMap.set(new Date(t).toISOString().split("T")[0], { revenue: 0, orders: 0 });
+    dailyMap.set(new Date(t).toISOString().split("T")[0], { revenue: 0, orders: 0, units: 0, cancelled: 0 });
   }
-  for (const o of validOrders) {
+  for (const o of allOrders) {
     const day = o.date.split("T")[0];
     const entry = dailyMap.get(day);
     if (entry) {
-      entry.revenue += o.total;
-      entry.orders += 1;
+      if (o.statusBucket !== "cancelled") {
+        entry.revenue += o.total;
+        entry.orders += 1;
+        entry.units += sum(o.items.map((it) => it.qty));
+      } else {
+        entry.cancelled += 1;
+      }
     }
   }
   const daily = Array.from(dailyMap.entries()).map(([date, v]) => ({
     date,
     revenue: Math.round(v.revenue),
     orders: v.orders,
+    units: v.units,
+    cancelled: v.cancelled,
   }));
 
-  // Heatmap día x hora (día: 0=Dom … 6=Sáb)
-  const heatmapMap = new Map<string, number>();
+  // Heatmap mejorado: día x hora con breakdown
+  const heatmapMap = new Map<string, { count: number; revenue: number }>();
   for (let day = 0; day < 7; day++) {
     for (let hour = 0; hour < 24; hour++) {
-      heatmapMap.set(`${day}-${hour}`, 0);
+      heatmapMap.set(`${day}-${hour}`, { count: 0, revenue: 0 });
     }
   }
   for (const o of validOrders) {
     const d = new Date(o.date);
     const key = `${d.getUTCDay()}-${d.getUTCHours()}`;
-    heatmapMap.set(key, (heatmapMap.get(key) ?? 0) + 1);
+    const entry = heatmapMap.get(key);
+    if (entry) {
+      entry.count += 1;
+      entry.revenue += o.total;
+    }
   }
   const heatmap = Array.from(heatmapMap.entries()).map(([key, value]) => {
     const [day, hour] = key.split("-").map(Number);
-    return { day, hour, value };
+    return { day, hour, orders: value.count, revenue: Math.round(value.revenue) };
   });
 
   // Resumen por canal
   const channelSummaries = channels.map((ch) => {
-    const chOrders = ordersByChannel[ch].filter((o) => o.statusBucket !== "cancelled");
-    const chRevenue = sum(chOrders.map((o) => o.total));
+    const chOrders = ordersByChannel[ch];
+    // Para VTEX: excluir canceladas. Para otros: incluir todo
+    const chValidOrders = ch === "vtex" ? chOrders.filter((o) => o.statusBucket !== "cancelled") : chOrders;
+    const chRevenue = sum(chValidOrders.map((o) => o.total));
+    const chCancellations = chOrders.filter((o) => o.statusBucket === "cancelled").length;
     return {
       channel: CHANNEL_ACCOUNT_NAME[ch],
       revenue: Math.round(chRevenue),
-      orders: chOrders.length,
+      orders: chValidOrders.length,
+      units: sum(chValidOrders.flatMap((o) => o.items.map((it) => it.qty))),
+      cancelled: chCancellations,
       color: CHANNEL_COLORS[ch] ?? "#6366f1",
       pct_revenue: revenue > 0 ? (chRevenue / revenue) * 100 : 0,
-      avg_ticket: chOrders.length > 0 ? chRevenue / chOrders.length : 0,
+      avg_ticket: chValidOrders.length > 0 ? chRevenue / chValidOrders.length : 0,
     };
   });
 
@@ -295,12 +356,18 @@ export async function getMetricsAnalytics(
       orders: ordersCount,
       units,
       avg_ticket: Math.round(avgTicket * 100) / 100,
-      conversion: 2.8,
       cancellations,
+      cancellation_rate: Math.round(cancellationRate * 100) / 100,
       compare: {
         revenue_delta: Math.round(pctChange(revenue, prevRevenue) * 10) / 10,
         orders_delta: Math.round(pctChange(ordersCount, prevOrdersCount) * 10) / 10,
+        units_delta: Math.round(pctChange(units, prevUnits) * 10) / 10,
       },
+    },
+    breakdown: {
+      by_state: stateBreakdown,
+      units_by_state: unitsBreakdown,
+      revenue_by_state: revenueBreakdown,
     },
     daily,
     heatmap,
