@@ -46,34 +46,37 @@ export function isoDate(d: Date): string {
 
 export function getPeriodRange(period: Period): DateRange {
   const now = new Date()
-  // IMPORTANTE: Calcular fechas en UTC para consistencia con el backend
-  // No usar timezone de Buenos Aires aquí
-  const getTodayUTC = () => now.toISOString().split('T')[0]
+  // IMPORTANTE: Devolver fechas en formato YYYY-MM-DD en UTC
+  // Estas se convertirán a Date objects con UTC en el backend
+
   const getDateUTC = (d: Date) => d.toISOString().split('T')[0]
 
   switch (period) {
     case 'today':
-      return { from: getTodayUTC(), to: getTodayUTC() }
+      const today = getDateUTC(now)
+      return { from: today, to: today }
     case 'yesterday': {
       const y = getDateUTC(subDays(now, 1))
       return { from: y, to: y }
     }
     case 'last7':
-      return { from: getDateUTC(subDays(now, 6)), to: getTodayUTC() }
+      // Últimos 7 días: desde hace 6 días hasta hoy (7 días totales)
+      return { from: getDateUTC(subDays(now, 6)), to: getDateUTC(now) }
     case 'last30':
-      return { from: getDateUTC(subDays(now, 29)), to: getTodayUTC() }
+      // Últimos 30 días: desde hace 29 días hasta hoy (30 días totales)
+      return { from: getDateUTC(subDays(now, 29)), to: getDateUTC(now) }
     case 'mtd': {
       const first = getDateUTC(startOfMonth(now))
-      return { from: first, to: getTodayUTC() }
+      return { from: first, to: getDateUTC(now) }
     }
     case 'lastmonth': {
       const prev = subMonths(now, 1)
       return { from: getDateUTC(startOfMonth(prev)), to: getDateUTC(endOfMonth(prev)) }
     }
     case 'ytd':
-      return { from: getDateUTC(startOfYear(now)), to: getTodayUTC() }
+      return { from: getDateUTC(startOfYear(now)), to: getDateUTC(now) }
     default:
-      return { from: getDateUTC(subDays(now, 29)), to: getTodayUTC() }
+      return { from: getDateUTC(subDays(now, 29)), to: getDateUTC(now) }
   }
 }
 
