@@ -30,7 +30,10 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  const redirectUri = `${request.nextUrl.origin}/api/integrations/meli/callback`;
+  // Obtener el origin correcto desde los headers (Railway usa x-forwarded-proto/host)
+  const proto = request.headers.get("x-forwarded-proto") || "https";
+  const host = request.headers.get("x-forwarded-host") || request.headers.get("host") || "localhost:8080";
+  const redirectUri = `${proto}://${host}/api/integrations/meli/callback`;
   const authUrl = new URL("https://auth.mercadolibre.com.ar/authorization");
   authUrl.searchParams.set("response_type", "code");
   authUrl.searchParams.set("client_id", config.clientId);
