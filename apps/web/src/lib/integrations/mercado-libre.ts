@@ -201,6 +201,8 @@ export class MercadoLibreClient implements IntegrationClient {
             seller: sellerId,
             "order.date_created.from": dateFrom.toISOString(),
             "order.date_created.to": dateTo.toISOString(),
+            // Incluir todos los estados, incluyendo canceladas
+            status: "all",
             sort: "date_desc",
             limit,
             offset,
