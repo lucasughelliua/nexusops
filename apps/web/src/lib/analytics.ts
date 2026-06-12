@@ -219,13 +219,14 @@ export async function getMetricsAnalytics(
   options: { compareFrom?: string; compareTo?: string; statusFilter?: string[] } = {}
 ) {
   const channels = resolveChannels(channel);
-  // Convertir a fecha en Buenos Aires (ART, UTC-3)
-  const from = new Date(`${dateFrom}T00:00:00-03:00`);
-  const to = new Date(`${dateTo}T23:59:59-03:00`);
+  // Las fechas vienen en UTC desde el frontend (formato YYYY-MM-DD)
+  // Convertir a Date objects en UTC
+  const from = new Date(`${dateFrom}T00:00:00Z`);
+  const to = new Date(`${dateTo}T23:59:59Z`);
 
   const periodMs = to.getTime() - from.getTime();
-  const prevFrom = options.compareFrom ? new Date(`${options.compareFrom}T00:00:00-03:00`) : new Date(from.getTime() - periodMs);
-  const prevTo = options.compareTo ? new Date(`${options.compareTo}T23:59:59-03:00`) : new Date(from.getTime() - 1);
+  const prevFrom = options.compareFrom ? new Date(`${options.compareFrom}T00:00:00Z`) : new Date(from.getTime() - periodMs);
+  const prevTo = options.compareTo ? new Date(`${options.compareTo}T23:59:59Z`) : new Date(from.getTime() - 1);
 
   const ordersByChannel: Record<string, NormalizedOrder[]> = {};
   const prevOrdersByChannel: Record<string, NormalizedOrder[]> = {};
