@@ -258,6 +258,7 @@ export default function MetricasPage() {
           icon="💰"
           subtitle="vs período anterior"
           loading={loadingMetrics}
+          info="Ingresos totales (sin impuestos) de todas las órdenes en el período seleccionado"
         />
         <KPICard
           title="Órdenes"
@@ -267,21 +268,25 @@ export default function MetricasPage() {
           icon="🛒"
           subtitle="vs período anterior"
           loading={loadingMetrics}
+          info="Cantidad total de pedidos completados (no incluye canceladas)"
         />
         <KPICard
           title="Ticket Promedio"
           value={kpi?.avg_ticket ?? 0}
           format="currency"
-          icon="📦"
+          icon="📊"
           loading={loadingMetrics}
+          info="Valor promedio por orden: Facturación ÷ Órdenes"
         />
         <KPICard
           title="Unidades Vendidas"
           value={kpi?.units ?? 0}
+          delta={kpi?.compare?.units_delta}
           format="number"
           icon="📦"
           accentColor="#14b8a6"
           loading={loadingMetrics}
+          info="Cantidad total de artículos vendidos en todas las órdenes"
         />
       </div>
 
@@ -294,6 +299,7 @@ export default function MetricasPage() {
           icon="❌"
           accentColor="#ef4444"
           loading={loadingMetrics}
+          info="Cantidad de órdenes canceladas en el período"
         />
         <KPICard
           title="Tasa de Cancelación"
@@ -302,6 +308,7 @@ export default function MetricasPage() {
           icon="📊"
           accentColor="#f97316"
           loading={loadingMetrics}
+          info="Porcentaje de órdenes canceladas respecto al total"
         />
         <div className="bg-[#0c1a0d] border border-[rgba(0,166,81,0.15)] rounded-xl p-5">
           <div className="text-[11px] font-semibold uppercase tracking-wider text-gray-400 mb-3">

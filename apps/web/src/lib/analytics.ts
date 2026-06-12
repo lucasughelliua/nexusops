@@ -12,7 +12,7 @@ import {
 import { CHANNEL_COLORS } from "./utils";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
-const TTL_MS = 5 * 60 * 1000; // 5 minutos
+const TTL_MS = 30 * 1000; // 30 segundos (antes era 5 minutos, pero causaba caching de datos stale)
 
 /**
  * Convierte una fecha a Buenos Aires (ART, UTC-3).
