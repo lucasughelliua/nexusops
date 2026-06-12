@@ -3,7 +3,9 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { getChannelConfig } from "@/lib/integrations/credentials";
 import { createVTEXClient } from "@/lib/integrations/vtex";
+import { IntegrationError } from "@/lib/integrations/types";
 import { getPeriodRange } from "@/lib/utils";
+import axios from "axios";
 
 export async function GET(request: NextRequest) {
   const session = await getServerSession(authOptions);
@@ -62,8 +64,29 @@ export async function GET(request: NextRequest) {
       note: "Compare 'total_orders' with VTEX admin. If different, the date range or status filter might be wrong.",
     });
   } catch (error) {
-    return NextResponse.json({
-      error: error instanceof Error ? { message: error.message, stack: error.stack } : error,
-    });
+    let details: any = error instanceof Error ? { message: error.message, name: error.name } : error;
+
+    if (error instanceof IntegrationError) {
+      details.statusCode = error.statusCode;
+      const orig = error.originalError;
+      if (axios.isAxiosError(orig)) {
+        details.axios = {
+          status: orig.response?.status,
+          statusText: orig.response?.statusText,
+          data: orig.response?.data,
+          url: orig.config?.url,
+          params: orig.config?.params,
+          baseURL: orig.config?.baseURL,
+          code: orig.code,
+          message: orig.message,
+        };
+      } else if (orig instanceof Error) {
+        details.originalError = { message: orig.message, name: orig.name };
+      } else {
+        details.originalError = orig;
+      }
+    }
+
+    return NextResponse.json({ error: details });
   }
 }
