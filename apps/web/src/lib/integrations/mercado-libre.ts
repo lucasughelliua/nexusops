@@ -172,8 +172,11 @@ export class MercadoLibreClient implements IntegrationClient {
   }
 
   /**
-   * Trae las órdenes creadas en el rango [dateFrom, dateTo] normalizadas
+   * Trae TODAS las órdenes creadas en el rango [dateFrom, dateTo] normalizadas
    * para el dashboard (KPIs, serie diaria, heatmap, logística, live feed).
+   *
+   * Pagina dinámicamente hasta obtener todos los resultados o alcanzar un
+   * máximo de seguridad. No se rompe por límites de páginas.
    */
   async getOrders(
     dateFrom: Date,
@@ -184,10 +187,12 @@ export class MercadoLibreClient implements IntegrationClient {
     const sellerId = await this.getSellerId();
 
     const limit = 50;
-    const maxPages = options.maxPages ?? 10; // hasta 500 órdenes
+    // Máximo absoluto de seguridad: 1000 páginas = 50,000 órdenes (prácticamente ilimitado)
+    const absoluteMax = 1000;
     const raw: any[] = [];
+    let page = 0;
 
-    for (let page = 0; page < maxPages; page++) {
+    while (page < absoluteMax) {
       const offset = page * limit;
       let data: any;
       try {
@@ -211,14 +216,18 @@ export class MercadoLibreClient implements IntegrationClient {
             error
           );
         }
+        // Si hay error en página posterior, simplemente terminamos
         break;
       }
 
       const results: any[] = data?.results ?? [];
       raw.push(...results);
 
+      // Si no hay más resultados o llegamos al total, terminamos
       const total = data?.paging?.total ?? results.length;
       if (offset + limit >= total || results.length === 0) break;
+
+      page++;
     }
 
     return raw.map((o) => ({

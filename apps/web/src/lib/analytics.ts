@@ -45,8 +45,8 @@ async function fetchRealOrders(channel: ChannelKey, from: Date, to: Date): Promi
           await patchChannelConfig(channel, tokens);
         }
       );
-      // Traer hasta 20 páginas (1000 órdenes máximo) para asegurar cobertura total
-      const orders = await client.getOrders(from, to, { maxPages: 20 });
+      // Trae todas las órdenes del rango de fechas (dinámico, sin límite de página)
+      const orders = await client.getOrders(from, to);
       await setChannelSyncStatus(channel, "SUCCESS");
       return orders;
     }
