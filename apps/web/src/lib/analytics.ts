@@ -14,6 +14,17 @@ import { CHANNEL_COLORS } from "./utils";
 const DAY_MS = 24 * 60 * 60 * 1000;
 const TTL_MS = 5 * 60 * 1000; // 5 minutos
 
+/**
+ * Convierte una fecha a Buenos Aires (ART, UTC-3).
+ * Útil para funciones que usan `new Date()` y necesitan respetar la timezone local.
+ */
+function toARTDate(date: Date): Date {
+  // Restar 3 horas para convertir de UTC del servidor a ART
+  const artDate = new Date(date.getTime());
+  artDate.setHours(artDate.getHours() - 3);
+  return artDate;
+}
+
 // ─── Cache en memoria (por proceso) ────────────────────────────────────────────
 const ordersCache = new Map<string, { data: NormalizedOrder[] | null; expires: number }>();
 
@@ -193,12 +204,14 @@ export async function getMetricsAnalytics(
   options: { compareFrom?: string; compareTo?: string; statusFilter?: string[] } = {}
 ) {
   const channels = resolveChannels(channel);
-  const from = new Date(`${dateFrom}T00:00:00.000Z`);
-  const to = new Date(`${dateTo}T23:59:59.999Z`);
+  // Convertir a fecha en Buenos Aires (ART, UTC-3)
+  // dateFrom/dateTo llegan como "YYYY-MM-DD" en timezone local del navegador (ART)
+  const from = new Date(`${dateFrom}T00:00:00-03:00`);
+  const to = new Date(`${dateTo}T23:59:59-03:00`);
 
   const periodMs = to.getTime() - from.getTime();
-  const prevFrom = options.compareFrom ? new Date(`${options.compareFrom}T00:00:00.000Z`) : new Date(from.getTime() - periodMs);
-  const prevTo = options.compareTo ? new Date(`${options.compareTo}T23:59:59.999Z`) : new Date(from.getTime() - 1);
+  const prevFrom = options.compareFrom ? new Date(`${options.compareFrom}T00:00:00-03:00`) : new Date(from.getTime() - periodMs);
+  const prevTo = options.compareTo ? new Date(`${options.compareTo}T23:59:59-03:00`) : new Date(from.getTime() - 1);
 
   const ordersByChannel: Record<string, NormalizedOrder[]> = {};
   const prevOrdersByChannel: Record<string, NormalizedOrder[]> = {};
@@ -303,7 +316,7 @@ export async function getTopProductsAnalytics(
   options: { statusFilter?: string[] } = {}
 ) {
   const channels = resolveChannels(channel);
-  const to = new Date();
+  const to = toARTDate(new Date());
   const from = new Date(to.getTime() - 30 * DAY_MS);
   const statusFilter = options.statusFilter && options.statusFilter.length > 0 ? options.statusFilter : ["pending", "dispatched", "in_transit", "delivered", "delayed"];
 
@@ -359,7 +372,7 @@ export async function getLiveOrdersAnalytics(
   options: { statusFilter?: string[] } = {}
 ) {
   const channels = resolveChannels(channel);
-  const to = new Date();
+  const to = toARTDate(new Date());
   const from = new Date(to.getTime() - DAY_MS);
   const statusFilter = options.statusFilter && options.statusFilter.length > 0 ? options.statusFilter : ["pending", "dispatched", "in_transit", "delivered", "delayed"];
 
@@ -389,7 +402,7 @@ export async function getLogisticsAnalytics(
   options: { statusFilter?: string[] } = {}
 ) {
   const channels = resolveChannels(channel);
-  const to = new Date();
+  const to = toARTDate(new Date());
   const from = new Date(to.getTime() - 30 * DAY_MS);
   const statusFilter = options.statusFilter && options.statusFilter.length > 0 ? options.statusFilter : ["pending", "dispatched", "in_transit", "delivered", "delayed"];
 
