@@ -111,23 +111,27 @@ export class VTEXClient implements IntegrationClient {
     dateTo: Date,
     options: { maxItemOrders?: number; maxPages?: number } = {}
   ): Promise<NormalizedOrder[]> {
-    const maxPages = options.maxPages ?? 10; // hasta 1000 órdenes (per_page=100)
+    const maxPages = options.maxPages ?? 25; // hasta 2500 órdenes (per_page=100)
     const maxItemOrders = options.maxItemOrders ?? 60;
 
     const raw: any[] = [];
     let page = 1;
 
-    // Intentar múltiples estrategias de filtro de fecha
-    // La API de VTEX puede no soportar el filtro f_creationDate de cierta manera
-    // así que traemos todas las órdenes y filtramos en cliente
+    // El panel de VTEX cuenta las órdenes de un período por su última
+    // actualización (lastChange), no por su fecha de creación. Por eso
+    // filtramos usando lastChange (con fallback a creationDate si no existe).
+    // VTEX devuelve la lista ordenada por creationDate desc, así que para no
+    // perder órdenes "viejas" que tuvieron actividad reciente (lastChange
+    // dentro del rango) usamos un buffer extra al cortar la paginación.
     const dateCutoff = dateFrom.getTime();
+    const BUFFER_MS = 60 * 24 * 60 * 60 * 1000; // 60 días de margen
+    const paginationCutoff = dateCutoff - BUFFER_MS;
 
     while (page <= maxPages) {
       let data: any;
       try {
         // Estrategia: Traer órdenes sin filtro de fecha explícito
-        // VTEX ya devuelve ordenadas por creationDate desc, así que cuando
-        // encontremos una anterior a dateFrom, podemos parar
+        // VTEX ya devuelve ordenadas por creationDate desc
         const response = await this.client.get("/oms/pvt/orders", {
           params: {
             per_page: 100,
@@ -151,17 +155,25 @@ export class VTEXClient implements IntegrationClient {
 
       const list: any[] = data?.list ?? [];
 
-      // Filtrar órdenes por fecha en el cliente
-      // Ya que VTEX las devuelve ordenadas por creationDate desc,
-      // paramos cuando encontramos una que es anterior a dateFrom
+      // Filtrar órdenes por fecha en el cliente, usando lastChange
+      // (fecha de última actividad/actualización) como referencia,
+      // que es lo que VTEX usa para su panel de "Pedidos" por período.
       let foundOldOrder = false;
       for (const order of list) {
-        const orderDate = new Date(order.creationDate);
-        if (orderDate.getTime() >= dateCutoff && orderDate.getTime() <= dateTo.getTime()) {
+        const creationTime = new Date(order.creationDate).getTime();
+        const refTime = order.lastChange ? new Date(order.lastChange).getTime() : creationTime;
+
+        if (refTime >= dateCutoff && refTime <= dateTo.getTime()) {
           raw.push(order);
-        } else if (orderDate.getTime() < dateCutoff) {
+        }
+
+        // Solo dejamos de paginar cuando la fecha de CREACIÓN ya está muy
+        // por detrás del rango buscado (con buffer), porque la lista está
+        // ordenada por creationDate y una orden vieja todavía puede tener
+        // un lastChange reciente.
+        if (creationTime < paginationCutoff) {
           foundOldOrder = true;
-          break; // Todas las siguientes serán aún más viejas
+          break;
         }
       }
 
@@ -174,7 +186,7 @@ export class VTEXClient implements IntegrationClient {
       id: String(o.orderId),
       channelKey: "vtex",
       channel: "VTEX",
-      date: o.creationDate,
+      date: o.lastChange ?? o.creationDate,
       status: o.status,
       statusBucket: vtexStatusBucket(o.status),
       total: (o.value ?? o.totalValue ?? 0) / 100,
