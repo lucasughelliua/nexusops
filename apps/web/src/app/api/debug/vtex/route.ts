@@ -27,13 +27,19 @@ export async function GET(request: NextRequest) {
     const to = new Date();
     const from = new Date(to.getTime() - days * 24 * 60 * 60 * 1000);
 
+    // Log the exact filter that will be sent to VTEX
+    const creationDateFilter = `creationDate:[${from.toISOString()} TO ${to.toISOString()}]`;
+
     let orders: any[] = [];
     let error: any = null;
     let debugInfo: any = {
       from: from.toISOString(),
       to: to.toISOString(),
+      days,
+      creationDateFilter,
       fromISO_formatted: from.toISOString(),
       toISO_formatted: to.toISOString(),
+      note: "Si orders_count siempre es 189 independientemente de 'days', el filtro f_creationDate NO está siendo respetado por VTEX",
     };
 
     try {

@@ -120,17 +120,37 @@ export class VTEXClient implements IntegrationClient {
     while (page <= maxPages) {
       let data: any;
       try {
+        const creationDateFilter = `creationDate:[${dateFrom.toISOString()} TO ${dateTo.toISOString()}]`;
+
+        if (page === 1) {
+          console.log("[VTEX] Fetching orders with filter:", {
+            f_creationDate: creationDateFilter,
+            per_page: 100,
+            dateFrom: dateFrom.toISOString(),
+            dateTo: dateTo.toISOString(),
+          });
+        }
+
         const response = await this.client.get("/oms/pvt/orders", {
           params: {
             per_page: 100,
             page,
-            f_creationDate: `creationDate:[${dateFrom.toISOString()} TO ${dateTo.toISOString()}]`,
+            f_creationDate: creationDateFilter,
             orderBy: "creationDate,desc",
           },
         });
         data = response.data;
+
+        if (page === 1) {
+          console.log("[VTEX] First page response:", {
+            list_count: data?.list?.length,
+            total_pages: data?.paging?.pages,
+            paging: data?.paging,
+          });
+        }
       } catch (error) {
         if (page === 1) {
+          console.error("[VTEX] Error fetching orders on page 1:", error);
           throw new IntegrationError(
             this.platform,
             "Failed to fetch VTEX orders",
