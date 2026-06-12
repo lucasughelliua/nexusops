@@ -33,7 +33,10 @@ export class MetaClient implements IntegrationClient {
   private adAccountId: string;
 
   constructor(credentials: MetaCredentials) {
-    this.adAccountId = credentials.adAccountId.replace("act_", "");
+    // Limpiar el Ad Account ID - soporta varios formatos
+    let id = credentials.adAccountId.trim();
+    id = id.replace(/^act[_=]/, ""); // Remover "act_" o "act=" del inicio
+    this.adAccountId = id;
 
     this.client = axios.create({
       baseURL: "https://graph.instagram.com/v18.0",

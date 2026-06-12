@@ -30,24 +30,34 @@ export class GoogleAdsClient implements IntegrationClient {
   private sheetsUrl: string;
   private apiKey?: string;
   private spreadsheetId: string;
+  private csvUrl: string;
 
   constructor(credentials: GoogleAdsCredentials) {
     this.sheetsUrl = credentials.sheetsUrl;
     this.apiKey = credentials.apiKey || undefined;
-    // Extraer spreadsheet ID de la URL
-    const match = credentials.sheetsUrl.match(/\/spreadsheets\/d\/([^\/]+)/);
-    this.spreadsheetId = match ? match[1] : "";
+
+    // Si ya es una URL de CSV directa, usarla tal cual
+    if (this.sheetsUrl.includes("/export?format=csv") || this.sheetsUrl.includes("?output=csv")) {
+      this.csvUrl = this.sheetsUrl;
+      this.spreadsheetId = "direct"; // Marcador de URL directa
+    } else {
+      // Extraer spreadsheet ID de la URL regular
+      const match = this.sheetsUrl.match(/\/spreadsheets\/d\/([a-zA-Z0-9_-]+)/);
+      this.spreadsheetId = match ? match[1] : "";
+      this.csvUrl = this.spreadsheetId
+        ? `https://docs.google.com/spreadsheets/d/${this.spreadsheetId}/export?format=csv`
+        : "";
+    }
   }
 
   async testConnection(): Promise<boolean> {
     try {
-      if (!this.spreadsheetId) {
+      if (!this.csvUrl) {
         throw new Error("Invalid Google Sheets URL");
       }
 
       // Descargar CSV directamente sin API Key
-      const csvUrl = `https://docs.google.com/spreadsheets/d/${this.spreadsheetId}/export?format=csv`;
-      const response = await axios.get(csvUrl);
+      const response = await axios.get(this.csvUrl);
 
       return response.status === 200 && response.data.length > 0;
     } catch (error) {
@@ -72,13 +82,12 @@ export class GoogleAdsClient implements IntegrationClient {
 
   async getMetrics(options: MetricsOptions): Promise<MetricData[]> {
     try {
-      if (!this.spreadsheetId) {
+      if (!this.csvUrl) {
         return [];
       }
 
       // Descargar CSV sin API Key
-      const csvUrl = `https://docs.google.com/spreadsheets/d/${this.spreadsheetId}/export?format=csv`;
-      const response = await axios.get(csvUrl);
+      const response = await axios.get(this.csvUrl);
       const csv = response.data;
 
       const metrics: MetricData[] = [];
