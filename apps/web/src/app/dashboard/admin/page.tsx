@@ -488,8 +488,16 @@ function AdminPageContent() {
                 )}
 
                 <div className="space-y-3">
+                  <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg px-3 py-2">
+                    <p className="text-xs text-amber-300">
+                      ⚠️ El Access Token de Mercado Libre <strong>vence cada 6 horas</strong>, sin excepción.
+                      Para que la conexión no se rompa sola, completá también el <strong>Client ID</strong>, <strong>Client Secret</strong> y <strong>Refresh Token</strong> de tu aplicación
+                      (los obtenés en <span className="font-mono">developers.mercadolibre.com.ar</span> → Mis aplicaciones).
+                      Con esos 3 datos el sistema renueva el token automáticamente.
+                    </p>
+                  </div>
                   <div>
-                    <label className="block text-xs text-gray-500 mb-1">Access Token (Larga duración)</label>
+                    <label className="block text-xs text-gray-500 mb-1">Access Token</label>
                     <input
                       type="password"
                       value={form.accessToken}
@@ -499,7 +507,44 @@ function AdminPageContent() {
                       name={`${channel}-access-token`}
                       className="w-full bg-[#071409] border border-[rgba(0,166,81,0.2)] rounded-lg px-3 py-2 text-sm text-gray-200 outline-none focus:border-[#00A651] transition-colors font-mono"
                     />
-                    <p className="text-xs text-gray-500 mt-1">Formato: APP_USR-XXXX...</p>
+                    <p className="text-xs text-gray-500 mt-1">Formato: APP_USR-XXXX... (vence en 6hs si no hay refresh token)</p>
+                  </div>
+                  <div className="grid grid-cols-3 gap-3">
+                    <div>
+                      <label className="block text-xs text-gray-500 mb-1">Client ID</label>
+                      <input
+                        type="text"
+                        value={(form as any).clientId || ''}
+                        onChange={(e) => setForm({ ...form, clientId: e.target.value } as any)}
+                        placeholder="Ej: 4076802139004495"
+                        autoComplete="off"
+                        name={`${channel}-client-id`}
+                        className="w-full bg-[#071409] border border-[rgba(0,166,81,0.2)] rounded-lg px-3 py-2 text-sm text-gray-200 outline-none focus:border-[#00A651] transition-colors font-mono"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-gray-500 mb-1">Client Secret</label>
+                      <input
+                        type="password"
+                        value={(form as any).clientSecret || ''}
+                        onChange={(e) => setForm({ ...form, clientSecret: e.target.value } as any)}
+                        autoComplete="new-password"
+                        name={`${channel}-client-secret`}
+                        className="w-full bg-[#071409] border border-[rgba(0,166,81,0.2)] rounded-lg px-3 py-2 text-sm text-gray-200 outline-none focus:border-[#00A651] transition-colors font-mono"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-gray-500 mb-1">Refresh Token</label>
+                      <input
+                        type="password"
+                        value={(form as any).refreshToken || ''}
+                        onChange={(e) => setForm({ ...form, refreshToken: e.target.value } as any)}
+                        placeholder="TG-XXXX..."
+                        autoComplete="new-password"
+                        name={`${channel}-refresh-token`}
+                        className="w-full bg-[#071409] border border-[rgba(0,166,81,0.2)] rounded-lg px-3 py-2 text-sm text-gray-200 outline-none focus:border-[#00A651] transition-colors font-mono"
+                      />
+                    </div>
                   </div>
                   <div>
                     <label className="block text-xs text-gray-500 mb-1">Seller ID (opcional - para debugging)</label>
