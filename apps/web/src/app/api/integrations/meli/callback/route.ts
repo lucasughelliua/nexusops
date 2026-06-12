@@ -19,7 +19,12 @@ export async function GET(request: NextRequest) {
   const params = request.nextUrl.searchParams;
   const code = params.get("code");
   const channel = params.get("state") as ChannelKey | null;
-  const adminUrl = new URL("/dashboard/admin", request.nextUrl.origin);
+
+  // Obtener el origin correcto desde los headers (Railway usa x-forwarded-proto/host)
+  const proto = request.headers.get("x-forwarded-proto") || "https";
+  const host = request.headers.get("x-forwarded-host") || request.headers.get("host") || "localhost:8080";
+  const origin = `${proto}://${host}`;
+  const adminUrl = new URL("/dashboard/admin", origin);
   adminUrl.searchParams.set("tab", "integraciones");
 
   if (!channel || !ALLOWED_CHANNELS.includes(channel)) {
@@ -38,7 +43,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(adminUrl.toString());
   }
 
-  const redirectUri = `${request.nextUrl.origin}/api/integrations/meli/callback`;
+  const redirectUri = `${origin}/api/integrations/meli/callback`;
 
   try {
     const tokenResponse = await axios.post(
