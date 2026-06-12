@@ -28,10 +28,12 @@ export interface PerfitCampaign {
 export class PerfitClient implements IntegrationClient {
   platform = Platform.PERFIT;
   private client: AxiosInstance;
+  private account: string;
 
   constructor(credentials: PerfitCredentials) {
+    this.account = credentials.subdomain;
     this.client = axios.create({
-      baseURL: `https://${credentials.subdomain}.myperfit.com/api/v1`,
+      baseURL: `https://api.myperfit.com/v2/${credentials.subdomain}`,
       headers: {
         Authorization: `Bearer ${credentials.apiKey}`,
         "Content-Type": "application/json",
@@ -41,7 +43,7 @@ export class PerfitClient implements IntegrationClient {
 
   async testConnection(): Promise<boolean> {
     try {
-      const response = await this.client.get("/me");
+      const response = await this.client.get("/contacts", { params: { limit: 1 } });
       return response.status === 200;
     } catch (error) {
       throw new IntegrationError(
@@ -66,7 +68,7 @@ export class PerfitClient implements IntegrationClient {
 
       const response = await this.client.get("/campaigns", { params });
 
-      return (response.data?.campaigns || []).map((c: any) => ({
+      return (response.data?.campaigns || response.data || []).map((c: any) => ({
         id: c.id,
         name: c.name,
         status: c.status,
@@ -78,12 +80,10 @@ export class PerfitClient implements IntegrationClient {
         roas: parseFloat(c.roas || "0"),
       }));
     } catch (error) {
-      throw new IntegrationError(
-        this.platform,
-        "Failed to fetch Perfit campaigns",
-        axios.isAxiosError(error) ? error.response?.status : undefined,
-        error
-      );
+      // El endpoint de campañas puede no existir para todas las cuentas;
+      // no rompemos el dashboard por esto, sólo devolvemos vacío.
+      console.warn("Error fetching Perfit campaigns:", error);
+      return [];
     }
   }
 
