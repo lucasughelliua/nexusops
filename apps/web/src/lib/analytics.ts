@@ -32,6 +32,21 @@ function cacheKey(channel: ChannelKey, from: Date, to: Date): string {
   return `${channel}:${from.toISOString()}:${to.toISOString()}`;
 }
 
+// Función para limpiar el cache de un canal
+export function clearChannelCache(channel?: ChannelKey): void {
+  if (channel) {
+    // Limpiar solo un canal
+    for (const key of ordersCache.keys()) {
+      if (key.startsWith(channel + ":")) {
+        ordersCache.delete(key);
+      }
+    }
+  } else {
+    // Limpiar todo
+    ordersCache.clear();
+  }
+}
+
 /**
  * Trae las órdenes de un canal para el rango dado, usando las credenciales
  * reales guardadas (si existen). Devuelve `null` si el canal no está

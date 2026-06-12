@@ -10,6 +10,7 @@ import {
   setChannelSyncStatus,
   getAllChannelStatuses,
 } from "@/lib/integrations/credentials";
+import { clearChannelCache } from "@/lib/analytics";
 import { createVTEXClient } from "@/lib/integrations/vtex";
 import { createMercadoLibreClient } from "@/lib/integrations/mercado-libre";
 import { createMetaClient } from "@/lib/integrations/meta";
@@ -61,6 +62,10 @@ export async function POST(request: NextRequest) {
 
   const { channel, config } = parsed.data;
   const saved = await saveChannelConfig(channel, config);
+
+  // Limpiar el cache de este canal para asegurar que próximas solicitudes
+  // traigan datos frescos
+  clearChannelCache(channel);
 
   // Probar conexión real si ya hay credenciales suficientes.
   let tested = false;
