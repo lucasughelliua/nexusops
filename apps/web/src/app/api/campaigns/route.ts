@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { createIntegrationClient } from "@/lib/integrations";
-import { getChannelConfig } from "@/lib/integrations/credentials";
+import { getChannelConfig, setChannelSyncStatus } from "@/lib/integrations/credentials";
 import { CHANNEL_PLATFORM } from "@/lib/integrations/credentials";
 import { MOCK_CAMPAIGNS } from "./mock";
 
@@ -123,8 +123,15 @@ export async function GET(request: NextRequest) {
               }))
             );
           }
-        } catch (error) {
+        } catch (error: any) {
           console.warn(`Error fetching real ${ch} campaigns:`, error);
+          // Guardamos el error para que se vea en la pestaña Integraciones
+          const message =
+            error?.originalError?.response?.data?.error?.message ||
+            error?.response?.data?.error?.message ||
+            error?.message ||
+            String(error);
+          await setChannelSyncStatus(ch as any, "ERROR", `Error al traer campañas: ${message}`);
           // Fallback to mock data
           const mockData = (MOCK_CAMPAIGNS as any)[ch] || [];
           campaigns.push(
