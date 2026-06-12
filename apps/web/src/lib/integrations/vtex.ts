@@ -132,7 +132,8 @@ export class VTEXClient implements IntegrationClient {
           params: {
             per_page: 100,
             page,
-            orderBy: "creationDate,desc",
+            // Nota: VTEX devuelve órdenes ordenadas por fecha por defecto
+            // no usamos orderBy porque puede causar "upstream error" en nginx
           },
         });
         data = response.data;
