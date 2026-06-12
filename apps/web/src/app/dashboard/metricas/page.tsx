@@ -12,7 +12,12 @@ import HeatMap from '@/components/charts/HeatMap'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface MetricsResponse {
-  kpi: KPIData & { compare?: { revenue_delta: number; orders_delta: number } }
+  kpi: KPIData & { compare?: { revenue_delta: number; orders_delta: number; units_delta: number }; cancellation_rate?: number }
+  breakdown?: {
+    by_state: Record<string, number>
+    units_by_state: Record<string, number>
+    revenue_by_state: Record<string, number>
+  }
   daily: DailySales[]
   heatmap: HeatmapCell[]
   channels: ChannelSummary[]
@@ -281,13 +286,21 @@ export default function MetricasPage() {
       </div>
 
       {/* ── Secondary KPIs ───────────────────────────────────────────────── */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
         <KPICard
           title="Cancelaciones"
           value={kpi?.cancellations ?? 0}
           format="number"
           icon="❌"
           accentColor="#ef4444"
+          loading={loadingMetrics}
+        />
+        <KPICard
+          title="Tasa de Cancelación"
+          value={kpi?.cancellation_rate ?? 0}
+          format="percent"
+          icon="📊"
+          accentColor="#f97316"
           loading={loadingMetrics}
         />
         <div className="bg-[#0c1a0d] border border-[rgba(0,166,81,0.15)] rounded-xl p-5">
@@ -336,6 +349,80 @@ export default function MetricasPage() {
           <div className="flex items-center justify-between mt-1.5">
             <span className="text-[10px] text-gray-600">$0</span>
             <span className="text-[10px] text-gray-600">Meta: $4.5M</span>
+          </div>
+        </div>
+      </div>
+
+      {/* ── Breakdown by State ────────────────────────────────────────────── */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+        <div className="bg-[#0c1a0d] border border-[rgba(0,166,81,0.15)] rounded-xl p-5">
+          <div className="text-sm font-semibold text-gray-200 mb-4">Órdenes por Estado</div>
+          <div className="space-y-3">
+            {[
+              { key: 'pending', label: 'Pendiente', icon: '⏳', color: '#f59e0b' },
+              { key: 'dispatched', label: 'Listo para preparar', icon: '📦', color: '#3b82f6' },
+              { key: 'in_transit', label: 'Enviado', icon: '📤', color: '#06b6d4' },
+              { key: 'delivered', label: 'Entregado', icon: '✅', color: '#10b981' },
+              { key: 'delayed', label: 'Demorado', icon: '⚠️', color: '#f97316' },
+              { key: 'cancelled', label: 'Cancelado', icon: '❌', color: '#ef4444' },
+            ].map(state => {
+              const count = (metrics?.breakdown?.by_state as any)?.[state.key] ?? 0;
+              return (
+                <div key={state.key} className="flex items-center justify-between py-1.5">
+                  <div className="flex items-center gap-2">
+                    <span className="text-lg">{state.icon}</span>
+                    <span className="text-sm text-gray-300">{state.label}</span>
+                  </div>
+                  <span className="text-sm font-mono text-gray-200">{count.toLocaleString('es-AR')}</span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+        <div className="bg-[#0c1a0d] border border-[rgba(0,166,81,0.15)] rounded-xl p-5">
+          <div className="text-sm font-semibold text-gray-200 mb-4">Unidades por Estado</div>
+          <div className="space-y-3">
+            {[
+              { key: 'pending', label: 'Pendiente', icon: '⏳', color: '#f59e0b' },
+              { key: 'dispatched', label: 'Listo para preparar', icon: '📦', color: '#3b82f6' },
+              { key: 'in_transit', label: 'Enviado', icon: '📤', color: '#06b6d4' },
+              { key: 'delivered', label: 'Entregado', icon: '✅', color: '#10b981' },
+              { key: 'delayed', label: 'Demorado', icon: '⚠️', color: '#f97316' },
+            ].map(state => {
+              const units = (metrics?.breakdown?.units_by_state as any)?.[state.key] ?? 0;
+              return (
+                <div key={state.key} className="flex items-center justify-between py-1.5">
+                  <div className="flex items-center gap-2">
+                    <span className="text-lg">{state.icon}</span>
+                    <span className="text-sm text-gray-300">{state.label}</span>
+                  </div>
+                  <span className="text-sm font-mono text-gray-200">{units.toLocaleString('es-AR')}</span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+        <div className="bg-[#0c1a0d] border border-[rgba(0,166,81,0.15)] rounded-xl p-5">
+          <div className="text-sm font-semibold text-gray-200 mb-4">Facturación por Estado</div>
+          <div className="space-y-3">
+            {[
+              { key: 'pending', label: 'Pendiente', icon: '⏳', color: '#f59e0b' },
+              { key: 'dispatched', label: 'Listo para preparar', icon: '📦', color: '#3b82f6' },
+              { key: 'in_transit', label: 'Enviado', icon: '📤', color: '#06b6d4' },
+              { key: 'delivered', label: 'Entregado', icon: '✅', color: '#10b981' },
+              { key: 'delayed', label: 'Demorado', icon: '⚠️', color: '#f97316' },
+            ].map(state => {
+              const revenue = (metrics?.breakdown?.revenue_by_state as any)?.[state.key] ?? 0;
+              return (
+                <div key={state.key} className="flex items-center justify-between py-1.5">
+                  <div className="flex items-center gap-2">
+                    <span className="text-lg">{state.icon}</span>
+                    <span className="text-sm text-gray-300">{state.label}</span>
+                  </div>
+                  <span className="text-sm font-mono text-gray-200">{fmtARSCompact(revenue)}</span>
+                </div>
+              );
+            })}
           </div>
         </div>
       </div>
