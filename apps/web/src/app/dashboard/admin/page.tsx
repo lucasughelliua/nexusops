@@ -561,13 +561,24 @@ function AdminPageContent() {
                   </div>
                 </div>
                 {status?.syncError && <p className="text-xs text-red-400">{status.syncError}</p>}
-                <button
-                  disabled={savingChannel === channel || !form.accessToken}
-                  onClick={() => saveChannel(channel, form)}
-                  className="px-5 py-2.5 bg-[#00A651] text-white rounded-lg text-sm font-semibold hover:bg-[#007A3D] transition-colors disabled:opacity-40 disabled:cursor-not-allowed w-full"
-                >
-                  {savingChannel === channel ? 'Guardando…' : 'Guardar y probar conexión'}
-                </button>
+                <div className="flex gap-3">
+                  <button
+                    disabled={savingChannel === channel || (!form.accessToken && !(form as any).clientId)}
+                    onClick={() => saveChannel(channel, form)}
+                    className="px-5 py-2.5 bg-[#00A651] text-white rounded-lg text-sm font-semibold hover:bg-[#007A3D] transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex-1"
+                  >
+                    {savingChannel === channel ? 'Guardando…' : 'Guardar'}
+                  </button>
+                  <a
+                    href={`/api/integrations/meli/connect?channel=${channel}`}
+                    className={`px-5 py-2.5 bg-[#2d2d2d] text-white rounded-lg text-sm font-semibold hover:bg-[#3d3d3d] transition-colors flex-1 text-center ${!(form as any).clientId ? 'opacity-40 cursor-not-allowed pointer-events-none' : ''}`}
+                  >
+                    Conectar con Mercado Libre (recomendado)
+                  </a>
+                </div>
+                <p className="text-xs text-gray-500">
+                  Recomendado: guardá primero <strong>Client ID</strong> y <strong>Client Secret</strong>, luego tocá &quot;Conectar con Mercado Libre&quot; para autorizar — así el token se renueva solo para siempre.
+                </p>
               </div>
             )
           })}
