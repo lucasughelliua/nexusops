@@ -117,40 +117,27 @@ export class VTEXClient implements IntegrationClient {
     const raw: any[] = [];
     let page = 1;
 
+    // Intentar múltiples estrategias de filtro de fecha
+    // La API de VTEX puede no soportar el filtro f_creationDate de cierta manera
+    // así que traemos todas las órdenes y filtramos en cliente
+    const dateCutoff = dateFrom.getTime();
+
     while (page <= maxPages) {
       let data: any;
       try {
-        const creationDateFilter = `creationDate:[${dateFrom.toISOString()} TO ${dateTo.toISOString()}]`;
-
-        if (page === 1) {
-          console.log("[VTEX] Fetching orders with filter:", {
-            f_creationDate: creationDateFilter,
-            per_page: 100,
-            dateFrom: dateFrom.toISOString(),
-            dateTo: dateTo.toISOString(),
-          });
-        }
-
+        // Estrategia: Traer órdenes sin filtro de fecha explícito
+        // VTEX ya devuelve ordenadas por creationDate desc, así que cuando
+        // encontremos una anterior a dateFrom, podemos parar
         const response = await this.client.get("/oms/pvt/orders", {
           params: {
             per_page: 100,
             page,
-            f_creationDate: creationDateFilter,
             orderBy: "creationDate,desc",
           },
         });
         data = response.data;
-
-        if (page === 1) {
-          console.log("[VTEX] First page response:", {
-            list_count: data?.list?.length,
-            total_pages: data?.paging?.pages,
-            paging: data?.paging,
-          });
-        }
       } catch (error) {
         if (page === 1) {
-          console.error("[VTEX] Error fetching orders on page 1:", error);
           throw new IntegrationError(
             this.platform,
             "Failed to fetch VTEX orders",
@@ -162,10 +149,23 @@ export class VTEXClient implements IntegrationClient {
       }
 
       const list: any[] = data?.list ?? [];
-      raw.push(...list);
+
+      // Filtrar órdenes por fecha en el cliente
+      // Ya que VTEX las devuelve ordenadas por creationDate desc,
+      // paramos cuando encontramos una que es anterior a dateFrom
+      let foundOldOrder = false;
+      for (const order of list) {
+        const orderDate = new Date(order.creationDate);
+        if (orderDate.getTime() >= dateCutoff && orderDate.getTime() <= dateTo.getTime()) {
+          raw.push(order);
+        } else if (orderDate.getTime() < dateCutoff) {
+          foundOldOrder = true;
+          break; // Todas las siguientes serán aún más viejas
+        }
+      }
 
       const totalPages = data?.paging?.pages ?? 1;
-      if (page >= totalPages || list.length === 0) break;
+      if (page >= totalPages || list.length === 0 || foundOldOrder) break;
       page++;
     }
 
