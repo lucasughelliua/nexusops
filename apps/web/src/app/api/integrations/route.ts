@@ -12,6 +12,10 @@ import {
 } from "@/lib/integrations/credentials";
 import { createVTEXClient } from "@/lib/integrations/vtex";
 import { createMercadoLibreClient } from "@/lib/integrations/mercado-libre";
+import { createMetaClient } from "@/lib/integrations/meta";
+import { createGoogleAdsClient } from "@/lib/integrations/google-ads";
+import { createPerfitClient } from "@/lib/integrations/perfit";
+import { createKommoClient } from "@/lib/integrations/kommo";
 
 const ALL_CHANNELS: ChannelKey[] = [...ECOMMERCE_CHANNELS, ...MARKETING_CHANNELS];
 
@@ -71,6 +75,22 @@ export async function POST(request: NextRequest) {
     } else if ((channel === "meli_1" || channel === "meli_2") && saved.config.accessToken) {
       tested = true;
       const client = createMercadoLibreClient(saved.config as any);
+      success = await client.testConnection();
+    } else if (channel === "meta" && saved.config.adAccountId && saved.config.accessToken) {
+      tested = true;
+      const client = createMetaClient(saved.config as any);
+      success = await client.testConnection();
+    } else if (channel === "google" && saved.config.sheetsUrl) {
+      tested = true;
+      const client = createGoogleAdsClient(saved.config as any);
+      success = await client.testConnection();
+    } else if (channel === "perfit" && saved.config.subdomain && saved.config.apiKey) {
+      tested = true;
+      const client = createPerfitClient(saved.config as any);
+      success = await client.testConnection();
+    } else if (channel === "kommo" && saved.config.subdomain && saved.config.accessToken) {
+      tested = true;
+      const client = createKommoClient(saved.config as any);
       success = await client.testConnection();
     }
   } catch (error) {

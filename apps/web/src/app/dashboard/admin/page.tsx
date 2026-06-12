@@ -420,6 +420,8 @@ function AdminPageContent() {
                       value={vtexForm.accountName}
                       onChange={(e) => setVtexForm({ ...vtexForm, accountName: e.target.value })}
                       placeholder={status?.summary?.['Cuenta VTEX'] !== '—' ? status?.summary?.['Cuenta VTEX'] : 'miempresa'}
+                      autoComplete="off"
+                      name="vtex-account-name"
                       className="w-full bg-[#071409] border border-[rgba(0,166,81,0.2)] rounded-lg px-3 py-2 text-sm text-gray-200 outline-none focus:border-[#00A651] transition-colors"
                     />
                   </div>
@@ -429,6 +431,8 @@ function AdminPageContent() {
                       value={vtexForm.appKey}
                       onChange={(e) => setVtexForm({ ...vtexForm, appKey: e.target.value })}
                       placeholder={status?.summary?.['App Key']}
+                      autoComplete="off"
+                      name="vtex-app-key"
                       className="w-full bg-[#071409] border border-[rgba(0,166,81,0.2)] rounded-lg px-3 py-2 text-sm text-gray-200 outline-none focus:border-[#00A651] transition-colors font-mono"
                     />
                   </div>
@@ -439,6 +443,8 @@ function AdminPageContent() {
                       value={vtexForm.appToken}
                       onChange={(e) => setVtexForm({ ...vtexForm, appToken: e.target.value })}
                       placeholder={status?.summary?.['App Token']}
+                      autoComplete="new-password"
+                      name="vtex-app-token"
                       className="w-full bg-[#071409] border border-[rgba(0,166,81,0.2)] rounded-lg px-3 py-2 text-sm text-gray-200 outline-none focus:border-[#00A651] transition-colors font-mono"
                     />
                   </div>
@@ -489,6 +495,8 @@ function AdminPageContent() {
                       value={form.accessToken}
                       onChange={(e) => setForm({ ...form, accessToken: e.target.value })}
                       placeholder="APP_USR-XXXX..."
+                      autoComplete="new-password"
+                      name={`${channel}-access-token`}
                       className="w-full bg-[#071409] border border-[rgba(0,166,81,0.2)] rounded-lg px-3 py-2 text-sm text-gray-200 outline-none focus:border-[#00A651] transition-colors font-mono"
                     />
                     <p className="text-xs text-gray-500 mt-1">Formato: APP_USR-XXXX...</p>
@@ -500,6 +508,8 @@ function AdminPageContent() {
                       value={(form as any).sellerId || ''}
                       onChange={(e) => setForm({ ...form, sellerId: e.target.value } as any)}
                       placeholder="Ej: 123456789"
+                      autoComplete="off"
+                      name={`${channel}-seller-id`}
                       className="w-full bg-[#071409] border border-[rgba(0,166,81,0.2)] rounded-lg px-3 py-2 text-sm text-gray-200 outline-none focus:border-[#00A651] transition-colors font-mono"
                     />
                     <p className="text-xs text-gray-500 mt-1">Tu ID numérico de vendedor (lo obtiene automáticamente si está vacío)</p>
@@ -543,6 +553,8 @@ function AdminPageContent() {
                       value={metaForm.adAccountId}
                       onChange={(e) => setMetaForm({ ...metaForm, adAccountId: e.target.value })}
                       placeholder="act_1234567890"
+                      autoComplete="off"
+                      name="meta-ad-account-id"
                       className="w-full bg-[#071409] border border-[rgba(0,166,81,0.2)] rounded-lg px-3 py-2 text-sm text-gray-200 outline-none focus:border-[#00A651] transition-colors font-mono"
                     />
                   </div>
@@ -552,6 +564,8 @@ function AdminPageContent() {
                       type="password"
                       value={metaForm.accessToken}
                       onChange={(e) => setMetaForm({ ...metaForm, accessToken: e.target.value })}
+                      autoComplete="new-password"
+                      name="meta-access-token"
                       className="w-full bg-[#071409] border border-[rgba(0,166,81,0.2)] rounded-lg px-3 py-2 text-sm text-gray-200 outline-none focus:border-[#00A651] transition-colors font-mono"
                     />
                   </div>
@@ -589,22 +603,27 @@ function AdminPageContent() {
                       value={googleForm.sheetsUrl}
                       onChange={(e) => setGoogleForm({ ...googleForm, sheetsUrl: e.target.value })}
                       placeholder="https://docs.google.com/spreadsheets/d/..."
+                      autoComplete="off"
+                      name="google-sheets-url"
                       className="w-full bg-[#071409] border border-[rgba(0,166,81,0.2)] rounded-lg px-3 py-2 text-sm text-gray-200 outline-none focus:border-[#00A651] transition-colors text-xs"
                     />
                   </div>
                   <div>
-                    <label className="block text-xs text-gray-500 mb-1">API Key (Google Sheets)</label>
+                    <label className="block text-xs text-gray-500 mb-1">API Key (Google Sheets) - opcional</label>
                     <input
                       type="password"
                       value={googleForm.apiKey}
                       onChange={(e) => setGoogleForm({ ...googleForm, apiKey: e.target.value })}
+                      autoComplete="new-password"
+                      name="google-api-key"
+                      placeholder="No requerido si el sheet es público"
                       className="w-full bg-[#071409] border border-[rgba(0,166,81,0.2)] rounded-lg px-3 py-2 text-sm text-gray-200 outline-none focus:border-[#00A651] transition-colors font-mono"
                     />
                   </div>
                 </div>
                 {status?.syncError && <p className="text-xs text-red-400">{status.syncError}</p>}
                 <button
-                  disabled={savingChannel === 'google' || !googleForm.sheetsUrl || !googleForm.apiKey}
+                  disabled={savingChannel === 'google' || !googleForm.sheetsUrl}
                   onClick={() => saveChannel('google', googleForm)}
                   className="px-5 py-2.5 bg-[#00A651] text-white rounded-lg text-sm font-semibold hover:bg-[#007A3D] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                 >
@@ -634,6 +653,8 @@ function AdminPageContent() {
                       value={perfitForm.subdomain}
                       onChange={(e) => setPerfitForm({ ...perfitForm, subdomain: e.target.value })}
                       placeholder="tunegocio"
+                      autoComplete="off"
+                      name="perfit-subdomain"
                       className="w-full bg-[#071409] border border-[rgba(0,166,81,0.2)] rounded-lg px-3 py-2 text-sm text-gray-200 outline-none focus:border-[#00A651] transition-colors"
                     />
                   </div>
@@ -643,6 +664,8 @@ function AdminPageContent() {
                       type="password"
                       value={perfitForm.apiKey}
                       onChange={(e) => setPerfitForm({ ...perfitForm, apiKey: e.target.value })}
+                      autoComplete="new-password"
+                      name="perfit-api-key"
                       className="w-full bg-[#071409] border border-[rgba(0,166,81,0.2)] rounded-lg px-3 py-2 text-sm text-gray-200 outline-none focus:border-[#00A651] transition-colors font-mono"
                     />
                   </div>
@@ -679,6 +702,8 @@ function AdminPageContent() {
                       value={kommoForm.subdomain}
                       onChange={(e) => setKommoForm({ ...kommoForm, subdomain: e.target.value })}
                       placeholder="tunegocio"
+                      autoComplete="off"
+                      name="kommo-subdomain"
                       className="w-full bg-[#071409] border border-[rgba(0,166,81,0.2)] rounded-lg px-3 py-2 text-sm text-gray-200 outline-none focus:border-[#00A651] transition-colors"
                     />
                   </div>
@@ -688,6 +713,8 @@ function AdminPageContent() {
                       type="password"
                       value={kommoForm.accessToken}
                       onChange={(e) => setKommoForm({ ...kommoForm, accessToken: e.target.value })}
+                      autoComplete="new-password"
+                      name="kommo-access-token"
                       className="w-full bg-[#071409] border border-[rgba(0,166,81,0.2)] rounded-lg px-3 py-2 text-sm text-gray-200 outline-none focus:border-[#00A651] transition-colors font-mono"
                     />
                   </div>

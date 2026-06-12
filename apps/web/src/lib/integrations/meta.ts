@@ -39,7 +39,7 @@ export class MetaClient implements IntegrationClient {
     this.adAccountId = id;
 
     this.client = axios.create({
-      baseURL: "https://graph.instagram.com/v18.0",
+      baseURL: "https://graph.facebook.com/v18.0",
       params: {
         access_token: credentials.accessToken,
       },
