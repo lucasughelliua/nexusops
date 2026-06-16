@@ -97,7 +97,18 @@ interface PerfitData {
     unsubscribed: number
     open_rate: number
     click_rate: number
-  }
+  } | null
+  campaigns?: Array<{
+    id: string
+    name: string
+    status: string
+    sent: number
+    delivered: number
+    opened: number
+    clicked: number
+    unsubscribed: number
+    launchDate: string | null
+  }>
 }
 
 interface GoogleData {
@@ -1262,7 +1273,7 @@ function PerfitTab({ campaigns, perfitData, loading }: {
   const [dateFrom, setDateFrom] = useState<string>(format(new Date(Date.now() - 30 * 24 * 60 * 60 * 1000), 'yyyy-MM-dd'))
   const [dateTo, setDateTo] = useState<string>(format(new Date(), 'yyyy-MM-dd'))
   const [filterStatus, setFilterStatus] = useState<string>('')
-  const totals = perfitData?.totals
+  const totals = perfitData?.totals ?? null
 
   const kpis = totals ? [
     { label: 'Enviados', value: fmtNum(totals.sent) },
@@ -1274,13 +1285,16 @@ function PerfitTab({ campaigns, perfitData, loading }: {
     { label: 'Desubscriptos', value: fmtNum(totals.unsubscribed) },
   ] : []
 
-  const cols: ColDef<Campaign>[] = [
-    { key: 'name', label: 'Campaña', render: r => <span className="text-gray-200 font-medium truncate max-w-[220px] block">{r.name}</span> },
-    { key: 'status', label: 'Estado', right: true, render: r => <StatusBadge status={r.status} /> },
-    { key: 'spend', label: 'Gasto', right: true, render: r => <span className="font-semibold text-gray-200">{fmtARSCompact(r.spend)}</span> },
-    { key: 'leads', label: 'Leads', right: true, render: r => <span>{fmtNum(r.leads)}</span> },
-    { key: 'roi', label: 'ROI', right: true, render: r => r.roi ? <span className="text-emerald-400 font-semibold">{fmtNum(r.roi)}%</span> : <span className="text-gray-600">-</span> },
+  type PerfitRow = NonNullable<PerfitData['campaigns']>[number]
+  const perfitCols: ColDef<PerfitRow>[] = [
+    { key: 'name', label: 'Campaña', render: r => <span className="text-gray-200 font-medium truncate max-w-[280px] block">{r.name}</span> },
+    { key: 'launchDate', label: 'Fecha', render: r => <span className="text-gray-400 text-xs">{r.launchDate ? r.launchDate.split('T')[0] : '-'}</span> },
+    { key: 'sent', label: 'Enviados', right: true, render: r => <span>{fmtNum(r.sent)}</span> },
+    { key: 'opened', label: 'Abiertos', right: true, render: r => <span className="text-emerald-400">{fmtNum(r.opened)} <span className="text-gray-500 text-xs">({r.sent > 0 ? ((r.opened/r.sent)*100).toFixed(1) : 0}%)</span></span> },
+    { key: 'clicked', label: 'Clicks', right: true, render: r => <span>{fmtNum(r.clicked)} <span className="text-gray-500 text-xs">({r.sent > 0 ? ((r.clicked/r.sent)*100).toFixed(1) : 0}%)</span></span> },
   ]
+
+  const perfitRows = perfitData?.campaigns ?? []
 
   return (
     <div className="space-y-5">
@@ -1296,21 +1310,11 @@ function PerfitTab({ campaigns, perfitData, loading }: {
         </div>
       )}
 
-      <FilterBar
-        dateFrom={dateFrom}
-        dateTo={dateTo}
-        onDatesChange={(f, t) => { setDateFrom(f); setDateTo(t) }}
-        status={filterStatus}
-        statusOptions={['ACTIVE', 'PAUSED', 'ARCHIVED']}
-        onStatusChange={setFilterStatus}
-      />
-
       <SortableTable
-        cols={cols}
-        rows={campaigns.filter(c => !filterStatus || c.status === filterStatus) as any[]}
+        cols={perfitCols as any}
+        rows={perfitRows as any[]}
         loading={loading}
-        onRowClick={c => setSelected(c as Campaign)}
-        emptyMsg="Sin campañas de Perfit."
+        emptyMsg="Sin campañas de Perfit en el período seleccionado."
       />
 
       {selected && (

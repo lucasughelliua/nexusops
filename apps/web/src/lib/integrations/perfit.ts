@@ -16,13 +16,26 @@ interface PerfitCredentials {
 export interface PerfitCampaign {
   id: string;
   name: string;
-  status: "active" | "paused" | "completed" | "archived";
-  budget: number;
-  spent: number;
-  leads: number;
-  costPerLead: number;
-  roi: number;
-  roas: number;
+  status: string;
+  sent: number;
+  delivered: number;
+  opened: number;
+  clicked: number;
+  unsubscribed: number;
+  launchDate: string | null;
+}
+
+export interface PerfitEmailStats {
+  totals: {
+    sent: number;
+    delivered: number;
+    opened: number;
+    clicked: number;
+    unsubscribed: number;
+    open_rate: number;
+    click_rate: number;
+  };
+  campaigns: PerfitCampaign[];
 }
 
 export class PerfitClient implements IntegrationClient {
@@ -55,42 +68,74 @@ export class PerfitClient implements IntegrationClient {
     }
   }
 
-  async getCampaigns(dateFrom?: Date, dateTo?: Date): Promise<PerfitCampaign[]> {
-    try {
-      const params: Record<string, any> = {
-        limit: 100,
-      };
+  async getEmailStats(dateFrom?: Date, dateTo?: Date): Promise<PerfitEmailStats> {
+    const fromMs = dateFrom?.getTime() ?? 0;
+    const toMs = dateTo?.getTime() ?? Date.now();
 
-      if (dateFrom && dateTo) {
-        params.date_from = dateFrom.toISOString().split("T")[0];
-        params.date_to = dateTo.toISOString().split("T")[0];
+    const allCampaigns: PerfitCampaign[] = [];
+    let offset = 0;
+    const limit = 100;
+
+    // Paginar hasta cubrir el rango de fechas pedido
+    while (true) {
+      const response = await this.client.get("/campaigns", {
+        params: { limit, offset, sortBy: "launchDate", sortDir: "desc" },
+      });
+
+      const data: any[] = response.data?.data ?? [];
+      if (data.length === 0) break;
+
+      let pastRange = false;
+      for (const c of data) {
+        if (c.state !== "SENT" || !c.launchDate || !c.metrics) continue;
+
+        const launchMs = new Date(c.launchDate).getTime();
+        if (launchMs > toMs) continue;
+        if (launchMs < fromMs) { pastRange = true; break; }
+
+        const m = c.metrics;
+        const sent = m.sent ?? 0;
+        const bounced = m.bounced ?? 0;
+        allCampaigns.push({
+          id: String(c.id),
+          name: c.name,
+          status: c.state,
+          sent,
+          delivered: sent - bounced,
+          opened: m.opened ?? 0,
+          clicked: m.clicked ?? 0,
+          unsubscribed: m.unsubscribed ?? 0,
+          launchDate: c.launchDate,
+        });
       }
 
-      const response = await this.client.get("/campaigns", { params });
-
-      const list = Array.isArray(response.data?.campaigns)
-        ? response.data.campaigns
-        : Array.isArray(response.data)
-          ? response.data
-          : [];
-
-      return list.map((c: any) => ({
-        id: c.id,
-        name: c.name,
-        status: c.status,
-        budget: parseFloat(c.budget || "0"),
-        spent: parseFloat(c.spent || "0"),
-        leads: parseInt(c.leads || "0"),
-        costPerLead: parseFloat(c.cost_per_lead || "0"),
-        roi: parseFloat(c.roi || "0"),
-        roas: parseFloat(c.roas || "0"),
-      }));
-    } catch (error) {
-      // El endpoint de campañas puede no existir para todas las cuentas;
-      // no rompemos el dashboard por esto, sólo devolvemos vacío.
-      console.warn("Error fetching Perfit campaigns:", error);
-      return [];
+      if (pastRange || data.length < limit) break;
+      offset += limit;
     }
+
+    const totSent = allCampaigns.reduce((s, c) => s + c.sent, 0);
+    const totDelivered = allCampaigns.reduce((s, c) => s + c.delivered, 0);
+    const totOpened = allCampaigns.reduce((s, c) => s + c.opened, 0);
+    const totClicked = allCampaigns.reduce((s, c) => s + c.clicked, 0);
+    const totUnsub = allCampaigns.reduce((s, c) => s + c.unsubscribed, 0);
+
+    return {
+      totals: {
+        sent: totSent,
+        delivered: totDelivered,
+        opened: totOpened,
+        clicked: totClicked,
+        unsubscribed: totUnsub,
+        open_rate: totSent > 0 ? Number(((totOpened / totSent) * 100).toFixed(1)) : 0,
+        click_rate: totSent > 0 ? Number(((totClicked / totSent) * 100).toFixed(1)) : 0,
+      },
+      campaigns: allCampaigns,
+    };
+  }
+
+  async getCampaigns(dateFrom?: Date, dateTo?: Date): Promise<PerfitCampaign[]> {
+    const stats = await this.getEmailStats(dateFrom, dateTo);
+    return stats.campaigns;
   }
 
   async validateCredentials(creds: CredentialValue): Promise<boolean> {
@@ -107,7 +152,7 @@ export class PerfitClient implements IntegrationClient {
     const campaigns = await this.getCampaigns(options.startDate, options.endDate);
     return campaigns.map((c) => ({
       metricType: "campaign_spend",
-      value: c.spent,
+      value: c.sent,
       date: new Date(),
       dimensions: {
         campaignId: c.id,
