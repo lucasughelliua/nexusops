@@ -103,6 +103,7 @@ const MOCK_MULTIPLIER: Record<ChannelKey, number> = {
   google: 1,
   perfit: 1,
   kommo: 1,
+  tiendanube: 2,
 };
 
 const MOCK_PRODUCTS: Record<string, { sku: string; name: string }[]> = {

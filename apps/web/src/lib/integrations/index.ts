@@ -6,6 +6,7 @@ import { createMetaClient } from "./meta";
 import { createGoogleAdsClient } from "./google-ads";
 import { createKommoClient } from "./kommo-crm";
 import { createPerfitClient } from "./perfit";
+import { createTiendanubeClient } from "./tiendanube";
 
 /**
  * Factory para crear clientes de integración según plataforma
@@ -27,6 +28,8 @@ export function createIntegrationClient(
       return createKommoClient(credentials);
     case Platform.PERFIT:
       return createPerfitClient(credentials);
+    case Platform.TIENDANUBE:
+      return createTiendanubeClient(credentials);
     case Platform.GOOGLE_SHEETS:
       throw new Error("Google Sheets is not a real integration client");
     default:

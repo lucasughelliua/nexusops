@@ -160,6 +160,7 @@ enum Platform {
   KOMMO_CRM
   PERFIT
   GOOGLE_SHEETS
+  TIENDANUBE
 }
 
 enum Role {

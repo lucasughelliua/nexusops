@@ -1,9 +1,10 @@
 'use client'
 
 import { useState, useEffect, useCallback, useMemo } from 'react'
+import { format } from 'date-fns'
 import {
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
-  PieChart, Pie, Cell, ResponsiveContainer, Legend,
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
+  PieChart, Pie, Cell, LineChart, Line,
 } from 'recharts'
 import { fmtARSCompact, fmtNum, fmtPct } from '@/lib/utils'
 
@@ -129,8 +130,35 @@ interface KommoFullData {
   isMock?: boolean
 }
 
+interface TiendanubeOrder {
+  id: string
+  number: string
+  status: string
+  created_at: string
+  updated_at: string
+  total: number
+  subtotal: number
+  items_count: number
+  customer_name: string
+  payment_status: string
+}
+
+interface TiendanubeStats {
+  totalOrders: number
+  totalRevenue: number
+  totalCustomers: number
+  avgOrderValue: number
+  lastOrderDate?: string
+}
+
+interface TiendanubeFullData {
+  orders: TiendanubeOrder[]
+  stats: TiendanubeStats
+  isMock?: boolean
+}
+
 type SortDir = 'asc' | 'desc'
-type MainTab = 'resumen' | 'meta' | 'perfit' | 'google' | 'kommo'
+type MainTab = 'resumen' | 'meta' | 'perfit' | 'google' | 'kommo' | 'tiendanube'
 type MetaSubTab = 'campaigns' | 'adsets' | 'ads'
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -140,6 +168,7 @@ const CHANNEL_COLORS_MAP: Record<string, string> = {
   Perfit: '#ec4899',
   'Google Ads': '#06b6d4',
   Kommo: '#10b981',
+  Tiendanube: '#f59e0b',
 }
 const PIE_COLORS = ['#3b82f6', '#ec4899', '#06b6d4', '#10b981', '#f59e0b']
 
@@ -148,6 +177,8 @@ const STATUS_LABELS: Record<string, string> = {
   PAUSED: 'Pausada', paused: 'Pausada',
   ARCHIVED: 'Archivada', archived: 'Archivada',
   DELETED: 'Eliminada', completed: 'Completada',
+  pending: 'Pendiente', processing: 'Procesando', cancelled: 'Cancelada',
+  paid: 'Pagada', failed: 'Fallida',
 }
 
 const CHANNEL_PILL: Record<string, string> = {
@@ -155,17 +186,22 @@ const CHANNEL_PILL: Record<string, string> = {
   perfit: 'bg-pink-900/30 text-pink-400 border border-pink-800/40',
   google: 'bg-cyan-900/30 text-cyan-400 border border-cyan-800/40',
   kommo: 'bg-emerald-900/30 text-emerald-400 border border-emerald-800/40',
+  tiendanube: 'bg-amber-900/30 text-amber-400 border border-amber-800/40',
 }
+
+const ROWS_PER_PAGE = 20
 
 // ── Shared utility components ─────────────────────────────────────────────────
 
 function StatusBadge({ status }: { status: string }) {
   const label = STATUS_LABELS[status] ?? status
-  const color = ['ACTIVE', 'active'].includes(status)
+  const color = ['ACTIVE', 'active', 'paid', 'completed'].includes(status)
     ? 'bg-[rgba(0,166,81,0.15)] text-[#00C65E]'
     : ['PAUSED', 'paused'].includes(status)
       ? 'bg-amber-900/30 text-amber-400'
-      : 'bg-gray-800/60 text-gray-500'
+      : ['pending'].includes(status)
+        ? 'bg-slate-900/30 text-slate-400'
+        : 'bg-gray-800/60 text-gray-500'
   return <span className={`text-[11px] px-2 py-1 rounded font-medium ${color}`}>{label}</span>
 }
 
@@ -229,7 +265,99 @@ function SearchInput({ value, onChange, placeholder = 'Buscar…' }: { value: st
   )
 }
 
-// ── Generic sortable table ────────────────────────────────────────────────────
+// ── Pagination Component ──────────────────────────────────────────────────────
+
+function Pagination({
+  pageCount,
+  currentPage,
+  onPageChange,
+}: {
+  pageCount: number
+  currentPage: number
+  onPageChange: (page: number) => void
+}) {
+  return (
+    <div className="flex items-center justify-between mt-4 pt-3 border-t border-[rgba(0,166,81,0.1)]">
+      <span className="text-xs text-gray-500">
+        Página {currentPage} de {pageCount}
+      </span>
+      <div className="flex gap-2">
+        <button
+          onClick={() => onPageChange(currentPage - 1)}
+          disabled={currentPage === 1}
+          className="px-3 py-1.5 text-xs rounded-lg border border-[rgba(0,166,81,0.2)] text-gray-400 hover:text-gray-200 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+        >
+          ← Anterior
+        </button>
+        <button
+          onClick={() => onPageChange(currentPage + 1)}
+          disabled={currentPage >= pageCount}
+          className="px-3 py-1.5 text-xs rounded-lg border border-[rgba(0,166,81,0.2)] text-gray-400 hover:text-gray-200 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+        >
+          Siguiente →
+        </button>
+      </div>
+    </div>
+  )
+}
+
+// ── Filter Bar Component ──────────────────────────────────────────────────────
+
+function FilterBar({
+  dateFrom,
+  dateTo,
+  onDatesChange,
+  status,
+  statusOptions,
+  onStatusChange,
+}: {
+  dateFrom: string
+  dateTo: string
+  onDatesChange: (from: string, to: string) => void
+  status: string
+  statusOptions: string[]
+  onStatusChange: (status: string) => void
+}) {
+  return (
+    <div className="flex flex-wrap gap-3 items-end mb-4 pb-4 border-b border-[rgba(0,166,81,0.1)]">
+      <div className="flex flex-col gap-1">
+        <label className="text-xs font-semibold text-gray-400 uppercase">Desde</label>
+        <input
+          type="date"
+          value={dateFrom}
+          onChange={e => onDatesChange(e.target.value, dateTo)}
+          className="px-3 py-1.5 text-xs rounded-lg bg-[#071409] border border-[rgba(0,166,81,0.2)] text-gray-200 outline-none focus:border-[#00A651] transition-colors"
+        />
+      </div>
+      <div className="flex flex-col gap-1">
+        <label className="text-xs font-semibold text-gray-400 uppercase">Hasta</label>
+        <input
+          type="date"
+          value={dateTo}
+          onChange={e => onDatesChange(dateFrom, e.target.value)}
+          className="px-3 py-1.5 text-xs rounded-lg bg-[#071409] border border-[rgba(0,166,81,0.2)] text-gray-200 outline-none focus:border-[#00A651] transition-colors"
+        />
+      </div>
+      {statusOptions.length > 0 && (
+        <div className="flex flex-col gap-1">
+          <label className="text-xs font-semibold text-gray-400 uppercase">Estado</label>
+          <select
+            value={status}
+            onChange={e => onStatusChange(e.target.value)}
+            className="px-3 py-1.5 text-xs rounded-lg bg-[#071409] border border-[rgba(0,166,81,0.2)] text-gray-200 outline-none focus:border-[#00A651] transition-colors"
+          >
+            <option value="">Todos</option>
+            {statusOptions.map(s => (
+              <option key={s} value={s}>{STATUS_LABELS[s] ?? s}</option>
+            ))}
+          </select>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── Generic sortable table with pagination ────────────────────────────────────
 
 interface ColDef<T> {
   key: keyof T | string
@@ -255,10 +383,12 @@ function SortableTable<T extends { id: string | number }>({
   const [sortKey, setSortKey] = useState<string>(cols[0]?.key as string ?? '')
   const [sortDir, setSortDir] = useState<SortDir>('desc')
   const [search, setSearch] = useState('')
+  const [currentPage, setCurrentPage] = useState(1)
 
   const handleSort = (key: string) => {
     if (key === sortKey) setSortDir(d => d === 'asc' ? 'desc' : 'asc')
     else { setSortKey(key); setSortDir('desc') }
+    setCurrentPage(1)
   }
 
   const filtered = useMemo(() => {
@@ -280,6 +410,12 @@ function SortableTable<T extends { id: string | number }>({
       return sortDir === 'asc' ? String(av).localeCompare(String(bv)) : String(bv).localeCompare(String(av))
     })
   }, [rows, search, sortKey, sortDir, cols])
+
+  const pageCount = Math.ceil(filtered.length / ROWS_PER_PAGE)
+  const paginatedRows = filtered.slice(
+    (currentPage - 1) * ROWS_PER_PAGE,
+    currentPage * ROWS_PER_PAGE
+  )
 
   return (
     <div className="space-y-3">
@@ -307,11 +443,11 @@ function SortableTable<T extends { id: string | number }>({
             <tbody>
               {loading ? (
                 <SkeletonRows cols={cols.length} />
-              ) : filtered.length === 0 ? (
+              ) : paginatedRows.length === 0 ? (
                 <tr>
                   <td colSpan={cols.length} className="px-5 py-10 text-center text-gray-500 text-sm">{emptyMsg}</td>
                 </tr>
-              ) : filtered.map(row => (
+              ) : paginatedRows.map(row => (
                 <tr
                   key={row.id}
                   onClick={() => onRowClick?.(row)}
@@ -331,11 +467,14 @@ function SortableTable<T extends { id: string | number }>({
           </table>
         </div>
       </div>
+      {pageCount > 1 && (
+        <Pagination pageCount={pageCount} currentPage={currentPage} onPageChange={setCurrentPage} />
+      )}
     </div>
   )
 }
 
-// ── Detail Modal ──────────────────────────────────────────────────────────────
+// ── Enhanced Detail Modal ─────────────────────────────────────────────────────
 
 function DetailModal({
   title,
@@ -343,6 +482,8 @@ function DetailModal({
   channelKey,
   status,
   metrics,
+  thumbnailUrl,
+  children,
   onClose,
 }: {
   title: string
@@ -350,6 +491,8 @@ function DetailModal({
   channelKey?: string
   status?: string
   metrics: { label: string; value: string }[]
+  thumbnailUrl?: string
+  children?: React.ReactNode
   onClose: () => void
 }) {
   return (
@@ -358,7 +501,7 @@ function DetailModal({
       onClick={onClose}
     >
       <div
-        className="w-full md:max-w-xl max-h-[90vh] overflow-y-auto bg-[#081209] border border-[rgba(0,166,81,0.25)] rounded-t-2xl md:rounded-2xl p-6 space-y-5 shadow-2xl"
+        className="w-full md:max-w-2xl max-h-[90vh] overflow-y-auto bg-[#081209] border border-[rgba(0,166,81,0.25)] rounded-t-2xl md:rounded-2xl p-6 space-y-5 shadow-2xl"
         onClick={e => e.stopPropagation()}
       >
         <div className="flex items-start justify-between gap-3">
@@ -380,14 +523,34 @@ function DetailModal({
             &#x2715;
           </button>
         </div>
-        <div className="grid grid-cols-2 gap-2">
+
+        {/* Thumbnail if available */}
+        {thumbnailUrl && (
+          <div className="rounded-lg overflow-hidden bg-[#0c1a0d] border border-[rgba(0,166,81,0.15)]">
+            <img
+              src={thumbnailUrl}
+              alt="creative"
+              className="w-full max-h-[200px] object-cover"
+            />
+          </div>
+        )}
+
+        {/* Metrics grid */}
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
           {metrics.map(m => (
             <div key={m.label} className="bg-[#0c1a0d] rounded-lg p-3">
               <div className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 mb-1">{m.label}</div>
-              <div className="text-base font-bold text-gray-100">{m.value}</div>
+              <div className="text-base font-bold text-gray-100 truncate">{m.value}</div>
             </div>
           ))}
         </div>
+
+        {/* Children for mini charts */}
+        {children && (
+          <div>
+            {children}
+          </div>
+        )}
       </div>
     </div>
   )
@@ -490,6 +653,9 @@ function SocialChip({ label, value }: { label: string; value: string }) {
 function MetaTab({ data, loading }: { data: MetaFullData | null; loading: boolean }) {
   const [subTab, setSubTab] = useState<MetaSubTab>('campaigns')
   const [selected, setSelected] = useState<any | null>(null)
+  const [dateFrom, setDateFrom] = useState<string>(format(new Date(Date.now() - 30 * 24 * 60 * 60 * 1000), 'yyyy-MM-dd'))
+  const [dateTo, setDateTo] = useState<string>(format(new Date(), 'yyyy-MM-dd'))
+  const [filterStatus, setFilterStatus] = useState<string>('')
 
   const campaigns = data?.campaigns ?? []
   const adsets = data?.adsets ?? []
@@ -672,31 +838,61 @@ function MetaTab({ data, loading }: { data: MetaFullData | null; loading: boolea
       </div>
 
       {subTab === 'campaigns' && (
-        <SortableTable
-          cols={campCols}
-          rows={campaigns as any[]}
-          loading={loading}
-          onRowClick={openModal}
-          emptyMsg="Sin campañas. Configurá credenciales de Meta Ads en Integraciones."
-        />
+        <>
+          <FilterBar
+            dateFrom={dateFrom}
+            dateTo={dateTo}
+            onDatesChange={(f, t) => { setDateFrom(f); setDateTo(t) }}
+            status={filterStatus}
+            statusOptions={['ACTIVE', 'PAUSED', 'ARCHIVED']}
+            onStatusChange={setFilterStatus}
+          />
+          <SortableTable
+            cols={campCols}
+            rows={campaigns.filter(c => !filterStatus || c.status === filterStatus) as any[]}
+            loading={loading}
+            onRowClick={row => setSelected(row)}
+            emptyMsg="Sin campañas. Configurá credenciales de Meta Ads en Integraciones."
+          />
+        </>
       )}
       {subTab === 'adsets' && (
-        <SortableTable
-          cols={adsetCols}
-          rows={adsets as any[]}
-          loading={loading}
-          onRowClick={openModal}
-          emptyMsg="Sin conjuntos de anuncios."
-        />
+        <>
+          <FilterBar
+            dateFrom={dateFrom}
+            dateTo={dateTo}
+            onDatesChange={(f, t) => { setDateFrom(f); setDateTo(t) }}
+            status={filterStatus}
+            statusOptions={['ACTIVE', 'PAUSED']}
+            onStatusChange={setFilterStatus}
+          />
+          <SortableTable
+            cols={adsetCols}
+            rows={adsets.filter(a => !filterStatus || a.status === filterStatus) as any[]}
+            loading={loading}
+            onRowClick={row => setSelected(row)}
+            emptyMsg="Sin conjuntos de anuncios."
+          />
+        </>
       )}
       {subTab === 'ads' && (
-        <SortableTable
-          cols={adCols}
-          rows={ads as any[]}
-          loading={loading}
-          onRowClick={openModal}
-          emptyMsg="Sin anuncios."
-        />
+        <>
+          <FilterBar
+            dateFrom={dateFrom}
+            dateTo={dateTo}
+            onDatesChange={(f, t) => { setDateFrom(f); setDateTo(t) }}
+            status={filterStatus}
+            statusOptions={['ACTIVE', 'PAUSED']}
+            onStatusChange={setFilterStatus}
+          />
+          <SortableTable
+            cols={adCols}
+            rows={ads.filter(a => !filterStatus || a.status === filterStatus) as any[]}
+            loading={loading}
+            onRowClick={row => setSelected(row)}
+            emptyMsg="Sin anuncios."
+          />
+        </>
       )}
 
       {selected && (
@@ -705,6 +901,7 @@ function MetaTab({ data, loading }: { data: MetaFullData | null; loading: boolea
           channel="Meta Ads"
           channelKey="meta"
           status={selected.status}
+          thumbnailUrl={selected.thumbnailUrl}
           metrics={getModalMetrics(selected)}
           onClose={() => setSelected(null)}
         />
@@ -721,6 +918,9 @@ function PerfitTab({ campaigns, perfitData, loading }: {
   loading: boolean
 }) {
   const [selected, setSelected] = useState<Campaign | null>(null)
+  const [dateFrom, setDateFrom] = useState<string>(format(new Date(Date.now() - 30 * 24 * 60 * 60 * 1000), 'yyyy-MM-dd'))
+  const [dateTo, setDateTo] = useState<string>(format(new Date(), 'yyyy-MM-dd'))
+  const [filterStatus, setFilterStatus] = useState<string>('')
   const totals = perfitData?.totals
 
   const kpis = totals ? [
@@ -755,9 +955,18 @@ function PerfitTab({ campaigns, perfitData, loading }: {
         </div>
       )}
 
+      <FilterBar
+        dateFrom={dateFrom}
+        dateTo={dateTo}
+        onDatesChange={(f, t) => { setDateFrom(f); setDateTo(t) }}
+        status={filterStatus}
+        statusOptions={['ACTIVE', 'PAUSED', 'ARCHIVED']}
+        onStatusChange={setFilterStatus}
+      />
+
       <SortableTable
         cols={cols}
-        rows={campaigns as any[]}
+        rows={campaigns.filter(c => !filterStatus || c.status === filterStatus) as any[]}
         loading={loading}
         onRowClick={c => setSelected(c as Campaign)}
         emptyMsg="Sin campañas de Perfit."
@@ -774,6 +983,8 @@ function PerfitTab({ campaigns, perfitData, loading }: {
             { label: 'Leads', value: fmtNum(selected.leads) },
             { label: 'ROI', value: selected.roi ? `${fmtNum(selected.roi)}%` : '-' },
             { label: 'ROAS', value: selected.roas ? `${selected.roas.toFixed(2)}x` : '-' },
+            { label: 'Estado', value: STATUS_LABELS[selected.status] ?? selected.status },
+            { label: 'Conversiones', value: fmtNum(selected.conversions) },
           ]}
           onClose={() => setSelected(null)}
         />
@@ -790,6 +1001,9 @@ function GoogleTab({ campaigns, googleData, loading }: {
   loading: boolean
 }) {
   const [selected, setSelected] = useState<Campaign | null>(null)
+  const [dateFrom, setDateFrom] = useState<string>(format(new Date(Date.now() - 30 * 24 * 60 * 60 * 1000), 'yyyy-MM-dd'))
+  const [dateTo, setDateTo] = useState<string>(format(new Date(), 'yyyy-MM-dd'))
+  const [filterStatus, setFilterStatus] = useState<string>('')
   const totals = googleData?.totals
 
   const kpis = totals ? [
@@ -826,9 +1040,18 @@ function GoogleTab({ campaigns, googleData, loading }: {
         </div>
       )}
 
+      <FilterBar
+        dateFrom={dateFrom}
+        dateTo={dateTo}
+        onDatesChange={(f, t) => { setDateFrom(f); setDateTo(t) }}
+        status={filterStatus}
+        statusOptions={['ACTIVE', 'PAUSED', 'ARCHIVED']}
+        onStatusChange={setFilterStatus}
+      />
+
       <SortableTable
         cols={cols}
-        rows={campaigns as any[]}
+        rows={campaigns.filter(c => !filterStatus || c.status === filterStatus) as any[]}
         loading={loading}
         onRowClick={c => setSelected(c as Campaign)}
         emptyMsg="Sin campañas de Google Ads."
@@ -859,6 +1082,10 @@ function GoogleTab({ campaigns, googleData, loading }: {
 // ── Kommo Tab ─────────────────────────────────────────────────────────────────
 
 function KommoTab({ data, loading }: { data: KommoFullData | null; loading: boolean }) {
+  const [dateFrom, setDateFrom] = useState<string>(format(new Date(Date.now() - 30 * 24 * 60 * 60 * 1000), 'yyyy-MM-dd'))
+  const [dateTo, setDateTo] = useState<string>(format(new Date(), 'yyyy-MM-dd'))
+  const [filterStatus, setFilterStatus] = useState<string>('')
+
   const stats = data?.stats
 
   const kpis = stats ? [
@@ -950,12 +1177,148 @@ function KommoTab({ data, loading }: { data: KommoFullData | null; loading: bool
         </div>
       )}
 
+      <FilterBar
+        dateFrom={dateFrom}
+        dateTo={dateTo}
+        onDatesChange={(f, t) => { setDateFrom(f); setDateTo(t) }}
+        status={filterStatus}
+        statusOptions={[]}
+        onStatusChange={setFilterStatus}
+      />
+
       <SortableTable
         cols={cols}
         rows={statusRows}
         loading={loading}
         emptyMsg="Sin datos de Kommo CRM."
       />
+    </div>
+  )
+}
+
+// ── Tiendanube Tab ────────────────────────────────────────────────────────────
+
+function TiendanubeTab({ data, loading }: { data: TiendanubeFullData | null; loading: boolean }) {
+  const [selected, setSelected] = useState<TiendanubeOrder | null>(null)
+  const [dateFrom, setDateFrom] = useState<string>(format(new Date(Date.now() - 30 * 24 * 60 * 60 * 1000), 'yyyy-MM-dd'))
+  const [dateTo, setDateTo] = useState<string>(format(new Date(), 'yyyy-MM-dd'))
+  const [filterStatus, setFilterStatus] = useState<string>('')
+
+  const stats = data?.stats
+  const orders = data?.orders ?? []
+
+  const kpis = stats ? [
+    { label: 'Pedidos Totales', value: fmtNum(stats.totalOrders), accent: false },
+    { label: 'Revenue', value: fmtARSCompact(stats.totalRevenue), accent: true },
+    { label: 'Clientes', value: fmtNum(stats.totalCustomers) },
+    { label: 'Ticket Promedio', value: fmtARSCompact(stats.avgOrderValue), accent: false },
+  ] : []
+
+  const cols: ColDef<TiendanubeOrder>[] = [
+    { key: 'number', label: 'Pedido #', render: r => <span className="text-gray-200 font-medium">{r.number}</span> },
+    { key: 'customer_name', label: 'Cliente', render: r => <span className="text-gray-300">{r.customer_name}</span> },
+    { key: 'status', label: 'Estado', right: true, render: r => <StatusBadge status={r.status} /> },
+    { key: 'total', label: 'Total', right: true, render: r => <span className="font-semibold text-gray-200">{fmtARSCompact(r.total)}</span> },
+    { key: 'items_count', label: 'Items', right: true, render: r => <span>{fmtNum(r.items_count)}</span> },
+    { key: 'payment_status', label: 'Pago', right: true, render: r => <StatusBadge status={r.payment_status} /> },
+    { key: 'created_at', label: 'Fecha', right: true, render: r => <span className="text-xs text-gray-400">{format(new Date(r.created_at), 'dd/MM/yyyy')}</span> },
+  ]
+
+  return (
+    <div className="space-y-5">
+      {loading ? (
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <div key={i} className="bg-[#0c1a0d] border border-[rgba(0,166,81,0.15)] rounded-xl p-4 h-20 animate-pulse" />
+          ))}
+        </div>
+      ) : (
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          {kpis.map(k => <KpiCard key={k.label} {...k} />)}
+        </div>
+      )}
+
+      {!loading && orders.length > 0 && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <div className="bg-[#0c1a0d] border border-[rgba(0,166,81,0.15)] rounded-xl p-5">
+            <div className="text-[11px] font-semibold uppercase tracking-wider text-gray-400 mb-4">Distribución por Estado</div>
+            <ResponsiveContainer width="100%" height={220}>
+              <PieChart>
+                <Pie
+                  data={Object.entries(
+                    orders.reduce((acc, o) => ({ ...acc, [o.status]: (acc[o.status as keyof typeof acc] ?? 0) + 1 }), {} as Record<string, number>)
+                  ).map(([status, count]) => ({ name: STATUS_LABELS[status] ?? status, value: count }))}
+                  dataKey="value"
+                  nameKey="name"
+                  cx="50%"
+                  cy="50%"
+                  outerRadius={75}
+                >
+                  {PIE_COLORS.map((color, i) => (
+                    <Cell key={i} fill={color} />
+                  ))}
+                </Pie>
+                <Tooltip content={<ChartTooltip />} />
+              </PieChart>
+            </ResponsiveContainer>
+          </div>
+
+          <div className="bg-[#0c1a0d] border border-[rgba(0,166,81,0.15)] rounded-xl p-5">
+            <div className="text-[11px] font-semibold uppercase tracking-wider text-gray-400 mb-4">Revenue por Día</div>
+            <ResponsiveContainer width="100%" height={220}>
+              <LineChart
+                data={Object.entries(
+                  orders.reduce((acc, o) => {
+                    const day = format(new Date(o.created_at), 'dd/MM')
+                    return { ...acc, [day]: (acc[day as keyof typeof acc] ?? 0) + o.total }
+                  }, {} as Record<string, number>)
+                ).map(([day, revenue]) => ({ day, revenue }))}
+              >
+                <CartesianGrid strokeDasharray="3 3" stroke="#1a2e1b" />
+                <XAxis dataKey="day" tick={{ fill: '#6b7280', fontSize: 10 }} />
+                <YAxis tick={{ fill: '#6b7280', fontSize: 10 }} />
+                <Tooltip content={<ChartTooltip fmt="currency" />} />
+                <Line type="monotone" dataKey="revenue" stroke="#00A651" strokeWidth={2} dot={{ fill: '#00A651', r: 4 }} activeDot={{ r: 6 }} />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      )}
+
+      <FilterBar
+        dateFrom={dateFrom}
+        dateTo={dateTo}
+        onDatesChange={(f, t) => { setDateFrom(f); setDateTo(t) }}
+        status={filterStatus}
+        statusOptions={['pending', 'processing', 'completed', 'cancelled']}
+        onStatusChange={setFilterStatus}
+      />
+
+      <SortableTable
+        cols={cols}
+        rows={orders.filter(o => !filterStatus || o.status === filterStatus)}
+        loading={loading}
+        onRowClick={o => setSelected(o)}
+        emptyMsg="Sin pedidos en Tiendanube."
+      />
+
+      {selected && (
+        <DetailModal
+          title={`Pedido #${selected.number}`}
+          channel="Tiendanube"
+          channelKey="tiendanube"
+          status={selected.status}
+          metrics={[
+            { label: 'Total', value: fmtARSCompact(selected.total) },
+            { label: 'Subtotal', value: fmtARSCompact(selected.subtotal) },
+            { label: 'Items', value: fmtNum(selected.items_count) },
+            { label: 'Cliente', value: selected.customer_name },
+            { label: 'Pago', value: STATUS_LABELS[selected.payment_status] ?? selected.payment_status },
+            { label: 'Fecha', value: format(new Date(selected.created_at), 'dd/MM/yyyy HH:mm') },
+          ]}
+          onClose={() => setSelected(null)}
+        />
+      )}
     </div>
   )
 }
@@ -968,6 +1331,7 @@ const TABS: { key: MainTab; label: string }[] = [
   { key: 'perfit', label: 'Perfit' },
   { key: 'google', label: 'Google Ads' },
   { key: 'kommo', label: 'Kommo CRM' },
+  { key: 'tiendanube', label: 'Tiendanube' },
 ]
 
 export default function MarketingPage() {
@@ -996,6 +1360,11 @@ export default function MarketingPage() {
   const [kommoData, setKommoData] = useState<KommoFullData | null>(null)
   const [kommoLoading, setKommoLoading] = useState(false)
   const [kommoLoaded, setKommoLoaded] = useState(false)
+
+  // Tiendanube full data
+  const [tiendanubeData, setTiendanubeData] = useState<TiendanubeFullData | null>(null)
+  const [tiendanubeLoading, setTiendanubeLoading] = useState(false)
+  const [tiendanubeLoaded, setTiendanubeLoaded] = useState(false)
 
   // Initial load: all campaigns for Resumen
   const fetchCampaigns = useCallback(async () => {
@@ -1049,7 +1418,15 @@ export default function MarketingPage() {
         .catch(console.error)
         .finally(() => { setKommoLoading(false); setKommoLoaded(true) })
     }
-  }, [activeTab, metaLoaded, perfitLoaded, googleLoaded, kommoLoaded])
+    if (activeTab === 'tiendanube' && !tiendanubeLoaded) {
+      setTiendanubeLoading(true)
+      fetch('/api/marketing/tiendanube-full')
+        .then(r => r.ok ? r.json() : null)
+        .then(d => { if (d) setTiendanubeData(d) })
+        .catch(console.error)
+        .finally(() => { setTiendanubeLoading(false); setTiendanubeLoaded(true) })
+    }
+  }, [activeTab, metaLoaded, perfitLoaded, googleLoaded, kommoLoaded, tiendanubeLoaded])
 
   const perfitCampaigns = useMemo(() => campaigns.filter(c => c.channelKey === 'perfit'), [campaigns])
   const googleCampaigns = useMemo(() => campaigns.filter(c => c.channelKey === 'google'), [campaigns])
@@ -1061,13 +1438,16 @@ export default function MarketingPage() {
     if (activeTab === 'perfit') { setPerfitLoaded(false); setPerfitData(null) }
     if (activeTab === 'google') { setGoogleLoaded(false); setGoogleData(null) }
     if (activeTab === 'kommo') { setKommoLoaded(false); setKommoData(null) }
+    if (activeTab === 'tiendanube') { setTiendanubeLoaded(false); setTiendanubeData(null) }
   }
 
   const isLoading = activeTab === 'resumen' ? campLoading
     : activeTab === 'meta' ? metaLoading
     : activeTab === 'perfit' ? (campLoading || perfitLoading)
     : activeTab === 'google' ? (campLoading || googleLoading)
-    : kommoLoading
+    : activeTab === 'kommo' ? kommoLoading
+    : activeTab === 'tiendanube' ? tiendanubeLoading
+    : false
 
   return (
     <div className="p-6 space-y-5 fade-in">
@@ -1075,7 +1455,7 @@ export default function MarketingPage() {
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
           <h1 className="text-2xl font-bold text-gray-100 tracking-tight">Marketing &amp; Campañas</h1>
-          <p className="text-sm text-gray-500 mt-0.5">Meta Ads · Perfit · Google Ads · Kommo CRM</p>
+          <p className="text-sm text-gray-500 mt-0.5">Meta Ads · Perfit · Google Ads · Kommo CRM · Tiendanube</p>
         </div>
         <button
           onClick={handleRefresh}
@@ -1086,13 +1466,12 @@ export default function MarketingPage() {
         </button>
       </div>
 
-      {/* Tab navigation */}
-      <div className="flex gap-1 border-b border-[rgba(0,166,81,0.1)]">
+      <div className="flex gap-1 border-b border-[rgba(0,166,81,0.1)] overflow-x-auto">
         {TABS.map(t => (
           <button
             key={t.key}
             onClick={() => setActiveTab(t.key)}
-            className={`text-sm px-5 py-2.5 rounded-t-lg border border-b-0 transition-all font-medium ${
+            className={`text-sm px-5 py-2.5 rounded-t-lg border border-b-0 transition-all font-medium whitespace-nowrap ${
               activeTab === t.key
                 ? 'bg-[#0c1a0d] border-[rgba(0,166,81,0.3)] text-[#00A651]'
                 : 'border-transparent text-gray-500 hover:text-gray-300'
@@ -1103,7 +1482,6 @@ export default function MarketingPage() {
         ))}
       </div>
 
-      {/* Tab content */}
       <div>
         {activeTab === 'resumen' && (
           <ResumenTab allCampaigns={campaigns} loading={campLoading} />
@@ -1119,6 +1497,9 @@ export default function MarketingPage() {
         )}
         {activeTab === 'kommo' && (
           <KommoTab data={kommoData} loading={kommoLoading} />
+        )}
+        {activeTab === 'tiendanube' && (
+          <TiendanubeTab data={tiendanubeData} loading={tiendanubeLoading} />
         )}
       </div>
     </div>

@@ -13,9 +13,10 @@ export type ChannelKey =
   | "meta"
   | "google"
   | "perfit"
-  | "kommo";
+  | "kommo"
+  | "tiendanube";
 
-export const ECOMMERCE_CHANNELS: ChannelKey[] = ["vtex", "meli_1", "meli_2"];
+export const ECOMMERCE_CHANNELS: ChannelKey[] = ["vtex", "meli_1", "meli_2", "tiendanube"];
 export const MARKETING_CHANNELS: ChannelKey[] = ["meta", "google", "perfit", "kommo"];
 
 export const CHANNEL_PLATFORM: Record<ChannelKey, Platform> = {
@@ -26,6 +27,7 @@ export const CHANNEL_PLATFORM: Record<ChannelKey, Platform> = {
   google: Platform.GOOGLE_ADS,
   perfit: Platform.PERFIT,
   kommo: Platform.KOMMO_CRM,
+  tiendanube: Platform.TIENDANUBE,
 };
 
 export const CHANNEL_ACCOUNT_NAME: Record<ChannelKey, string> = {
@@ -36,6 +38,7 @@ export const CHANNEL_ACCOUNT_NAME: Record<ChannelKey, string> = {
   google: "Google Ads",
   perfit: "Perfit",
   kommo: "Kommo CRM",
+  tiendanube: "Tiendanube",
 };
 
 const CONFIG_CRED_NAME = "config";
