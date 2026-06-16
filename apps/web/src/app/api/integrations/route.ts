@@ -17,6 +17,7 @@ import { createMetaClient } from "@/lib/integrations/meta";
 import { createGoogleAdsClient } from "@/lib/integrations/google-ads";
 import { createPerfitClient } from "@/lib/integrations/perfit";
 import { createKommoClient } from "@/lib/integrations/kommo";
+import { createEpresisClient } from "@/lib/integrations/epresis";
 import { IntegrationError } from "@/lib/integrations/types";
 import axios from "axios";
 
@@ -98,6 +99,10 @@ export async function POST(request: NextRequest) {
     } else if (channel === "kommo" && saved.config.subdomain && saved.config.accessToken) {
       tested = true;
       const client = createKommoClient(saved.config as any);
+      success = await client.testConnection();
+    } else if (channel === "epresis" && saved.config.apiToken) {
+      tested = true;
+      const client = createEpresisClient(saved.config as any);
       success = await client.testConnection();
     }
   } catch (error) {

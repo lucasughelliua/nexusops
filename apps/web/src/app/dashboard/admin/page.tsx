@@ -89,6 +89,7 @@ function AdminPageContent() {
   const [kommoForm, setKommoForm] = useState({ subdomain: '', accessToken: '' })
   const [tiendanubeUAForm, setTiendanubeUAForm] = useState({ subdomain: '', apiToken: '' })
   const [tiendanubeAlaskaForm, setTiendanubeAlaskaForm] = useState({ subdomain: '', apiToken: '' })
+  const [epresisForm, setEpresisForm] = useState({ apiToken: '', apiUrl: '' })
 
   const loadUsers = useCallback(async () => {
     setLoadingUsers(true)
@@ -884,6 +885,65 @@ function AdminPageContent() {
                   className="px-5 py-2.5 bg-[#00A651] text-white rounded-lg text-sm font-semibold hover:bg-[#007A3D] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                 >
                   {savingChannel === 'tiendanube_alaska' ? 'Guardando…' : 'Guardar y probar conexión'}
+                </button>
+              </div>
+            )
+          })()}
+
+          {/* Logistics Channels Header */}
+          <div className="mt-8 pt-6 border-t border-[rgba(0,166,81,0.15)]">
+            <h3 className="text-sm font-semibold text-gray-200 mb-4">Logística</h3>
+            <p className="text-xs text-gray-400 mb-4">Conectá tus proveedores de logística y seguimiento de envíos</p>
+          </div>
+
+          {/* Epresis */}
+          {(() => {
+            const status = statusFor('epresis')
+            return (
+              <div className="bg-[#0c1a0d] border border-[rgba(0,166,81,0.15)] rounded-xl p-6 space-y-4">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-semibold text-gray-200">Epresis</h3>
+                  {status?.syncStatus && (
+                    <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${SYNC_STATUS_PILL[status.syncStatus] ?? ''}`}>
+                      {SYNC_STATUS_LABEL[status.syncStatus] ?? status.syncStatus}
+                    </span>
+                  )}
+                </div>
+                <p className="text-xs text-gray-400">Conectá tu cuenta de Epresis para sincronizar datos de seguimiento de envíos</p>
+                <div className="space-y-3">
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">API Token</label>
+                    <input
+                      type="password"
+                      value={epresisForm.apiToken}
+                      onChange={(e) => setEpresisForm({ ...epresisForm, apiToken: e.target.value })}
+                      placeholder="Tu token de API de Epresis"
+                      autoComplete="new-password"
+                      name="epresis-api-token"
+                      className="w-full bg-[#071409] border border-[rgba(0,166,81,0.2)] rounded-lg px-3 py-2 text-sm text-gray-200 outline-none focus:border-[#00A651] transition-colors font-mono"
+                    />
+                    <p className="text-xs text-gray-500 mt-1">Obtén tu token en https://epresis.seguimientodeenvios.ar/</p>
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">API URL (opcional)</label>
+                    <input
+                      value={epresisForm.apiUrl}
+                      onChange={(e) => setEpresisForm({ ...epresisForm, apiUrl: e.target.value })}
+                      placeholder="https://api.epresis.com"
+                      autoComplete="off"
+                      name="epresis-api-url"
+                      className="w-full bg-[#071409] border border-[rgba(0,166,81,0.2)] rounded-lg px-3 py-2 text-sm text-gray-200 outline-none focus:border-[#00A651] transition-colors font-mono"
+                    />
+                    <p className="text-xs text-gray-500 mt-1">Dejar en blanco para usar la URL de producción estándar</p>
+                  </div>
+                </div>
+                {status?.syncError && <p className="text-xs text-red-400">{status.syncError}</p>}
+                <button
+                  disabled={savingChannel === 'epresis' || !epresisForm.apiToken}
+                  onClick={() => saveChannel('epresis', epresisForm)}
+                  className="px-5 py-2.5 bg-[#00A651] text-white rounded-lg text-sm font-semibold hover:bg-[#007A3D] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  {savingChannel === 'epresis' ? 'Guardando…' : 'Guardar y probar conexión'}
                 </button>
               </div>
             )

@@ -15,10 +15,12 @@ export type ChannelKey =
   | "perfit"
   | "kommo"
   | "tiendanube_ua"
-  | "tiendanube_alaska";
+  | "tiendanube_alaska"
+  | "epresis";
 
 export const ECOMMERCE_CHANNELS: ChannelKey[] = ["vtex", "meli_1", "meli_2", "tiendanube_ua", "tiendanube_alaska"];
 export const MARKETING_CHANNELS: ChannelKey[] = ["meta", "google", "perfit", "kommo"];
+export const LOGISTICS_CHANNELS: ChannelKey[] = ["epresis"];
 
 export const CHANNEL_PLATFORM: Record<ChannelKey, Platform> = {
   vtex: Platform.VTEX,
@@ -30,6 +32,7 @@ export const CHANNEL_PLATFORM: Record<ChannelKey, Platform> = {
   kommo: Platform.KOMMO_CRM,
   tiendanube_ua: Platform.TIENDANUBE,
   tiendanube_alaska: Platform.TIENDANUBE,
+  epresis: Platform.GOOGLE_SHEETS, // Placeholder until Prisma adds EPRESIS platform
 };
 
 export const CHANNEL_ACCOUNT_NAME: Record<ChannelKey, string> = {
@@ -42,6 +45,7 @@ export const CHANNEL_ACCOUNT_NAME: Record<ChannelKey, string> = {
   kommo: "Kommo CRM",
   tiendanube_ua: "Tiendanube UA",
   tiendanube_alaska: "Tiendanube Alaska",
+  epresis: "Epresis",
 };
 
 const CONFIG_CRED_NAME = "config";
@@ -309,6 +313,11 @@ function summarizeConfig(channel: ChannelKey, config: Record<string, any>): Reco
         Subdominio: config.subdomain || "—",
         Token: config.apiToken ? "Conectado ✓" : "Sin conectar",
       };
+    case "epresis":
+      return {
+        "API Token": mask(config.apiToken),
+        "API URL": config.apiUrl || "api.epresis.com",
+      };
     default:
       return {};
   }
@@ -316,7 +325,7 @@ function summarizeConfig(channel: ChannelKey, config: Record<string, any>): Reco
 
 export async function getAllChannelStatuses(): Promise<ChannelStatus[]> {
   const userId = await getOrCreateOwnerUserId();
-  const channels = [...ECOMMERCE_CHANNELS, ...MARKETING_CHANNELS];
+  const channels = [...ECOMMERCE_CHANNELS, ...MARKETING_CHANNELS, ...LOGISTICS_CHANNELS];
 
   const result: ChannelStatus[] = [];
   for (const channel of channels) {

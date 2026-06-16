@@ -7,6 +7,7 @@ import { createGoogleAdsClient } from "./google-ads";
 import { createKommoClient } from "./kommo-crm";
 import { createPerfitClient } from "./perfit";
 import { createTiendanubeClient } from "./tiendanube";
+import { createEpresisClient } from "./epresis";
 
 /**
  * Factory para crear clientes de integración según plataforma
@@ -31,7 +32,8 @@ export function createIntegrationClient(
     case Platform.TIENDANUBE:
       return createTiendanubeClient(credentials);
     case Platform.GOOGLE_SHEETS:
-      throw new Error("Google Sheets is not a real integration client");
+      // Use Google Sheets placeholder for Epresis until Prisma schema is updated
+      return createEpresisClient(credentials);
     default:
       throw new Error(`Unsupported platform: ${platform}`);
   }
