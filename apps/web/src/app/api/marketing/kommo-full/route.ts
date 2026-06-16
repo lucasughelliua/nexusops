@@ -62,8 +62,8 @@ export async function GET(request: NextRequest) {
   let dateTo: Date | undefined;
 
   if (fromStr && toStr) {
-    dateFrom = new Date(fromStr + "T00:00:00Z");
-    dateTo = new Date(toStr + "T23:59:59Z");
+    dateFrom = new Date(fromStr + "T00:00:00-03:00");
+    dateTo = new Date(toStr + "T23:59:59-03:00");
   } else {
     dateTo = new Date();
     dateFrom = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
