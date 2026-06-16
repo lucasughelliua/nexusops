@@ -5,6 +5,7 @@ import { usePathname } from 'next/navigation'
 import { useSession, signOut } from 'next-auth/react'
 import { cn } from '@/lib/utils'
 import { useState } from 'react'
+import ColorPicker from '@/components/ColorPicker'
 
 const NAV = [
   {
@@ -94,7 +95,8 @@ export default function Sidebar() {
       </nav>
 
       {/* User pill */}
-      <div className="px-3 py-4 border-t border-[rgba(0,166,81,0.12)]">
+      <div className="px-3 py-4 border-t border-[rgba(0,166,81,0.12)] space-y-3">
+        <ColorPicker />
         <div className="relative">
           <button
             onClick={() => setShowMenu(!showMenu)}

@@ -53,3 +53,25 @@ input[type="date"]::-webkit-calendar-picker-indicator {
   50%       { box-shadow: 0 0 0 6px rgba(0, 166, 81, 0); }
 }
 .pulse-green { animation: pulse-green 2s infinite; }
+
+/* Color themes */
+:root[data-color="green"], :root:not([data-color]) {
+  --ua-green: #00A651;
+  --ua-green-dark: #007A3D;
+  --ua-green-light: #00C65E;
+}
+:root[data-color="blue"] {
+  --ua-green: #0066CC;
+  --ua-green-dark: #004AA3;
+  --ua-green-light: #3399FF;
+}
+:root[data-color="purple"] {
+  --ua-green: #7C3AED;
+  --ua-green-dark: #5B21B6;
+  --ua-green-light: #A78BFA;
+}
+:root[data-color="orange"] {
+  --ua-green: #F97316;
+  --ua-green-dark: #C2410C;
+  --ua-green-light: #FB923C;
+}
