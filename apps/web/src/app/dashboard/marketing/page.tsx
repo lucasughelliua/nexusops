@@ -149,6 +149,7 @@ interface KommoStats {
 interface KommoFullData {
   stats: KommoStats
   isMock?: boolean
+  error?: string
 }
 
 
@@ -1377,10 +1378,6 @@ function GoogleTab({ googleData, loading }: {
 // ── Kommo Tab ─────────────────────────────────────────────────────────────────
 
 function KommoTab({ data, loading }: { data: KommoFullData | null; loading: boolean }) {
-  const [dateFrom, setDateFrom] = useState<string>(format(new Date(Date.now() - 30 * 24 * 60 * 60 * 1000), 'yyyy-MM-dd'))
-  const [dateTo, setDateTo] = useState<string>(format(new Date(), 'yyyy-MM-dd'))
-  const [filterStatus, setFilterStatus] = useState<string>('')
-
   const stats = data?.stats
 
   const kpis = stats ? [
@@ -1417,6 +1414,17 @@ function KommoTab({ data, loading }: { data: KommoFullData | null; loading: bool
 
   return (
     <div className="space-y-5">
+      {!loading && data?.isMock && (
+        <div className="flex items-start gap-3 bg-amber-950/40 border border-amber-700/40 rounded-xl px-4 py-3 text-sm text-amber-400">
+          <span className="shrink-0 mt-0.5">&#9888;</span>
+          <span>
+            {data.error
+              ? `Error de conexión con Kommo: ${data.error}. Actualizá las credenciales en Administración → Integraciones.`
+              : 'No hay credenciales de Kommo configuradas. Los datos mostrados son de ejemplo.'}
+          </span>
+        </div>
+      )}
+
       {loading ? (
         <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3">
           {Array.from({ length: 8 }).map((_, i) => (
@@ -1471,15 +1479,6 @@ function KommoTab({ data, loading }: { data: KommoFullData | null; loading: bool
           </div>
         </div>
       )}
-
-      <FilterBar
-        dateFrom={dateFrom}
-        dateTo={dateTo}
-        onDatesChange={(f, t) => { setDateFrom(f); setDateTo(t) }}
-        status={filterStatus}
-        statusOptions={[]}
-        onStatusChange={setFilterStatus}
-      />
 
       <SortableTable
         cols={cols}

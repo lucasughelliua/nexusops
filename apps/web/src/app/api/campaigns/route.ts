@@ -101,10 +101,10 @@ export async function GET(request: NextRequest) {
                 channel: channelLabel,
                 channelKey: "perfit",
                 name: c.name,
-                spend: c.spent,
-                leads: c.leads,
-                roi: c.roi,
-                roas: c.roas,
+                spend: 0,
+                leads: c.leads ?? 0,
+                roi: c.roi ?? 0,
+                roas: c.roas ?? 0,
                 status: c.status,
               }))
             );
