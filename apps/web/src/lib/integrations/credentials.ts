@@ -14,9 +14,10 @@ export type ChannelKey =
   | "google"
   | "perfit"
   | "kommo"
-  | "tiendanube";
+  | "tiendanube_ua"
+  | "tiendanube_alaska";
 
-export const ECOMMERCE_CHANNELS: ChannelKey[] = ["vtex", "meli_1", "meli_2", "tiendanube"];
+export const ECOMMERCE_CHANNELS: ChannelKey[] = ["vtex", "meli_1", "meli_2", "tiendanube_ua", "tiendanube_alaska"];
 export const MARKETING_CHANNELS: ChannelKey[] = ["meta", "google", "perfit", "kommo"];
 
 export const CHANNEL_PLATFORM: Record<ChannelKey, Platform> = {
@@ -27,7 +28,8 @@ export const CHANNEL_PLATFORM: Record<ChannelKey, Platform> = {
   google: Platform.GOOGLE_ADS,
   perfit: Platform.PERFIT,
   kommo: Platform.KOMMO_CRM,
-  tiendanube: Platform.TIENDANUBE,
+  tiendanube_ua: Platform.TIENDANUBE,
+  tiendanube_alaska: Platform.TIENDANUBE,
 };
 
 export const CHANNEL_ACCOUNT_NAME: Record<ChannelKey, string> = {
@@ -38,7 +40,8 @@ export const CHANNEL_ACCOUNT_NAME: Record<ChannelKey, string> = {
   google: "Google Ads",
   perfit: "Perfit",
   kommo: "Kommo CRM",
-  tiendanube: "Tiendanube",
+  tiendanube_ua: "Tiendanube UA",
+  tiendanube_alaska: "Tiendanube Alaska",
 };
 
 const CONFIG_CRED_NAME = "config";
@@ -290,8 +293,8 @@ function summarizeConfig(channel: ChannelKey, config: Record<string, any>): Reco
       };
     case "google":
       return {
-        "Customer ID": config.customerId || "—",
-        Token: config.refreshToken ? "Conectado ✓" : "Sin conectar",
+        "AppScript URL": config.scriptUrl ? "Conectado ✓" : "—",
+        Token: config.token ? mask(config.token) : "—",
       };
     case "perfit":
       return { "API Key": mask(config.apiKey) };
@@ -299,6 +302,12 @@ function summarizeConfig(channel: ChannelKey, config: Record<string, any>): Reco
       return {
         Subdominio: config.subdomain || "—",
         Token: mask(config.accessToken),
+      };
+    case "tiendanube_ua":
+    case "tiendanube_alaska":
+      return {
+        Subdominio: config.subdomain || "—",
+        Token: config.apiToken ? "Conectado ✓" : "Sin conectar",
       };
     default:
       return {};

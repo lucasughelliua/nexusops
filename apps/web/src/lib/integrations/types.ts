@@ -69,8 +69,8 @@ export interface NormalizedOrderItem {
  */
 export interface NormalizedOrder {
   id: string;
-  channelKey: "vtex" | "meli_1" | "meli_2";
-  channel: string; // label legible: "VTEX" | "MercadoLibre UA" | "MercadoLibre Sporta"
+  channelKey: "vtex" | "meli_1" | "meli_2" | "tiendanube_ua" | "tiendanube_alaska";
+  channel: string; // label legible: "VTEX" | "MercadoLibre UA" | "MercadoLibre Sporta" | "Tiendanube UA" | "Tiendanube Alaska"
   date: string; // ISO 8601
   status: string; // status crudo de la plataforma de origen
   statusBucket: "pending" | "dispatched" | "in_transit" | "delivered" | "delayed" | "cancelled";

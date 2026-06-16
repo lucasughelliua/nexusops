@@ -476,6 +476,35 @@ function SortableTable<T extends { id: string | number }>({
 
 // ── Enhanced Detail Modal ─────────────────────────────────────────────────────
 
+interface DetailModalChild {
+  id: string
+  name: string
+  spend?: number
+  impressions?: number
+  clicks?: number
+  conversions?: number
+  ctr?: number
+  cpc?: number
+  cpm?: number
+  conversionRate?: number
+  status?: string
+}
+
+interface DetailModalProps {
+  title: string
+  channel?: string
+  channelKey?: string
+  status?: string
+  metrics: { label: string; value: string }[]
+  thumbnailUrl?: string
+  children?: React.ReactNode
+  childItems?: DetailModalChild[]
+  childLabel?: string
+  showChildMetrics?: boolean
+  dailySpendTrend?: { day: string; spend: number }[]
+  onClose: () => void
+}
+
 function DetailModal({
   title,
   channel,
@@ -484,24 +513,21 @@ function DetailModal({
   metrics,
   thumbnailUrl,
   children,
+  childItems = [],
+  childLabel = "Items",
+  showChildMetrics = false,
+  dailySpendTrend = [],
   onClose,
-}: {
-  title: string
-  channel?: string
-  channelKey?: string
-  status?: string
-  metrics: { label: string; value: string }[]
-  thumbnailUrl?: string
-  children?: React.ReactNode
-  onClose: () => void
-}) {
+}: DetailModalProps) {
+  const [showChildren, setShowChildren] = useState(false)
+
   return (
     <div
       className="fixed inset-0 z-50 flex items-end md:items-center justify-center bg-black/70 backdrop-blur-sm"
       onClick={onClose}
     >
       <div
-        className="w-full md:max-w-2xl max-h-[90vh] overflow-y-auto bg-[#081209] border border-[rgba(0,166,81,0.25)] rounded-t-2xl md:rounded-2xl p-6 space-y-5 shadow-2xl"
+        className="w-full md:max-w-3xl max-h-[90vh] overflow-y-auto bg-[#081209] border border-[rgba(0,166,81,0.25)] rounded-t-2xl md:rounded-2xl p-6 space-y-5 shadow-2xl"
         onClick={e => e.stopPropagation()}
       >
         <div className="flex items-start justify-between gap-3">
@@ -514,11 +540,11 @@ function DetailModal({
               )}
               {status && <StatusBadge status={status} />}
             </div>
-            <h2 className="text-lg font-bold text-gray-100 leading-snug">{title}</h2>
+            <h2 className="text-lg font-bold text-gray-100 leading-snug break-words">{title}</h2>
           </div>
           <button
             onClick={onClose}
-            className="text-gray-500 hover:text-gray-200 text-xl mt-0.5 shrink-0 transition-colors"
+            className="text-gray-500 hover:text-gray-200 text-xl mt-0.5 shrink-0 transition-colors flex-shrink-0"
           >
             &#x2715;
           </button>
@@ -545,7 +571,72 @@ function DetailModal({
           ))}
         </div>
 
-        {/* Children for mini charts */}
+        {/* Daily trend chart if available */}
+        {dailySpendTrend.length > 0 && (
+          <div className="bg-[#0c1a0d] border border-[rgba(0,166,81,0.15)] rounded-xl p-4">
+            <div className="text-[11px] font-semibold uppercase tracking-wider text-gray-400 mb-3">Gasto Diario</div>
+            <ResponsiveContainer width="100%" height={160}>
+              <LineChart data={dailySpendTrend}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#1a2e1b" />
+                <XAxis dataKey="day" tick={{ fill: '#6b7280', fontSize: 9 }} />
+                <YAxis tick={{ fill: '#6b7280', fontSize: 9 }} />
+                <Tooltip content={<ChartTooltip fmt="currency" />} />
+                <Line type="monotone" dataKey="spend" stroke="#00A651" strokeWidth={2} dot={{ fill: '#00A651', r: 3 }} activeDot={{ r: 5 }} />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        )}
+
+        {/* Child items section */}
+        {childItems.length > 0 && (
+          <div className="space-y-3">
+            <button
+              onClick={() => setShowChildren(!showChildren)}
+              className="flex items-center gap-2 text-xs font-semibold text-gray-400 hover:text-gray-200 transition-colors"
+            >
+              <span>{showChildren ? '▼' : '▶'}</span>
+              <span className="uppercase tracking-wide">{childLabel} ({childItems.length})</span>
+            </button>
+            {showChildren && (
+              <div className="bg-[#0c1a0d] border border-[rgba(0,166,81,0.15)] rounded-xl overflow-hidden">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="bg-[#071409]">
+                        <th className="px-3 py-2 text-left text-gray-500 font-semibold">Nombre</th>
+                        {showChildMetrics && (
+                          <>
+                            <th className="px-3 py-2 text-right text-gray-500 font-semibold">Gasto</th>
+                            <th className="px-3 py-2 text-right text-gray-500 font-semibold">Impresiones</th>
+                            <th className="px-3 py-2 text-right text-gray-500 font-semibold">Clicks</th>
+                            <th className="px-3 py-2 text-right text-gray-500 font-semibold">Conv.</th>
+                          </>
+                        )}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {childItems.map(item => (
+                        <tr key={item.id} className="border-t border-[rgba(0,166,81,0.06)] hover:bg-[#112011]">
+                          <td className="px-3 py-2 text-gray-300">{item.name}</td>
+                          {showChildMetrics && (
+                            <>
+                              <td className="px-3 py-2 text-right text-gray-400 font-mono">{fmtARSCompact(item.spend ?? 0)}</td>
+                              <td className="px-3 py-2 text-right text-gray-400 font-mono">{fmtNum(item.impressions ?? 0)}</td>
+                              <td className="px-3 py-2 text-right text-gray-400 font-mono">{fmtNum(item.clicks ?? 0)}</td>
+                              <td className="px-3 py-2 text-right text-gray-400 font-mono">{fmtNum(item.conversions ?? 0)}</td>
+                            </>
+                          )}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Children for custom content */}
         {children && (
           <div>
             {children}
@@ -903,6 +994,38 @@ function MetaTab({ data, loading }: { data: MetaFullData | null; loading: boolea
           status={selected.status}
           thumbnailUrl={selected.thumbnailUrl}
           metrics={getModalMetrics(selected)}
+          childItems={
+            subTab === 'campaigns'
+              ? adsets.filter(a => a.campaignId === selected.id).map(a => ({
+                  id: a.id,
+                  name: a.name,
+                  spend: a.spend,
+                  impressions: a.impressions,
+                  clicks: a.clicks,
+                  conversions: a.conversions,
+                  ctr: a.ctr,
+                  cpc: a.cpc,
+                  cpm: a.cpm,
+                  conversionRate: a.conversionRate,
+                  status: a.status,
+                }))
+              : subTab === 'adsets'
+              ? ads.filter(a => a.adSetId === selected.id).map(a => ({
+                  id: a.id,
+                  name: a.name,
+                  spend: a.spend,
+                  impressions: a.impressions,
+                  clicks: a.clicks,
+                  conversions: a.conversions,
+                  ctr: a.ctr,
+                  cpc: a.cpc,
+                  cpm: a.cpm,
+                  status: a.status,
+                }))
+              : []
+          }
+          childLabel={subTab === 'campaigns' ? 'Conjuntos (Ad Sets)' : subTab === 'adsets' ? 'Anuncios' : ''}
+          showChildMetrics={true}
           onClose={() => setSelected(null)}
         />
       )}
@@ -1404,7 +1527,7 @@ export default function MarketingPage() {
     }
     if (activeTab === 'google' && !googleLoaded) {
       setGoogleLoading(true)
-      fetch('/api/marketing/google')
+      fetch('/api/marketing/google-sheets')
         .then(r => r.ok ? r.json() : null)
         .then(d => { if (d) setGoogleData(d) })
         .catch(console.error)

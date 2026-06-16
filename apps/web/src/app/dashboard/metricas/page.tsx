@@ -34,6 +34,8 @@ const CHANNEL_TABS = [
   { key: 'vtex',   label: 'VTEX' },
   { key: 'meli_1', label: 'MeLi UA' },
   { key: 'meli_2', label: 'MeLi Sporta' },
+  { key: 'tiendanube_ua', label: 'Tiendanube UA' },
+  { key: 'tiendanube_alaska', label: 'Tiendanube Alaska' },
 ]
 
 const STATUS_FILTER_OPTIONS = [

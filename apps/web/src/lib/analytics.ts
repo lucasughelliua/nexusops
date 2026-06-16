@@ -1,5 +1,6 @@
 import { createVTEXClient } from "./integrations/vtex";
 import { createMercadoLibreClient } from "./integrations/mercado-libre";
+import { createTiendanubeClient } from "./integrations/tiendanube";
 import { NormalizedOrder } from "./integrations/types";
 import {
   ChannelKey,
@@ -77,6 +78,19 @@ async function fetchRealOrders(channel: ChannelKey, from: Date, to: Date): Promi
       return orders;
     }
 
+    if (channel === "tiendanube_ua" || channel === "tiendanube_alaska") {
+      const client = createTiendanubeClient(config as any);
+      const orders = await client.getNormalizedOrders(
+        channel,
+        CHANNEL_ACCOUNT_NAME[channel],
+        from,
+        to,
+        1000
+      );
+      await setChannelSyncStatus(channel, "SUCCESS");
+      return orders;
+    }
+
     return null;
   } catch (error) {
     await setChannelSyncStatus(channel, "ERROR", error instanceof Error ? error.message : String(error));
@@ -103,7 +117,8 @@ const MOCK_MULTIPLIER: Record<ChannelKey, number> = {
   google: 1,
   perfit: 1,
   kommo: 1,
-  tiendanube: 2,
+  tiendanube_ua: 2,
+  tiendanube_alaska: 1.5,
 };
 
 const MOCK_PRODUCTS: Record<string, { sku: string; name: string }[]> = {

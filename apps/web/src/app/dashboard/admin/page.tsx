@@ -84,9 +84,11 @@ function AdminPageContent() {
   const [meli2Form, setMeli2Form] = useState({ accessToken: '' })
 
   const [metaForm, setMetaForm] = useState({ adAccountId: '', accessToken: '' })
-  const [googleForm, setGoogleForm] = useState({ sheetsUrl: '', apiKey: '' })
+  const [googleForm, setGoogleForm] = useState({ scriptUrl: '', token: '' })
   const [perfitForm, setPerfitForm] = useState({ apiKey: '', subdomain: '' })
   const [kommoForm, setKommoForm] = useState({ subdomain: '', accessToken: '' })
+  const [tiendanubeUAForm, setTiendanubeUAForm] = useState({ subdomain: '', apiToken: '' })
+  const [tiendanubeAlaskaForm, setTiendanubeAlaskaForm] = useState({ subdomain: '', apiToken: '' })
 
   const loadUsers = useCallback(async () => {
     setLoadingUsers(true)
@@ -644,42 +646,42 @@ function AdminPageContent() {
             return (
               <div className="bg-[#0c1a0d] border border-[rgba(0,166,81,0.15)] rounded-xl p-6 space-y-4">
                 <div className="flex items-center justify-between">
-                  <h3 className="text-sm font-semibold text-gray-200">Google Ads</h3>
+                  <h3 className="text-sm font-semibold text-gray-200">Google Ads (AppScript)</h3>
                   {status?.syncStatus && (
                     <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${SYNC_STATUS_PILL[status.syncStatus] ?? ''}`}>
                       {SYNC_STATUS_LABEL[status.syncStatus] ?? status.syncStatus}
                     </span>
                   )}
                 </div>
-                <p className="text-xs text-gray-400">Cargá los datos desde una Google Sheet con tus campañas y gastos</p>
+                <p className="text-xs text-gray-400">Cargá los datos desde un Google AppScript con tus campañas y gastos de Google Ads</p>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="block text-xs text-gray-500 mb-1">URL de Google Sheet</label>
+                    <label className="block text-xs text-gray-500 mb-1">URL del AppScript</label>
                     <input
-                      value={googleForm.sheetsUrl}
-                      onChange={(e) => setGoogleForm({ ...googleForm, sheetsUrl: e.target.value })}
-                      placeholder="https://docs.google.com/spreadsheets/d/..."
+                      value={googleForm.scriptUrl}
+                      onChange={(e) => setGoogleForm({ ...googleForm, scriptUrl: e.target.value })}
+                      placeholder="https://script.google.com/macros/d/.../usercontent"
                       autoComplete="off"
-                      name="google-sheets-url"
+                      name="google-appscript-url"
                       className="w-full bg-[#071409] border border-[rgba(0,166,81,0.2)] rounded-lg px-3 py-2 text-sm text-gray-200 outline-none focus:border-[#00A651] transition-colors text-xs"
                     />
                   </div>
                   <div>
-                    <label className="block text-xs text-gray-500 mb-1">API Key (Google Sheets) - opcional</label>
+                    <label className="block text-xs text-gray-500 mb-1">Token</label>
                     <input
                       type="password"
-                      value={googleForm.apiKey}
-                      onChange={(e) => setGoogleForm({ ...googleForm, apiKey: e.target.value })}
+                      value={googleForm.token}
+                      onChange={(e) => setGoogleForm({ ...googleForm, token: e.target.value })}
                       autoComplete="new-password"
-                      name="google-api-key"
-                      placeholder="No requerido si el sheet es público"
+                      name="google-appscript-token"
+                      placeholder="nexusops-google-ads-2026"
                       className="w-full bg-[#071409] border border-[rgba(0,166,81,0.2)] rounded-lg px-3 py-2 text-sm text-gray-200 outline-none focus:border-[#00A651] transition-colors font-mono"
                     />
                   </div>
                 </div>
                 {status?.syncError && <p className="text-xs text-red-400">{status.syncError}</p>}
                 <button
-                  disabled={savingChannel === 'google' || !googleForm.sheetsUrl}
+                  disabled={savingChannel === 'google' || !googleForm.scriptUrl || !googleForm.token}
                   onClick={() => saveChannel('google', googleForm)}
                   className="px-5 py-2.5 bg-[#00A651] text-white rounded-lg text-sm font-semibold hover:bg-[#007A3D] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                 >
@@ -782,6 +784,106 @@ function AdminPageContent() {
                   className="px-5 py-2.5 bg-[#00A651] text-white rounded-lg text-sm font-semibold hover:bg-[#007A3D] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                 >
                   {savingChannel === 'kommo' ? 'Guardando…' : 'Guardar y probar conexión'}
+                </button>
+              </div>
+            )
+          })()}
+
+          {/* Tiendanube UA */}
+          {(() => {
+            const status = statusFor('tiendanube_ua')
+            return (
+              <div className="bg-[#0c1a0d] border border-[rgba(0,166,81,0.15)] rounded-xl p-6 space-y-4">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-semibold text-gray-200">Tiendanube UA</h3>
+                  {status?.syncStatus && (
+                    <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${SYNC_STATUS_PILL[status.syncStatus] ?? ''}`}>
+                      {SYNC_STATUS_LABEL[status.syncStatus] ?? status.syncStatus}
+                    </span>
+                  )}
+                </div>
+                <p className="text-xs text-gray-400">Conectá tu tienda Tiendanube UA para sincronizar pedidos</p>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">Subdominio</label>
+                    <input
+                      value={tiendanubeUAForm.subdomain}
+                      onChange={(e) => setTiendanubeUAForm({ ...tiendanubeUAForm, subdomain: e.target.value })}
+                      placeholder="tunegocio"
+                      autoComplete="off"
+                      name="tiendanube-ua-subdomain"
+                      className="w-full bg-[#071409] border border-[rgba(0,166,81,0.2)] rounded-lg px-3 py-2 text-sm text-gray-200 outline-none focus:border-[#00A651] transition-colors"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">API Token</label>
+                    <input
+                      type="password"
+                      value={tiendanubeUAForm.apiToken}
+                      onChange={(e) => setTiendanubeUAForm({ ...tiendanubeUAForm, apiToken: e.target.value })}
+                      autoComplete="new-password"
+                      name="tiendanube-ua-token"
+                      className="w-full bg-[#071409] border border-[rgba(0,166,81,0.2)] rounded-lg px-3 py-2 text-sm text-gray-200 outline-none focus:border-[#00A651] transition-colors font-mono"
+                    />
+                  </div>
+                </div>
+                {status?.syncError && <p className="text-xs text-red-400">{status.syncError}</p>}
+                <button
+                  disabled={savingChannel === 'tiendanube_ua' || !tiendanubeUAForm.subdomain || !tiendanubeUAForm.apiToken}
+                  onClick={() => saveChannel('tiendanube_ua', tiendanubeUAForm)}
+                  className="px-5 py-2.5 bg-[#00A651] text-white rounded-lg text-sm font-semibold hover:bg-[#007A3D] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  {savingChannel === 'tiendanube_ua' ? 'Guardando…' : 'Guardar y probar conexión'}
+                </button>
+              </div>
+            )
+          })()}
+
+          {/* Tiendanube Alaska */}
+          {(() => {
+            const status = statusFor('tiendanube_alaska')
+            return (
+              <div className="bg-[#0c1a0d] border border-[rgba(0,166,81,0.15)] rounded-xl p-6 space-y-4">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-semibold text-gray-200">Tiendanube Alaska</h3>
+                  {status?.syncStatus && (
+                    <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${SYNC_STATUS_PILL[status.syncStatus] ?? ''}`}>
+                      {SYNC_STATUS_LABEL[status.syncStatus] ?? status.syncStatus}
+                    </span>
+                  )}
+                </div>
+                <p className="text-xs text-gray-400">Conectá tu tienda Tiendanube Alaska para sincronizar pedidos</p>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">Subdominio</label>
+                    <input
+                      value={tiendanubeAlaskaForm.subdomain}
+                      onChange={(e) => setTiendanubeAlaskaForm({ ...tiendanubeAlaskaForm, subdomain: e.target.value })}
+                      placeholder="tunegocio"
+                      autoComplete="off"
+                      name="tiendanube-alaska-subdomain"
+                      className="w-full bg-[#071409] border border-[rgba(0,166,81,0.2)] rounded-lg px-3 py-2 text-sm text-gray-200 outline-none focus:border-[#00A651] transition-colors"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">API Token</label>
+                    <input
+                      type="password"
+                      value={tiendanubeAlaskaForm.apiToken}
+                      onChange={(e) => setTiendanubeAlaskaForm({ ...tiendanubeAlaskaForm, apiToken: e.target.value })}
+                      autoComplete="new-password"
+                      name="tiendanube-alaska-token"
+                      className="w-full bg-[#071409] border border-[rgba(0,166,81,0.2)] rounded-lg px-3 py-2 text-sm text-gray-200 outline-none focus:border-[#00A651] transition-colors font-mono"
+                    />
+                  </div>
+                </div>
+                {status?.syncError && <p className="text-xs text-red-400">{status.syncError}</p>}
+                <button
+                  disabled={savingChannel === 'tiendanube_alaska' || !tiendanubeAlaskaForm.subdomain || !tiendanubeAlaskaForm.apiToken}
+                  onClick={() => saveChannel('tiendanube_alaska', tiendanubeAlaskaForm)}
+                  className="px-5 py-2.5 bg-[#00A651] text-white rounded-lg text-sm font-semibold hover:bg-[#007A3D] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  {savingChannel === 'tiendanube_alaska' ? 'Guardando…' : 'Guardar y probar conexión'}
                 </button>
               </div>
             )

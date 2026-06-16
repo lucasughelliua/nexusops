@@ -5,6 +5,8 @@ import {
   MetricsOptions,
   MetricData,
   CredentialValue,
+  NormalizedOrder,
+  NormalizedOrderItem,
 } from "./types";
 import { Platform } from "@prisma/client";
 
@@ -183,6 +185,80 @@ export class TiendanubeClient implements IntegrationClient {
         error
       );
     }
+  }
+
+  /**
+   * Maps Tiendanube order status to normalized statusBucket
+   */
+  private mapStatusBucket(
+    status: string
+  ): "pending" | "dispatched" | "in_transit" | "delivered" | "delayed" | "cancelled" {
+    const normalizedStatus = status.toLowerCase();
+    if (
+      normalizedStatus === "open" ||
+      normalizedStatus === "pending" ||
+      normalizedStatus === "awaiting_confirmation"
+    ) {
+      return "pending";
+    }
+    if (normalizedStatus === "closed" || normalizedStatus === "ready") {
+      return "dispatched";
+    }
+    if (normalizedStatus === "shipped" || normalizedStatus === "in_transit") {
+      return "in_transit";
+    }
+    if (normalizedStatus === "delivered") {
+      return "delivered";
+    }
+    if (normalizedStatus === "delayed") {
+      return "delayed";
+    }
+    if (normalizedStatus === "cancelled") {
+      return "cancelled";
+    }
+    return "pending";
+  }
+
+  async getNormalizedOrders(
+    channelKey: "tiendanube_ua" | "tiendanube_alaska",
+    channelLabel: string,
+    dateFrom?: Date,
+    dateTo?: Date,
+    limit = 100,
+    offset = 0
+  ): Promise<NormalizedOrder[]> {
+    const orders = await this.getOrders(dateFrom, dateTo, limit, offset);
+
+    return orders.map((o) => ({
+      id: String(o.id),
+      channelKey,
+      channel: channelLabel,
+      date: o.created_at.split("T")[0],
+      status: o.status,
+      statusBucket: this.mapStatusBucket(o.status),
+      total: o.total,
+      items: this.extractItems(o),
+    }));
+  }
+
+  /**
+   * Extracts items from Tiendanube order
+   * Note: The API may not return items in the simple order list, so we provide defaults
+   */
+  private extractItems(order: TiendanubeOrder): NormalizedOrderItem[] {
+    // For now, return a placeholder item since we don't have detailed items in the simple order response
+    // In a real scenario, you'd fetch the order details separately or check if items are included
+    if (order.items_count > 0) {
+      return [
+        {
+          sku: "unknown",
+          name: `${order.items_count} items`,
+          qty: order.items_count,
+          unitPrice: order.total / order.items_count,
+        },
+      ];
+    }
+    return [];
   }
 
   async getProducts(limit = 100, offset = 0): Promise<TiendanubeProduct[]> {
