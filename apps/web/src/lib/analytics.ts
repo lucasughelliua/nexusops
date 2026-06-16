@@ -281,19 +281,18 @@ export async function getMetricsAnalytics(
   const revenue = sum(validOrders.map((o) => o.total));
   const prevRevenue = sum(prevValidOrders.map((o) => o.total));
 
-  const ordersCount = validOrders.length;
-  const prevOrdersCount = prevValidOrders.length;
+  // Órdenes = total incluyendo canceladas; revenue/ticket excluyen canceladas
+  const ordersCount = allOrders.length;
+  const prevOrdersCount = prevAllOrders.length;
 
   const units = sum(validOrders.flatMap((o) => o.items.map((it) => it.qty)));
   const prevUnits = sum(prevValidOrders.flatMap((o) => o.items.map((it) => it.qty)));
 
-  // Cancelaciones: solo contar en MeLi y otros (VTEX las excluye)
-  const meliCancellations = meliOrders.filter((o) => o.statusBucket === "cancelled").length;
-  const otherCancellations = otherOrders.filter((o) => o.statusBucket === "cancelled").length;
-  const cancellations = meliCancellations + otherCancellations;
+  const cancellations = allOrders.filter((o) => o.statusBucket === "cancelled").length;
+  const prevCancellations = prevAllOrders.filter((o) => o.statusBucket === "cancelled").length;
 
-  const avgTicket = ordersCount > 0 ? revenue / ordersCount : 0;
-  const cancellationRate = (allOrders.length > 0) ? (cancellations / allOrders.length) * 100 : 0;
+  const avgTicket = validOrders.length > 0 ? revenue / validOrders.length : 0;
+  const cancellationRate = (ordersCount > 0) ? (cancellations / ordersCount) * 100 : 0;
 
   // Breakdown por estado
   const stateBreakdown = {
