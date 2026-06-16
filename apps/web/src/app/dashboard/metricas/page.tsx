@@ -38,21 +38,10 @@ const CHANNEL_TABS = [
   { key: 'tiendanube_alaska', label: 'Tiendanube Alaska' },
 ]
 
-const STATUS_FILTER_OPTIONS = [
-  { key: 'pending', label: 'Pendiente', color: 'text-amber-400' },
-  { key: 'dispatched', label: 'Listo para preparación', color: 'text-blue-400' },
-  { key: 'in_transit', label: 'Enviado', color: 'text-cyan-400' },
-  { key: 'delivered', label: 'Entregado', color: 'text-emerald-400' },
-  { key: 'delayed', label: 'Demorado', color: 'text-orange-400' },
-  { key: 'cancelled', label: 'Cancelado', color: 'text-red-400' },
-]
-
 export default function MetricasPage() {
   const [dateRange, setDateRange]     = useState<DateRange>(getPeriodRange('last30'))
   const [comparePeriod, setComparePeriod] = useState<DateRange | null>(null)
   const [channel, setChannel]         = useState('all')
-  const [statusFilter, setStatusFilter] = useState<string[]>(['pending', 'dispatched', 'in_transit', 'delivered', 'delayed'])
-  const [showStatusPicker, setShowStatusPicker] = useState(false)
   const [showComparePicker, setShowComparePicker] = useState(false)
   const [metrics, setMetrics]         = useState<MetricsResponse | null>(null)
   const [products, setProducts]       = useState<ProductsResponse | null>(null)
@@ -69,7 +58,6 @@ export default function MetricasPage() {
         date_from: dateRange.from,
         date_to: dateRange.to,
         channel,
-        status_filter: statusFilter.join(','),
       })
       if (comparePeriod) {
         params.set('compare_from', comparePeriod.from)
@@ -86,7 +74,7 @@ export default function MetricasPage() {
     } finally {
       setLoadingMetrics(false)
     }
-  }, [dateRange, channel, comparePeriod, statusFilter])
+  }, [dateRange, channel, comparePeriod])
 
   // ─── Fetch products ─────────────────────────────────────────────────────────
   const fetchProducts = useCallback(async (offset = 0) => {
@@ -97,7 +85,6 @@ export default function MetricasPage() {
         date_to: dateRange.to,
         channel,
         offset: String(offset),
-        status_filter: statusFilter.join(','),
       })
       const res = await fetch(`/api/products?${params.toString()}`)
       if (res.ok) {
@@ -109,7 +96,7 @@ export default function MetricasPage() {
     } finally {
       setLoadingProducts(false)
     }
-  }, [dateRange, channel, statusFilter])
+  }, [dateRange, channel])
 
   useEffect(() => {
     fetchMetrics()
@@ -168,37 +155,6 @@ export default function MetricasPage() {
 
         {/* ── Filters row ──────────────────────────────────────────────────── */}
         <div className="flex items-center gap-2 flex-wrap text-xs">
-          {/* Status filter */}
-          <div className="relative">
-            <button
-              onClick={() => setShowStatusPicker(!showStatusPicker)}
-              className="px-3 py-1.5 rounded-lg border border-[rgba(0,166,81,0.2)] text-gray-400 hover:text-gray-200 hover:border-[rgba(0,166,81,0.4)] transition-all"
-            >
-              Estado ({statusFilter.length})
-            </button>
-            {showStatusPicker && (
-              <div className="absolute top-full left-0 mt-2 bg-[#0c1a0d] border border-[rgba(0,166,81,0.2)] rounded-lg p-3 z-10 shadow-lg min-w-max">
-                {STATUS_FILTER_OPTIONS.map(opt => (
-                  <label key={opt.key} className="flex items-center gap-2 py-1.5 px-2 text-gray-300 hover:text-gray-100 cursor-pointer whitespace-nowrap">
-                    <input
-                      type="checkbox"
-                      checked={statusFilter.includes(opt.key)}
-                      onChange={(e) => {
-                        if (e.target.checked) {
-                          setStatusFilter([...statusFilter, opt.key])
-                        } else {
-                          setStatusFilter(statusFilter.filter(s => s !== opt.key))
-                        }
-                      }}
-                      className="accent-[#00A651] cursor-pointer"
-                    />
-                    <span className={opt.color}>{opt.label}</span>
-                  </label>
-                ))}
-              </div>
-            )}
-          </div>
-
           {/* Compare period */}
           <div className="relative">
             <button
