@@ -93,20 +93,28 @@ export class KommoClient implements IntegrationClient {
 
   async getLeads(dateFrom?: Date, dateTo?: Date): Promise<KommoLead[]> {
     try {
-      const params: Record<string, any> = { limit: 250 };
-
+      const baseParams: Record<string, any> = {};
       if (dateFrom) {
-        params["filter[created_at][from]"] = Math.floor(dateFrom.getTime() / 1000);
+        baseParams["filter[created_at][from]"] = Math.floor(dateFrom.getTime() / 1000);
       }
       if (dateTo) {
         const end = new Date(dateTo);
         end.setHours(23, 59, 59, 999);
-        params["filter[created_at][to]"] = Math.floor(end.getTime() / 1000);
+        baseParams["filter[created_at][to]"] = Math.floor(end.getTime() / 1000);
       }
 
-      const response = await this.client.get("/leads", { params });
-      const leads: KommoLead[] = response.data?._embedded?.leads || [];
-      return leads;
+      const allLeads: KommoLead[] = [];
+      let page = 1;
+      while (true) {
+        const response = await this.client.get("/leads", {
+          params: { ...baseParams, limit: 250, page },
+        });
+        const leads: KommoLead[] = response.data?._embedded?.leads || [];
+        allLeads.push(...leads);
+        if (leads.length < 250) break;
+        page++;
+      }
+      return allLeads;
     } catch (error) {
       throw new IntegrationError(
         this.platform,

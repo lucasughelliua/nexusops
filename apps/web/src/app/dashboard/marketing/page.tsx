@@ -532,7 +532,6 @@ function DetailModal({
   onClose,
 }: DetailModalProps) {
   const [showChildren, setShowChildren] = useState(false)
-  const [activeTab, setActiveTab] = useState<'overview' | 'performance' | 'audience' | 'creative'>('overview')
   const [modalPosition, setModalPosition] = useState<'center' | 'left' | 'right' | 'lower'>('center')
 
   // Position-aware modal positioning
@@ -571,37 +570,7 @@ function DetailModal({
     return 'w-[100vw] md:w-[95vw] h-[100vh] md:h-[95vh] overflow-y-auto bg-[#081209] border border-[rgba(0,166,81,0.25)] rounded-2xl p-6 space-y-5 shadow-2xl'
   }
 
-  // Calculate performance vs previous period (mock)
-  const getPerformanceComparison = () => {
-    const indicators: PerformanceIndicator[] = []
-
-    // Mock data for demo
-    if (metrics.some(m => m.label === 'CTR')) {
-      indicators.push({
-        metric: 'CTR',
-        value: parseFloat(metrics.find(m => m.label === 'CTR')?.value || '0'),
-        previousValue: parseFloat(metrics.find(m => m.label === 'CTR')?.value || '0') * 0.85,
-        isGood: true,
-        unit: '%'
-      })
-    }
-    if (metrics.some(m => m.label === 'CPC')) {
-      const cpcValue = parseFloat(metrics.find(m => m.label === 'CPC')?.value?.replace(/[^0-9.-]/g, '') || '0')
-      indicators.push({
-        metric: 'CPC',
-        value: cpcValue,
-        previousValue: cpcValue * 1.1,
-        isGood: false,
-        unit: '$'
-      })
-    }
-
-    return indicators
-  }
-
-  const performanceData = getPerformanceComparison()
-
-  // Mock funnel data
+  // Funnel data
   const funnelSteps: FunnelStep[] = funnelData.length > 0 ? funnelData : [
     { stage: 'Impresiones', count: parseInt(metrics.find(m => m.label === 'Impresiones')?.value?.replace(/[^0-9]/g, '') || '0') },
     { stage: 'Clicks', count: parseInt(metrics.find(m => m.label === 'Clicks')?.value?.replace(/[^0-9]/g, '') || '0') },
@@ -639,32 +608,7 @@ function DetailModal({
           </button>
         </div>
 
-        {/* Tab Navigation */}
-        {channelKey === 'meta' && (
-          <div className="flex gap-1 border-b border-[rgba(0,166,81,0.1)] mb-4 -mx-6 px-6">
-            {[
-              { key: 'overview' as const, label: 'Resumen' },
-              { key: 'performance' as const, label: 'Desempeño' },
-              { key: 'creative' as const, label: 'Creative' },
-            ].map(t => (
-              <button
-                key={t.key}
-                onClick={() => setActiveTab(t.key)}
-                className={`text-xs px-4 py-2 border-b-2 transition-all ${
-                  activeTab === t.key
-                    ? 'border-[#00A651] text-[#00A651]'
-                    : 'border-transparent text-gray-500 hover:text-gray-300'
-                }`}
-              >
-                {t.label}
-              </button>
-            ))}
-          </div>
-        )}
-
-        {/* OVERVIEW TAB */}
-        {activeTab === 'overview' && (
-          <>
+        <>
             {/* Thumbnail if available */}
             {thumbnailUrl && (
               <div className="rounded-lg overflow-hidden bg-[#0c1a0d] border border-[rgba(0,166,81,0.15)]">
@@ -777,103 +721,7 @@ function DetailModal({
                 )}
               </div>
             )}
-          </>
-        )}
-
-        {/* PERFORMANCE TAB */}
-        {activeTab === 'performance' && (
-          <>
-            {/* Performance vs previous period */}
-            {performanceData.length > 0 && (
-              <div className="bg-[#0c1a0d] border border-[rgba(0,166,81,0.15)] rounded-xl p-4">
-                <div className="text-[11px] font-semibold uppercase tracking-wider text-gray-400 mb-4">Comparación vs Período Anterior</div>
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                  {performanceData.map(indicator => {
-                    const delta = indicator.value - indicator.previousValue
-                    const deltaPercent = indicator.previousValue !== 0 ? (delta / indicator.previousValue) * 100 : 0
-                    const isPositive = (indicator.isGood && delta > 0) || (!indicator.isGood && delta < 0)
-
-                    return (
-                      <div key={indicator.metric} className="bg-[#0c1a0d] rounded-lg p-3 border border-[rgba(0,166,81,0.1)]">
-                        <div className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 mb-2">{indicator.metric}</div>
-                        <div className="flex items-end justify-between">
-                          <div className="text-lg font-bold text-gray-100">
-                            {indicator.value.toFixed(2)}{indicator.unit}
-                          </div>
-                          <div className={`flex items-center gap-1 text-xs font-semibold ${isPositive ? 'text-emerald-400' : 'text-red-400'}`}>
-                            <span>{isPositive ? '↑' : '↓'}</span>
-                            <span>{Math.abs(deltaPercent).toFixed(1)}%</span>
-                          </div>
-                        </div>
-                      </div>
-                    )
-                  })}
-                </div>
-              </div>
-            )}
-
-            {/* Performance ranking chart - top 3 metrics */}
-            {metrics.length > 0 && (
-              <div className="bg-[#0c1a0d] border border-[rgba(0,166,81,0.15)] rounded-xl p-4">
-                <div className="text-[11px] font-semibold uppercase tracking-wider text-gray-400 mb-4">Métricas Principales</div>
-                <div className="space-y-3">
-                  {metrics.slice(0, 5).map((m, idx) => (
-                    <div key={m.label}>
-                      <div className="flex justify-between text-xs text-gray-400 mb-1.5">
-                        <span className="font-medium">{m.label}</span>
-                        <span className="text-gray-200 font-mono font-semibold">{m.value}</span>
-                      </div>
-                      <div className="h-2 bg-[#1a2e1b] rounded-full overflow-hidden">
-                        <div
-                          className="h-full rounded-full"
-                          style={{
-                            width: `${((idx + 1) / metrics.length) * 100}%`,
-                            background: ['#3b82f6', '#06b6d4', '#00A651', '#f59e0b', '#ec4899'][idx % 5]
-                          }}
-                        />
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </>
-        )}
-
-        {/* CREATIVE TAB */}
-        {activeTab === 'creative' && (
-          <>
-            {thumbnailUrl && (
-              <div className="rounded-lg overflow-hidden bg-[#0c1a0d] border border-[rgba(0,166,81,0.15)]">
-                <img
-                  src={thumbnailUrl}
-                  alt="creative"
-                  className="w-full max-h-[400px] object-cover"
-                />
-              </div>
-            )}
-            {!thumbnailUrl && (
-              <div className="bg-[#0c1a0d] border border-[rgba(0,166,81,0.15)] rounded-xl p-8 text-center">
-                <div className="text-gray-500 text-sm">Sin imagen disponible</div>
-              </div>
-            )}
-            <div className="bg-[#0c1a0d] border border-[rgba(0,166,81,0.15)] rounded-xl p-4">
-              <div className="text-[11px] font-semibold uppercase tracking-wider text-gray-400 mb-3">Información del Anuncio</div>
-              <dl className="space-y-3 text-sm">
-                <div>
-                  <dt className="text-gray-500 text-xs uppercase tracking-wide mb-1">Nombre</dt>
-                  <dd className="text-gray-200 font-medium">{title}</dd>
-                </div>
-                {status && (
-                  <div>
-                    <dt className="text-gray-500 text-xs uppercase tracking-wide mb-1">Estado</dt>
-                    <dd><StatusBadge status={status} /></dd>
-                  </div>
-                )}
-              </dl>
-            </div>
-          </>
-        )}
+        </>
 
         {/* Children for custom content */}
         {children && (
@@ -1272,17 +1120,143 @@ function MetaTab({ data, loading }: { data: MetaFullData | null; loading: boolea
   )
 }
 
+// ── Perfit Detail Modal ───────────────────────────────────────────────────────
+
+type PerfitRow = NonNullable<PerfitData['campaigns']>[number]
+
+function PerfitDetailModal({ row, onClose }: { row: PerfitRow; onClose: () => void }) {
+  const deliveryRate = row.sent > 0 ? (row.delivered / row.sent) * 100 : 0
+  const openRate    = row.sent > 0 ? (row.opened   / row.sent) * 100 : 0
+  const clickRate   = row.sent > 0 ? (row.clicked  / row.sent) * 100 : 0
+  const bounceRate  = row.sent > 0 ? ((row.sent - row.delivered) / row.sent) * 100 : 0
+
+  const funnel = [
+    { label: 'Enviados',    value: row.sent,      color: '#3b82f6' },
+    { label: 'Entregados',  value: row.delivered, color: '#06b6d4' },
+    { label: 'Abiertos',    value: row.opened,    color: '#00A651' },
+    { label: 'Clicks',      value: row.clicked,   color: '#f59e0b' },
+  ]
+  const maxVal = Math.max(row.sent, 1)
+
+  const rateCards = [
+    { label: 'Entrega',  value: deliveryRate, color: '#06b6d4' },
+    { label: 'Apertura', value: openRate,     color: '#00A651' },
+    { label: 'Clicks',   value: clickRate,    color: '#f59e0b' },
+    { label: 'Rebote',   value: bounceRate,   color: '#ef4444' },
+  ]
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm"
+      onClick={onClose}
+    >
+      <div
+        className="w-[100vw] md:w-[90vw] md:max-w-3xl h-[100vh] md:h-auto md:max-h-[90vh] overflow-y-auto bg-[#081209] border border-[rgba(0,166,81,0.25)] rounded-2xl p-6 space-y-5 shadow-2xl"
+        onClick={e => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <span className="text-[11px] px-2 py-0.5 rounded font-medium bg-violet-900/30 text-violet-400 border border-violet-800/40">Perfit</span>
+            <h2 className="text-lg font-bold text-gray-100 mt-1 leading-snug break-words">{row.name}</h2>
+            {row.launchDate && (
+              <p className="text-xs text-gray-500 mt-0.5">{row.launchDate.split('T')[0]}</p>
+            )}
+          </div>
+          <button onClick={onClose} className="text-gray-500 hover:text-gray-200 text-xl mt-0.5 shrink-0">&#x2715;</button>
+        </div>
+
+        {/* KPI cards */}
+        <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+          {[
+            { label: 'Enviados',       value: fmtNum(row.sent) },
+            { label: 'Entregados',     value: fmtNum(row.delivered) },
+            { label: 'Abiertos',       value: fmtNum(row.opened) },
+            { label: 'Clicks',         value: fmtNum(row.clicked) },
+            { label: 'Desubscriptos',  value: fmtNum(row.unsubscribed) },
+          ].map(k => (
+            <div key={k.label} className="bg-[#0c1a0d] rounded-xl p-3 border border-[rgba(0,166,81,0.12)]">
+              <div className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 mb-1">{k.label}</div>
+              <div className="text-base font-bold text-gray-100">{k.value}</div>
+            </div>
+          ))}
+        </div>
+
+        {/* Rate cards */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          {rateCards.map(r => (
+            <div key={r.label} className="bg-[#0c1a0d] rounded-xl p-3 border border-[rgba(0,166,81,0.12)]">
+              <div className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 mb-1">Tasa {r.label}</div>
+              <div className="text-xl font-bold" style={{ color: r.color }}>{r.value.toFixed(1)}%</div>
+            </div>
+          ))}
+        </div>
+
+        {/* Funnel */}
+        <div className="bg-[#0c1a0d] border border-[rgba(0,166,81,0.15)] rounded-xl p-5">
+          <div className="text-[11px] font-semibold uppercase tracking-wider text-gray-400 mb-4">Embudo de Campaña</div>
+          <div className="space-y-3">
+            {funnel.map((step, i) => {
+              const pct = maxVal > 0 ? (step.value / maxVal) * 100 : 0
+              const convFromPrev = i > 0 && funnel[i - 1].value > 0
+                ? ((step.value / funnel[i - 1].value) * 100).toFixed(1)
+                : null
+              return (
+                <div key={step.label}>
+                  <div className="flex justify-between text-xs text-gray-400 mb-1.5">
+                    <span className="font-medium">{step.label}</span>
+                    <span className="flex items-center gap-2">
+                      {convFromPrev && (
+                        <span className="text-gray-600 text-[10px]">{convFromPrev}% del anterior</span>
+                      )}
+                      <span className="font-mono font-semibold text-gray-200">{fmtNum(step.value)}</span>
+                    </span>
+                  </div>
+                  <div className="h-3 bg-[#1a2e1b] rounded-full overflow-hidden">
+                    <div
+                      className="h-full rounded-full transition-all"
+                      style={{ width: `${pct}%`, background: step.color }}
+                    />
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+
+        {/* Bar chart */}
+        <div className="bg-[#0c1a0d] border border-[rgba(0,166,81,0.15)] rounded-xl p-5">
+          <div className="text-[11px] font-semibold uppercase tracking-wider text-gray-400 mb-4">Comparativa de Métricas</div>
+          <ResponsiveContainer width="100%" height={200}>
+            <BarChart data={funnel} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#1a2e1b" />
+              <XAxis dataKey="label" tick={{ fill: '#9ca3af', fontSize: 11 }} axisLine={false} tickLine={false} />
+              <YAxis tick={{ fill: '#6b7280', fontSize: 10 }} axisLine={false} tickLine={false} />
+              <Tooltip
+                contentStyle={{ background: '#0c1a0d', border: '1px solid rgba(0,166,81,0.2)', borderRadius: 8 }}
+                labelStyle={{ color: '#9ca3af', fontSize: 11 }}
+                formatter={(v: any) => [fmtNum(v), '']}
+              />
+              <Bar dataKey="value" name="Cantidad" radius={[4, 4, 0, 0]} maxBarSize={60}>
+                {funnel.map((f) => (
+                  <Cell key={f.label} fill={f.color} />
+                ))}
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ── Perfit Tab ────────────────────────────────────────────────────────────────
 
-function PerfitTab({ campaigns, perfitData, loading }: {
-  campaigns: Campaign[]
+function PerfitTab({ perfitData, loading }: {
   perfitData: PerfitData | null
   loading: boolean
 }) {
-  const [selected, setSelected] = useState<Campaign | null>(null)
-  const [dateFrom, setDateFrom] = useState<string>(format(new Date(Date.now() - 30 * 24 * 60 * 60 * 1000), 'yyyy-MM-dd'))
-  const [dateTo, setDateTo] = useState<string>(format(new Date(), 'yyyy-MM-dd'))
-  const [filterStatus, setFilterStatus] = useState<string>('')
+  const [selected, setSelected] = useState<PerfitRow | null>(null)
   const totals = perfitData?.totals ?? null
 
   const kpis = totals ? [
@@ -1295,7 +1269,6 @@ function PerfitTab({ campaigns, perfitData, loading }: {
     { label: 'Desubscriptos', value: fmtNum(totals.unsubscribed) },
   ] : []
 
-  type PerfitRow = NonNullable<PerfitData['campaigns']>[number]
   const perfitCols: ColDef<PerfitRow>[] = [
     { key: 'name', label: 'Campaña', render: r => <span className="text-gray-200 font-medium truncate max-w-[280px] block">{r.name}</span> },
     { key: 'launchDate', label: 'Fecha', render: r => <span className="text-gray-400 text-xs">{r.launchDate ? r.launchDate.split('T')[0] : '-'}</span> },
@@ -1324,25 +1297,12 @@ function PerfitTab({ campaigns, perfitData, loading }: {
         cols={perfitCols as any}
         rows={perfitRows as any[]}
         loading={loading}
+        onRowClick={row => setSelected(row as PerfitRow)}
         emptyMsg="Sin campañas de Perfit en el período seleccionado."
       />
 
       {selected && (
-        <DetailModal
-          title={selected.name}
-          channel="Perfit"
-          channelKey="perfit"
-          status={selected.status}
-          metrics={[
-            { label: 'Gasto', value: fmtARSCompact(selected.spend) },
-            { label: 'Leads', value: fmtNum(selected.leads) },
-            { label: 'ROI', value: selected.roi ? `${fmtNum(selected.roi)}%` : '-' },
-            { label: 'ROAS', value: selected.roas ? `${selected.roas.toFixed(2)}x` : '-' },
-            { label: 'Estado', value: STATUS_LABELS[selected.status] ?? selected.status },
-            { label: 'Conversiones', value: fmtNum(selected.conversions) },
-          ]}
-          onClose={() => setSelected(null)}
-        />
+        <PerfitDetailModal row={selected} onClose={() => setSelected(null)} />
       )}
     </div>
   )
@@ -1682,7 +1642,7 @@ export default function MarketingPage() {
           <MetaTab data={metaData} loading={metaLoading} />
         )}
         {activeTab === 'perfit' && (
-          <PerfitTab campaigns={perfitCampaigns} perfitData={perfitData} loading={campLoading || perfitLoading} />
+          <PerfitTab perfitData={perfitData} loading={campLoading || perfitLoading} />
         )}
         {activeTab === 'google' && (
           <GoogleTab googleData={googleData} loading={googleLoading} />
