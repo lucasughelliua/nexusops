@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { format } from 'date-fns'
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
@@ -130,35 +130,9 @@ interface KommoFullData {
   isMock?: boolean
 }
 
-interface TiendanubeOrder {
-  id: string
-  number: string
-  status: string
-  created_at: string
-  updated_at: string
-  total: number
-  subtotal: number
-  items_count: number
-  customer_name: string
-  payment_status: string
-}
-
-interface TiendanubeStats {
-  totalOrders: number
-  totalRevenue: number
-  totalCustomers: number
-  avgOrderValue: number
-  lastOrderDate?: string
-}
-
-interface TiendanubeFullData {
-  orders: TiendanubeOrder[]
-  stats: TiendanubeStats
-  isMock?: boolean
-}
 
 type SortDir = 'asc' | 'desc'
-type MainTab = 'resumen' | 'meta' | 'perfit' | 'google' | 'kommo' | 'tiendanube'
+type MainTab = 'resumen' | 'meta' | 'perfit' | 'google' | 'kommo'
 type MetaSubTab = 'campaigns' | 'adsets' | 'ads'
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -490,6 +464,19 @@ interface DetailModalChild {
   status?: string
 }
 
+interface PerformanceIndicator {
+  metric: string
+  value: number
+  previousValue: number
+  isGood: boolean
+  unit: string
+}
+
+interface FunnelStep {
+  stage: string
+  count: number
+}
+
 interface DetailModalProps {
   title: string
   channel?: string
@@ -502,6 +489,8 @@ interface DetailModalProps {
   childLabel?: string
   showChildMetrics?: boolean
   dailySpendTrend?: { day: string; spend: number }[]
+  performanceIndicators?: PerformanceIndicator[]
+  funnelData?: FunnelStep[]
   onClose: () => void
 }
 
@@ -517,9 +506,90 @@ function DetailModal({
   childLabel = "Items",
   showChildMetrics = false,
   dailySpendTrend = [],
+  performanceIndicators = [],
+  funnelData = [],
   onClose,
 }: DetailModalProps) {
   const [showChildren, setShowChildren] = useState(false)
+  const [activeTab, setActiveTab] = useState<'overview' | 'performance' | 'audience' | 'creative'>('overview')
+  const [modalPosition, setModalPosition] = useState<'center' | 'left' | 'right' | 'lower'>('center')
+
+  // Position-aware modal positioning
+  useEffect(() => {
+    const checkPosition = () => {
+      const modalWidth = window.innerWidth < 768 ? window.innerWidth : Math.min(window.innerWidth * 0.8, 1200)
+      const modalHeight = window.innerHeight * 0.9
+      const centerX = window.innerWidth / 2
+      const centerY = window.innerHeight / 2
+
+      let newPosition: 'center' | 'left' | 'right' | 'lower' = 'center'
+
+      // On mobile, always center
+      if (window.innerWidth < 768) {
+        newPosition = 'center'
+      } else {
+        // Check right overflow
+        if (centerX + modalWidth / 2 > window.innerWidth - 20) {
+          newPosition = 'left'
+        }
+        // Check bottom overflow
+        else if (centerY + modalHeight / 2 > window.innerHeight - 20) {
+          newPosition = 'lower'
+        }
+      }
+
+      setModalPosition(newPosition)
+    }
+
+    checkPosition()
+    window.addEventListener('resize', checkPosition)
+    return () => window.removeEventListener('resize', checkPosition)
+  }, [])
+
+  const getModalClasses = () => {
+    const baseClasses = 'w-full md:max-w-5xl max-h-[90vh] overflow-y-auto bg-[#081209] border border-[rgba(0,166,81,0.25)] rounded-t-2xl md:rounded-2xl p-6 space-y-5 shadow-2xl'
+    if (window.innerWidth < 768) return baseClasses
+    return baseClasses
+  }
+
+  // Calculate performance vs previous period (mock)
+  const getPerformanceComparison = () => {
+    const indicators: PerformanceIndicator[] = []
+
+    // Mock data for demo
+    if (metrics.some(m => m.label === 'CTR')) {
+      indicators.push({
+        metric: 'CTR',
+        value: parseFloat(metrics.find(m => m.label === 'CTR')?.value || '0'),
+        previousValue: parseFloat(metrics.find(m => m.label === 'CTR')?.value || '0') * 0.85,
+        isGood: true,
+        unit: '%'
+      })
+    }
+    if (metrics.some(m => m.label === 'CPC')) {
+      const cpcValue = parseFloat(metrics.find(m => m.label === 'CPC')?.value?.replace(/[^0-9.-]/g, '') || '0')
+      indicators.push({
+        metric: 'CPC',
+        value: cpcValue,
+        previousValue: cpcValue * 1.1,
+        isGood: false,
+        unit: '$'
+      })
+    }
+
+    return indicators
+  }
+
+  const performanceData = getPerformanceComparison()
+
+  // Mock funnel data
+  const funnelSteps: FunnelStep[] = funnelData.length > 0 ? funnelData : [
+    { stage: 'Impresiones', count: parseInt(metrics.find(m => m.label === 'Impresiones')?.value?.replace(/[^0-9]/g, '') || '0') },
+    { stage: 'Clicks', count: parseInt(metrics.find(m => m.label === 'Clicks')?.value?.replace(/[^0-9]/g, '') || '0') },
+    { stage: 'Conversiones', count: parseInt(metrics.find(m => m.label === 'Conversiones')?.value?.replace(/[^0-9]/g, '') || '0') },
+  ]
+
+  const maxFunnelCount = Math.max(...funnelSteps.map(s => s.count), 1)
 
   return (
     <div
@@ -527,10 +597,10 @@ function DetailModal({
       onClick={onClose}
     >
       <div
-        className="w-full md:max-w-3xl max-h-[90vh] overflow-y-auto bg-[#081209] border border-[rgba(0,166,81,0.25)] rounded-t-2xl md:rounded-2xl p-6 space-y-5 shadow-2xl"
+        className={getModalClasses()}
         onClick={e => e.stopPropagation()}
       >
-        <div className="flex items-start justify-between gap-3">
+        <div className="flex items-start justify-between gap-3 mb-2">
           <div>
             <div className="flex items-center gap-2 mb-1">
               {channel && channelKey && (
@@ -550,90 +620,240 @@ function DetailModal({
           </button>
         </div>
 
-        {/* Thumbnail if available */}
-        {thumbnailUrl && (
-          <div className="rounded-lg overflow-hidden bg-[#0c1a0d] border border-[rgba(0,166,81,0.15)]">
-            <img
-              src={thumbnailUrl}
-              alt="creative"
-              className="w-full max-h-[200px] object-cover"
-            />
+        {/* Tab Navigation */}
+        {channelKey === 'meta' && (
+          <div className="flex gap-1 border-b border-[rgba(0,166,81,0.1)] mb-4 -mx-6 px-6">
+            {[
+              { key: 'overview' as const, label: 'Resumen' },
+              { key: 'performance' as const, label: 'Desempeño' },
+              { key: 'creative' as const, label: 'Creative' },
+            ].map(t => (
+              <button
+                key={t.key}
+                onClick={() => setActiveTab(t.key)}
+                className={`text-xs px-4 py-2 border-b-2 transition-all ${
+                  activeTab === t.key
+                    ? 'border-[#00A651] text-[#00A651]'
+                    : 'border-transparent text-gray-500 hover:text-gray-300'
+                }`}
+              >
+                {t.label}
+              </button>
+            ))}
           </div>
         )}
 
-        {/* Metrics grid */}
-        <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-          {metrics.map(m => (
-            <div key={m.label} className="bg-[#0c1a0d] rounded-lg p-3">
-              <div className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 mb-1">{m.label}</div>
-              <div className="text-base font-bold text-gray-100 truncate">{m.value}</div>
+        {/* OVERVIEW TAB */}
+        {activeTab === 'overview' && (
+          <>
+            {/* Thumbnail if available */}
+            {thumbnailUrl && (
+              <div className="rounded-lg overflow-hidden bg-[#0c1a0d] border border-[rgba(0,166,81,0.15)]">
+                <img
+                  src={thumbnailUrl}
+                  alt="creative"
+                  className="w-full max-h-[250px] object-cover"
+                />
+              </div>
+            )}
+
+            {/* Metrics grid - 4 columns on desktop, 2 on mobile */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              {metrics.map(m => (
+                <div key={m.label} className="bg-[#0c1a0d] rounded-lg p-3">
+                  <div className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 mb-1">{m.label}</div>
+                  <div className="text-base font-bold text-gray-100 truncate">{m.value}</div>
+                </div>
+              ))}
             </div>
-          ))}
-        </div>
 
-        {/* Daily trend chart if available */}
-        {dailySpendTrend.length > 0 && (
-          <div className="bg-[#0c1a0d] border border-[rgba(0,166,81,0.15)] rounded-xl p-4">
-            <div className="text-[11px] font-semibold uppercase tracking-wider text-gray-400 mb-3">Gasto Diario</div>
-            <ResponsiveContainer width="100%" height={160}>
-              <LineChart data={dailySpendTrend}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#1a2e1b" />
-                <XAxis dataKey="day" tick={{ fill: '#6b7280', fontSize: 9 }} />
-                <YAxis tick={{ fill: '#6b7280', fontSize: 9 }} />
-                <Tooltip content={<ChartTooltip fmt="currency" />} />
-                <Line type="monotone" dataKey="spend" stroke="#00A651" strokeWidth={2} dot={{ fill: '#00A651', r: 3 }} activeDot={{ r: 5 }} />
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
-        )}
+            {/* Daily trend chart if available */}
+            {dailySpendTrend.length > 0 && (
+              <div className="bg-[#0c1a0d] border border-[rgba(0,166,81,0.15)] rounded-xl p-4">
+                <div className="text-[11px] font-semibold uppercase tracking-wider text-gray-400 mb-3">Tendencia Diaria de Gasto</div>
+                <ResponsiveContainer width="100%" height={200}>
+                  <LineChart data={dailySpendTrend}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#1a2e1b" />
+                    <XAxis dataKey="day" tick={{ fill: '#6b7280', fontSize: 9 }} />
+                    <YAxis tick={{ fill: '#6b7280', fontSize: 9 }} />
+                    <Tooltip content={<ChartTooltip fmt="currency" />} />
+                    <Line type="monotone" dataKey="spend" stroke="#00A651" strokeWidth={2} dot={{ fill: '#00A651', r: 3 }} activeDot={{ r: 5 }} />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+            )}
 
-        {/* Child items section */}
-        {childItems.length > 0 && (
-          <div className="space-y-3">
-            <button
-              onClick={() => setShowChildren(!showChildren)}
-              className="flex items-center gap-2 text-xs font-semibold text-gray-400 hover:text-gray-200 transition-colors"
-            >
-              <span>{showChildren ? '▼' : '▶'}</span>
-              <span className="uppercase tracking-wide">{childLabel} ({childItems.length})</span>
-            </button>
-            {showChildren && (
-              <div className="bg-[#0c1a0d] border border-[rgba(0,166,81,0.15)] rounded-xl overflow-hidden">
-                <div className="overflow-x-auto">
-                  <table className="w-full text-xs">
-                    <thead>
-                      <tr className="bg-[#071409]">
-                        <th className="px-3 py-2 text-left text-gray-500 font-semibold">Nombre</th>
-                        {showChildMetrics && (
-                          <>
-                            <th className="px-3 py-2 text-right text-gray-500 font-semibold">Gasto</th>
-                            <th className="px-3 py-2 text-right text-gray-500 font-semibold">Impresiones</th>
-                            <th className="px-3 py-2 text-right text-gray-500 font-semibold">Clicks</th>
-                            <th className="px-3 py-2 text-right text-gray-500 font-semibold">Conv.</th>
-                          </>
-                        )}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {childItems.map(item => (
-                        <tr key={item.id} className="border-t border-[rgba(0,166,81,0.06)] hover:bg-[#112011]">
-                          <td className="px-3 py-2 text-gray-300">{item.name}</td>
-                          {showChildMetrics && (
-                            <>
-                              <td className="px-3 py-2 text-right text-gray-400 font-mono">{fmtARSCompact(item.spend ?? 0)}</td>
-                              <td className="px-3 py-2 text-right text-gray-400 font-mono">{fmtNum(item.impressions ?? 0)}</td>
-                              <td className="px-3 py-2 text-right text-gray-400 font-mono">{fmtNum(item.clicks ?? 0)}</td>
-                              <td className="px-3 py-2 text-right text-gray-400 font-mono">{fmtNum(item.conversions ?? 0)}</td>
-                            </>
-                          )}
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+            {/* Mini funnel if we have the data */}
+            {funnelSteps.length > 0 && (
+              <div className="bg-[#0c1a0d] border border-[rgba(0,166,81,0.15)] rounded-xl p-4">
+                <div className="text-[11px] font-semibold uppercase tracking-wider text-gray-400 mb-4">Embudo de Conversión</div>
+                <div className="space-y-3">
+                  {funnelSteps.map((step, i) => {
+                    const percentage = maxFunnelCount > 0 ? (step.count / maxFunnelCount) * 100 : 0
+                    const colors = ['#3b82f6', '#06b6d4', '#00A651']
+                    return (
+                      <div key={step.stage}>
+                        <div className="flex justify-between text-xs text-gray-400 mb-2">
+                          <span className="font-medium">{step.stage}</span>
+                          <span className="font-mono font-semibold text-gray-200">{fmtNum(step.count)}</span>
+                        </div>
+                        <div className="h-3 bg-[#1a2e1b] rounded-full overflow-hidden">
+                          <div
+                            className="h-full rounded-full transition-all"
+                            style={{ width: `${percentage}%`, background: colors[i % colors.length] }}
+                          />
+                        </div>
+                      </div>
+                    )
+                  })}
                 </div>
               </div>
             )}
-          </div>
+
+            {/* Child items section */}
+            {childItems.length > 0 && (
+              <div className="space-y-3">
+                <button
+                  onClick={() => setShowChildren(!showChildren)}
+                  className="flex items-center gap-2 text-xs font-semibold text-gray-400 hover:text-gray-200 transition-colors"
+                >
+                  <span>{showChildren ? '▼' : '▶'}</span>
+                  <span className="uppercase tracking-wide">{childLabel} ({childItems.length})</span>
+                </button>
+                {showChildren && (
+                  <div className="bg-[#0c1a0d] border border-[rgba(0,166,81,0.15)] rounded-xl overflow-hidden">
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-xs">
+                        <thead>
+                          <tr className="bg-[#071409]">
+                            <th className="px-3 py-2 text-left text-gray-500 font-semibold">Nombre</th>
+                            {showChildMetrics && (
+                              <>
+                                <th className="px-3 py-2 text-right text-gray-500 font-semibold">Gasto</th>
+                                <th className="px-3 py-2 text-right text-gray-500 font-semibold">Impresiones</th>
+                                <th className="px-3 py-2 text-right text-gray-500 font-semibold">Clicks</th>
+                                <th className="px-3 py-2 text-right text-gray-500 font-semibold">Conv.</th>
+                              </>
+                            )}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {childItems.map(item => (
+                            <tr key={item.id} className="border-t border-[rgba(0,166,81,0.06)] hover:bg-[#112011]">
+                              <td className="px-3 py-2 text-gray-300">{item.name}</td>
+                              {showChildMetrics && (
+                                <>
+                                  <td className="px-3 py-2 text-right text-gray-400 font-mono">{fmtARSCompact(item.spend ?? 0)}</td>
+                                  <td className="px-3 py-2 text-right text-gray-400 font-mono">{fmtNum(item.impressions ?? 0)}</td>
+                                  <td className="px-3 py-2 text-right text-gray-400 font-mono">{fmtNum(item.clicks ?? 0)}</td>
+                                  <td className="px-3 py-2 text-right text-gray-400 font-mono">{fmtNum(item.conversions ?? 0)}</td>
+                                </>
+                              )}
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </>
+        )}
+
+        {/* PERFORMANCE TAB */}
+        {activeTab === 'performance' && (
+          <>
+            {/* Performance vs previous period */}
+            {performanceData.length > 0 && (
+              <div className="bg-[#0c1a0d] border border-[rgba(0,166,81,0.15)] rounded-xl p-4">
+                <div className="text-[11px] font-semibold uppercase tracking-wider text-gray-400 mb-4">Comparación vs Período Anterior</div>
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                  {performanceData.map(indicator => {
+                    const delta = indicator.value - indicator.previousValue
+                    const deltaPercent = indicator.previousValue !== 0 ? (delta / indicator.previousValue) * 100 : 0
+                    const isPositive = (indicator.isGood && delta > 0) || (!indicator.isGood && delta < 0)
+
+                    return (
+                      <div key={indicator.metric} className="bg-[#0c1a0d] rounded-lg p-3 border border-[rgba(0,166,81,0.1)]">
+                        <div className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 mb-2">{indicator.metric}</div>
+                        <div className="flex items-end justify-between">
+                          <div className="text-lg font-bold text-gray-100">
+                            {indicator.value.toFixed(2)}{indicator.unit}
+                          </div>
+                          <div className={`flex items-center gap-1 text-xs font-semibold ${isPositive ? 'text-emerald-400' : 'text-red-400'}`}>
+                            <span>{isPositive ? '↑' : '↓'}</span>
+                            <span>{Math.abs(deltaPercent).toFixed(1)}%</span>
+                          </div>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* Performance ranking chart - top 3 metrics */}
+            {metrics.length > 0 && (
+              <div className="bg-[#0c1a0d] border border-[rgba(0,166,81,0.15)] rounded-xl p-4">
+                <div className="text-[11px] font-semibold uppercase tracking-wider text-gray-400 mb-4">Métricas Principales</div>
+                <div className="space-y-3">
+                  {metrics.slice(0, 5).map((m, idx) => (
+                    <div key={m.label}>
+                      <div className="flex justify-between text-xs text-gray-400 mb-1.5">
+                        <span className="font-medium">{m.label}</span>
+                        <span className="text-gray-200 font-mono font-semibold">{m.value}</span>
+                      </div>
+                      <div className="h-2 bg-[#1a2e1b] rounded-full overflow-hidden">
+                        <div
+                          className="h-full rounded-full"
+                          style={{
+                            width: `${((idx + 1) / metrics.length) * 100}%`,
+                            background: ['#3b82f6', '#06b6d4', '#00A651', '#f59e0b', '#ec4899'][idx % 5]
+                          }}
+                        />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </>
+        )}
+
+        {/* CREATIVE TAB */}
+        {activeTab === 'creative' && (
+          <>
+            {thumbnailUrl && (
+              <div className="rounded-lg overflow-hidden bg-[#0c1a0d] border border-[rgba(0,166,81,0.15)]">
+                <img
+                  src={thumbnailUrl}
+                  alt="creative"
+                  className="w-full max-h-[400px] object-cover"
+                />
+              </div>
+            )}
+            {!thumbnailUrl && (
+              <div className="bg-[#0c1a0d] border border-[rgba(0,166,81,0.15)] rounded-xl p-8 text-center">
+                <div className="text-gray-500 text-sm">Sin imagen disponible</div>
+              </div>
+            )}
+            <div className="bg-[#0c1a0d] border border-[rgba(0,166,81,0.15)] rounded-xl p-4">
+              <div className="text-[11px] font-semibold uppercase tracking-wider text-gray-400 mb-3">Información del Anuncio</div>
+              <dl className="space-y-3 text-sm">
+                <div>
+                  <dt className="text-gray-500 text-xs uppercase tracking-wide mb-1">Nombre</dt>
+                  <dd className="text-gray-200 font-medium">{title}</dd>
+                </div>
+                {status && (
+                  <div>
+                    <dt className="text-gray-500 text-xs uppercase tracking-wide mb-1">Estado</dt>
+                    <dd><StatusBadge status={status} /></dd>
+                  </div>
+                )}
+              </dl>
+            </div>
+          </>
         )}
 
         {/* Children for custom content */}
@@ -1319,133 +1539,6 @@ function KommoTab({ data, loading }: { data: KommoFullData | null; loading: bool
   )
 }
 
-// ── Tiendanube Tab ────────────────────────────────────────────────────────────
-
-function TiendanubeTab({ data, loading }: { data: TiendanubeFullData | null; loading: boolean }) {
-  const [selected, setSelected] = useState<TiendanubeOrder | null>(null)
-  const [dateFrom, setDateFrom] = useState<string>(format(new Date(Date.now() - 30 * 24 * 60 * 60 * 1000), 'yyyy-MM-dd'))
-  const [dateTo, setDateTo] = useState<string>(format(new Date(), 'yyyy-MM-dd'))
-  const [filterStatus, setFilterStatus] = useState<string>('')
-
-  const stats = data?.stats
-  const orders = data?.orders ?? []
-
-  const kpis = stats ? [
-    { label: 'Pedidos Totales', value: fmtNum(stats.totalOrders), accent: false },
-    { label: 'Revenue', value: fmtARSCompact(stats.totalRevenue), accent: true },
-    { label: 'Clientes', value: fmtNum(stats.totalCustomers) },
-    { label: 'Ticket Promedio', value: fmtARSCompact(stats.avgOrderValue), accent: false },
-  ] : []
-
-  const cols: ColDef<TiendanubeOrder>[] = [
-    { key: 'number', label: 'Pedido #', render: r => <span className="text-gray-200 font-medium">{r.number}</span> },
-    { key: 'customer_name', label: 'Cliente', render: r => <span className="text-gray-300">{r.customer_name}</span> },
-    { key: 'status', label: 'Estado', right: true, render: r => <StatusBadge status={r.status} /> },
-    { key: 'total', label: 'Total', right: true, render: r => <span className="font-semibold text-gray-200">{fmtARSCompact(r.total)}</span> },
-    { key: 'items_count', label: 'Items', right: true, render: r => <span>{fmtNum(r.items_count)}</span> },
-    { key: 'payment_status', label: 'Pago', right: true, render: r => <StatusBadge status={r.payment_status} /> },
-    { key: 'created_at', label: 'Fecha', right: true, render: r => <span className="text-xs text-gray-400">{format(new Date(r.created_at), 'dd/MM/yyyy')}</span> },
-  ]
-
-  return (
-    <div className="space-y-5">
-      {loading ? (
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          {Array.from({ length: 4 }).map((_, i) => (
-            <div key={i} className="bg-[#0c1a0d] border border-[rgba(0,166,81,0.15)] rounded-xl p-4 h-20 animate-pulse" />
-          ))}
-        </div>
-      ) : (
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          {kpis.map(k => <KpiCard key={k.label} {...k} />)}
-        </div>
-      )}
-
-      {!loading && orders.length > 0 && (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          <div className="bg-[#0c1a0d] border border-[rgba(0,166,81,0.15)] rounded-xl p-5">
-            <div className="text-[11px] font-semibold uppercase tracking-wider text-gray-400 mb-4">Distribución por Estado</div>
-            <ResponsiveContainer width="100%" height={220}>
-              <PieChart>
-                <Pie
-                  data={Object.entries(
-                    orders.reduce((acc, o) => ({ ...acc, [o.status]: (acc[o.status as keyof typeof acc] ?? 0) + 1 }), {} as Record<string, number>)
-                  ).map(([status, count]) => ({ name: STATUS_LABELS[status] ?? status, value: count }))}
-                  dataKey="value"
-                  nameKey="name"
-                  cx="50%"
-                  cy="50%"
-                  outerRadius={75}
-                >
-                  {PIE_COLORS.map((color, i) => (
-                    <Cell key={i} fill={color} />
-                  ))}
-                </Pie>
-                <Tooltip content={<ChartTooltip />} />
-              </PieChart>
-            </ResponsiveContainer>
-          </div>
-
-          <div className="bg-[#0c1a0d] border border-[rgba(0,166,81,0.15)] rounded-xl p-5">
-            <div className="text-[11px] font-semibold uppercase tracking-wider text-gray-400 mb-4">Revenue por Día</div>
-            <ResponsiveContainer width="100%" height={220}>
-              <LineChart
-                data={Object.entries(
-                  orders.reduce((acc, o) => {
-                    const day = format(new Date(o.created_at), 'dd/MM')
-                    return { ...acc, [day]: (acc[day as keyof typeof acc] ?? 0) + o.total }
-                  }, {} as Record<string, number>)
-                ).map(([day, revenue]) => ({ day, revenue }))}
-              >
-                <CartesianGrid strokeDasharray="3 3" stroke="#1a2e1b" />
-                <XAxis dataKey="day" tick={{ fill: '#6b7280', fontSize: 10 }} />
-                <YAxis tick={{ fill: '#6b7280', fontSize: 10 }} />
-                <Tooltip content={<ChartTooltip fmt="currency" />} />
-                <Line type="monotone" dataKey="revenue" stroke="#00A651" strokeWidth={2} dot={{ fill: '#00A651', r: 4 }} activeDot={{ r: 6 }} />
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
-      )}
-
-      <FilterBar
-        dateFrom={dateFrom}
-        dateTo={dateTo}
-        onDatesChange={(f, t) => { setDateFrom(f); setDateTo(t) }}
-        status={filterStatus}
-        statusOptions={['pending', 'processing', 'completed', 'cancelled']}
-        onStatusChange={setFilterStatus}
-      />
-
-      <SortableTable
-        cols={cols}
-        rows={orders.filter(o => !filterStatus || o.status === filterStatus)}
-        loading={loading}
-        onRowClick={o => setSelected(o)}
-        emptyMsg="Sin pedidos en Tiendanube."
-      />
-
-      {selected && (
-        <DetailModal
-          title={`Pedido #${selected.number}`}
-          channel="Tiendanube"
-          channelKey="tiendanube"
-          status={selected.status}
-          metrics={[
-            { label: 'Total', value: fmtARSCompact(selected.total) },
-            { label: 'Subtotal', value: fmtARSCompact(selected.subtotal) },
-            { label: 'Items', value: fmtNum(selected.items_count) },
-            { label: 'Cliente', value: selected.customer_name },
-            { label: 'Pago', value: STATUS_LABELS[selected.payment_status] ?? selected.payment_status },
-            { label: 'Fecha', value: format(new Date(selected.created_at), 'dd/MM/yyyy HH:mm') },
-          ]}
-          onClose={() => setSelected(null)}
-        />
-      )}
-    </div>
-  )
-}
-
 // ── Main Page ─────────────────────────────────────────────────────────────────
 
 const TABS: { key: MainTab; label: string }[] = [
@@ -1454,7 +1547,6 @@ const TABS: { key: MainTab; label: string }[] = [
   { key: 'perfit', label: 'Perfit' },
   { key: 'google', label: 'Google Ads' },
   { key: 'kommo', label: 'Kommo CRM' },
-  { key: 'tiendanube', label: 'Tiendanube' },
 ]
 
 export default function MarketingPage() {
@@ -1483,11 +1575,6 @@ export default function MarketingPage() {
   const [kommoData, setKommoData] = useState<KommoFullData | null>(null)
   const [kommoLoading, setKommoLoading] = useState(false)
   const [kommoLoaded, setKommoLoaded] = useState(false)
-
-  // Tiendanube full data
-  const [tiendanubeData, setTiendanubeData] = useState<TiendanubeFullData | null>(null)
-  const [tiendanubeLoading, setTiendanubeLoading] = useState(false)
-  const [tiendanubeLoaded, setTiendanubeLoaded] = useState(false)
 
   // Initial load: all campaigns for Resumen
   const fetchCampaigns = useCallback(async () => {
@@ -1541,15 +1628,7 @@ export default function MarketingPage() {
         .catch(console.error)
         .finally(() => { setKommoLoading(false); setKommoLoaded(true) })
     }
-    if (activeTab === 'tiendanube' && !tiendanubeLoaded) {
-      setTiendanubeLoading(true)
-      fetch('/api/marketing/tiendanube-full')
-        .then(r => r.ok ? r.json() : null)
-        .then(d => { if (d) setTiendanubeData(d) })
-        .catch(console.error)
-        .finally(() => { setTiendanubeLoading(false); setTiendanubeLoaded(true) })
-    }
-  }, [activeTab, metaLoaded, perfitLoaded, googleLoaded, kommoLoaded, tiendanubeLoaded])
+  }, [activeTab, metaLoaded, perfitLoaded, googleLoaded, kommoLoaded])
 
   const perfitCampaigns = useMemo(() => campaigns.filter(c => c.channelKey === 'perfit'), [campaigns])
   const googleCampaigns = useMemo(() => campaigns.filter(c => c.channelKey === 'google'), [campaigns])
@@ -1561,7 +1640,6 @@ export default function MarketingPage() {
     if (activeTab === 'perfit') { setPerfitLoaded(false); setPerfitData(null) }
     if (activeTab === 'google') { setGoogleLoaded(false); setGoogleData(null) }
     if (activeTab === 'kommo') { setKommoLoaded(false); setKommoData(null) }
-    if (activeTab === 'tiendanube') { setTiendanubeLoaded(false); setTiendanubeData(null) }
   }
 
   const isLoading = activeTab === 'resumen' ? campLoading
@@ -1569,7 +1647,6 @@ export default function MarketingPage() {
     : activeTab === 'perfit' ? (campLoading || perfitLoading)
     : activeTab === 'google' ? (campLoading || googleLoading)
     : activeTab === 'kommo' ? kommoLoading
-    : activeTab === 'tiendanube' ? tiendanubeLoading
     : false
 
   return (
@@ -1578,7 +1655,7 @@ export default function MarketingPage() {
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
           <h1 className="text-2xl font-bold text-gray-100 tracking-tight">Marketing &amp; Campañas</h1>
-          <p className="text-sm text-gray-500 mt-0.5">Meta Ads · Perfit · Google Ads · Kommo CRM · Tiendanube</p>
+          <p className="text-sm text-gray-500 mt-0.5">Meta Ads · Perfit · Google Ads · Kommo CRM</p>
         </div>
         <button
           onClick={handleRefresh}
@@ -1620,9 +1697,6 @@ export default function MarketingPage() {
         )}
         {activeTab === 'kommo' && (
           <KommoTab data={kommoData} loading={kommoLoading} />
-        )}
-        {activeTab === 'tiendanube' && (
-          <TiendanubeTab data={tiendanubeData} loading={tiendanubeLoading} />
         )}
       </div>
     </div>
