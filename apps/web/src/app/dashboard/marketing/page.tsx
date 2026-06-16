@@ -7,6 +7,8 @@ import {
 } from 'recharts'
 import { fmtARSCompact, fmtNum, fmtPct } from '@/lib/utils'
 
+// ── Type definitions ──────────────────────────────────────────────────────────
+
 interface Campaign {
   id: string
   channel: string
@@ -26,8 +28,127 @@ interface Campaign {
   conversionRate?: number
 }
 
-type SortKey = keyof Campaign
+interface MetaAdSet {
+  id: string
+  name: string
+  status: string
+  campaignId: string
+  campaignName: string
+  spend: number
+  impressions: number
+  clicks: number
+  conversions: number
+  ctr: number
+  cpc: number
+  cpm: number
+  conversionRate: number
+}
+
+interface MetaAd {
+  id: string
+  name: string
+  status: string
+  adSetId: string
+  adSetName: string
+  campaignId: string
+  spend: number
+  impressions: number
+  clicks: number
+  conversions: number
+  ctr: number
+  cpc: number
+  cpm: number
+  thumbnailUrl?: string
+}
+
+interface MetaPageInsights {
+  fbFollowers: number
+  fbPageLikes: number
+  igFollowers: number
+  igMediaCount: number
+  igUsername: string
+  fbPageName: string
+}
+
+interface MetaFullData {
+  campaigns: Campaign[]
+  adsets: MetaAdSet[]
+  ads: MetaAd[]
+  page: MetaPageInsights
+  summary: {
+    totalSpend: number
+    totalImpressions: number
+    totalClicks: number
+    totalConversions: number
+    avgCTR: number
+    avgCPC: number
+    avgROAS: number
+  }
+  isMock?: boolean
+}
+
+interface PerfitData {
+  totals: {
+    sent: number
+    delivered: number
+    opened: number
+    clicked: number
+    unsubscribed: number
+    open_rate: number
+    click_rate: number
+  }
+}
+
+interface GoogleData {
+  totals: {
+    spend: number
+    clicks: number
+    impressions: number
+    conversions: number
+    revenue: number
+    roas: number
+  }
+}
+
+interface KommoStats {
+  total: number
+  new_leads: number
+  won: number
+  lost: number
+  open: number
+  total_value: number
+  won_value: number
+  avg_deal_value: number
+  conversion_rate: number
+  pipelines: { id: number; name: string; statuses: { id: number; name: string; type: number }[] }[]
+  leads_by_status: { statusName: string; pipelineName: string; count: number; value: number }[]
+}
+
+interface KommoFullData {
+  stats: KommoStats
+  isMock?: boolean
+}
+
 type SortDir = 'asc' | 'desc'
+type MainTab = 'resumen' | 'meta' | 'perfit' | 'google' | 'kommo'
+type MetaSubTab = 'campaigns' | 'adsets' | 'ads'
+
+// ── Constants ─────────────────────────────────────────────────────────────────
+
+const CHANNEL_COLORS_MAP: Record<string, string> = {
+  'Meta Ads': '#3b82f6',
+  Perfit: '#ec4899',
+  'Google Ads': '#06b6d4',
+  Kommo: '#10b981',
+}
+const PIE_COLORS = ['#3b82f6', '#ec4899', '#06b6d4', '#10b981', '#f59e0b']
+
+const STATUS_LABELS: Record<string, string> = {
+  ACTIVE: 'Activa', active: 'Activa',
+  PAUSED: 'Pausada', paused: 'Pausada',
+  ARCHIVED: 'Archivada', archived: 'Archivada',
+  DELETED: 'Eliminada', completed: 'Completada',
+}
 
 const CHANNEL_PILL: Record<string, string> = {
   meta: 'bg-blue-900/30 text-blue-400 border border-blue-800/40',
@@ -36,21 +157,7 @@ const CHANNEL_PILL: Record<string, string> = {
   kommo: 'bg-emerald-900/30 text-emerald-400 border border-emerald-800/40',
 }
 
-const CHANNEL_COLORS: Record<string, string> = {
-  'Meta Ads': '#3b82f6',
-  Perfit: '#ec4899',
-  'Google Ads': '#06b6d4',
-  Kommo: '#10b981',
-}
-
-const PIE_FALLBACK_COLORS = ['#3b82f6', '#ec4899', '#06b6d4', '#10b981', '#f59e0b']
-
-const STATUS_LABELS: Record<string, string> = {
-  ACTIVE: 'Activa', active: 'Activa',
-  PAUSED: 'Pausada', paused: 'Pausada',
-  ARCHIVED: 'Archivada', archived: 'Archivada',
-  DELETED: 'Eliminada', completed: 'Completada',
-}
+// ── Shared utility components ─────────────────────────────────────────────────
 
 function StatusBadge({ status }: { status: string }) {
   const label = STATUS_LABELS[status] ?? status
@@ -67,127 +174,11 @@ function SortIcon({ col, sortKey, sortDir }: { col: string; sortKey: string; sor
   return <span className="ml-1 text-[#00A651]">{sortDir === 'asc' ? '↑' : '↓'}</span>
 }
 
-// ── Detail modal ──────────────────────────────────────────────────────────────
-function CampaignModal({ campaign, onClose }: { campaign: Campaign; onClose: () => void }) {
-  const metrics = [
-    { label: 'Gasto', value: fmtARSCompact(campaign.spend) },
-    { label: 'Impresiones', value: campaign.impressions ? fmtNum(campaign.impressions) : '-' },
-    { label: 'Clicks', value: campaign.clicks ? fmtNum(campaign.clicks) : '-' },
-    {
-      label: campaign.conversions != null ? 'Conversiones' : 'Leads',
-      value: fmtNum(campaign.conversions ?? campaign.leads ?? 0),
-    },
-    { label: 'CPC', value: campaign.cpc ? fmtARSCompact(campaign.cpc) : '-' },
-    { label: 'CPM', value: campaign.cpm ? fmtARSCompact(campaign.cpm) : '-' },
-    { label: 'CTR', value: campaign.ctr ? fmtPct(campaign.ctr) : '-' },
-    { label: 'Tasa Conv.', value: campaign.conversionRate ? fmtPct(campaign.conversionRate) : '-' },
-    { label: 'ROAS', value: campaign.roas ? `${campaign.roas.toFixed(2)}x` : '-' },
-    { label: 'ROI', value: campaign.roi ? `${fmtNum(campaign.roi)}%` : '-' },
-  ]
-
-  // Funnel para esta campaña
-  const funnel = [
-    { step: 'Impresiones', count: campaign.impressions ?? 0 },
-    { step: 'Clicks', count: campaign.clicks ?? 0 },
-    { step: 'Conv./Leads', count: campaign.conversions ?? campaign.leads ?? 0 },
-  ].filter(f => f.count > 0)
-
-  const maxFunnel = funnel[0]?.count ?? 1
-
-  return (
-    <div
-      className="fixed inset-0 z-50 flex items-end md:items-center justify-center bg-black/70 backdrop-blur-sm"
-      onClick={onClose}
-    >
-      <div
-        className="w-full md:max-w-xl max-h-[90vh] overflow-y-auto bg-[#081209] border border-[rgba(0,166,81,0.25)] rounded-t-2xl md:rounded-2xl p-6 space-y-5 shadow-2xl"
-        onClick={e => e.stopPropagation()}
-      >
-        {/* Header */}
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <div className="flex items-center gap-2 mb-1">
-              <span className={`text-[11px] px-2 py-0.5 rounded font-medium ${CHANNEL_PILL[campaign.channelKey] || ''}`}>
-                {campaign.channel}
-              </span>
-              <StatusBadge status={campaign.status} />
-            </div>
-            <h2 className="text-lg font-bold text-gray-100 leading-snug">{campaign.name}</h2>
-          </div>
-          <button
-            onClick={onClose}
-            className="text-gray-500 hover:text-gray-200 text-xl mt-0.5 shrink-0 transition-colors"
-          >
-            ✕
-          </button>
-        </div>
-
-        {/* Métricas */}
-        <div className="grid grid-cols-2 gap-2">
-          {metrics.map(m => (
-            <div key={m.label} className="bg-[#0c1a0d] rounded-lg p-3">
-              <div className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 mb-1">{m.label}</div>
-              <div className="text-base font-bold text-gray-100">{m.value}</div>
-            </div>
-          ))}
-        </div>
-
-        {/* Funnel visual */}
-        {funnel.length > 1 && (
-          <div>
-            <div className="text-[11px] font-semibold uppercase tracking-wider text-gray-500 mb-3">Embudo</div>
-            <div className="space-y-2">
-              {funnel.map((f, i) => {
-                const pct = maxFunnel > 0 ? (f.count / maxFunnel) * 100 : 0
-                const colors = ['#00A651', '#3b82f6', '#f59e0b']
-                return (
-                  <div key={f.step}>
-                    <div className="flex justify-between text-xs text-gray-400 mb-1">
-                      <span>{f.step}</span>
-                      <span className="font-mono font-semibold text-gray-200">{fmtNum(f.count)}</span>
-                    </div>
-                    <div className="h-2 bg-[#1a2e1b] rounded-full overflow-hidden">
-                      <div
-                        className="h-full rounded-full transition-all"
-                        style={{ width: `${pct}%`, background: colors[i] ?? '#00A651' }}
-                      />
-                    </div>
-                    {i < funnel.length - 1 && funnel[i + 1].count > 0 && (
-                      <div className="text-[10px] text-gray-600 text-right mt-0.5">
-                        {((funnel[i + 1].count / f.count) * 100).toFixed(1)}% conversión
-                      </div>
-                    )}
-                  </div>
-                )
-              })}
-            </div>
-          </div>
-        )}
-      </div>
-    </div>
-  )
-}
-
-// ── Columnas de la tabla ──────────────────────────────────────────────────────
-const COLUMNS: { key: SortKey; label: string; right?: boolean }[] = [
-  { key: 'name', label: 'Campaña' },
-  { key: 'channel', label: 'Canal' },
-  { key: 'spend', label: 'Gasto', right: true },
-  { key: 'impressions', label: 'Impresiones', right: true },
-  { key: 'clicks', label: 'Clicks', right: true },
-  { key: 'conversions', label: 'Conv.', right: true },
-  { key: 'ctr', label: 'CTR', right: true },
-  { key: 'cpc', label: 'CPC', right: true },
-  { key: 'roas', label: 'ROAS', right: true },
-  { key: 'status', label: 'Estado', right: true },
-]
-
-// ── Tooltip personalizado ──────────────────────────────────────────────────────
 function ChartTooltip({ active, payload, label, fmt = 'num' }: any) {
   if (!active || !payload?.length) return null
   return (
     <div className="bg-[#0c1a0d] border border-[rgba(0,166,81,0.25)] rounded-lg px-3 py-2 text-xs shadow-xl">
-      <div className="text-gray-400 mb-1 truncate max-w-[180px]">{label}</div>
+      <div className="text-gray-400 mb-1 truncate max-w-[200px]">{label}</div>
       {payload.map((p: any) => (
         <div key={p.dataKey} style={{ color: p.color }} className="font-mono font-semibold">
           {p.name}: {fmt === 'currency' ? fmtARSCompact(p.value) : fmt === 'pct' ? fmtPct(p.value) : fmtNum(p.value)}
@@ -197,349 +188,939 @@ function ChartTooltip({ active, payload, label, fmt = 'num' }: any) {
   )
 }
 
-// ── Página principal ──────────────────────────────────────────────────────────
-export default function MarketingPage() {
-  const [campaigns, setCampaigns] = useState<Campaign[]>([])
-  const [loading, setLoading] = useState(true)
-  const [channelFilter, setChannelFilter] = useState<string>('all')
-  const [search, setSearch] = useState('')
-  const [sortKey, setSortKey] = useState<SortKey>('spend')
+function KpiCard({ label, value, sub, accent }: { label: string; value: string; sub?: string; accent?: boolean }) {
+  return (
+    <div className="bg-[#0c1a0d] border border-[rgba(0,166,81,0.15)] rounded-xl p-4">
+      <div className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 mb-1.5">{label}</div>
+      <div className={`text-xl font-bold ${accent ? 'text-[#00A651]' : 'text-gray-100'}`}>{value}</div>
+      {sub && <div className="text-[11px] text-gray-600 mt-1">{sub}</div>}
+    </div>
+  )
+}
+
+function SkeletonRows({ cols, rows = 5 }: { cols: number; rows?: number }) {
+  return (
+    <>
+      {Array.from({ length: rows }).map((_, i) => (
+        <tr key={i} className="border-t border-[rgba(0,166,81,0.06)]">
+          {Array.from({ length: cols }).map((_, j) => (
+            <td key={j} className="px-4 py-3.5">
+              <div className="h-3.5 bg-[#1a2e1b] rounded animate-pulse" />
+            </td>
+          ))}
+        </tr>
+      ))}
+    </>
+  )
+}
+
+function SearchInput({ value, onChange, placeholder = 'Buscar…' }: { value: string; onChange: (v: string) => void; placeholder?: string }) {
+  return (
+    <div className="relative">
+      <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-500 text-xs">&#128269;</span>
+      <input
+        type="text"
+        value={value}
+        onChange={e => onChange(e.target.value)}
+        placeholder={placeholder}
+        className="pl-7 pr-3 py-1.5 text-xs rounded-lg bg-[#071409] border border-[rgba(0,166,81,0.2)] text-gray-200 placeholder:text-gray-600 outline-none focus:border-[#00A651] transition-colors w-48"
+      />
+    </div>
+  )
+}
+
+// ── Generic sortable table ────────────────────────────────────────────────────
+
+interface ColDef<T> {
+  key: keyof T | string
+  label: string
+  right?: boolean
+  render?: (row: T) => React.ReactNode
+  sortValue?: (row: T) => number | string
+}
+
+function SortableTable<T extends { id: string | number }>({
+  cols,
+  rows,
+  loading,
+  onRowClick,
+  emptyMsg = 'Sin datos',
+}: {
+  cols: ColDef<T>[]
+  rows: T[]
+  loading: boolean
+  onRowClick?: (row: T) => void
+  emptyMsg?: string
+}) {
+  const [sortKey, setSortKey] = useState<string>(cols[0]?.key as string ?? '')
   const [sortDir, setSortDir] = useState<SortDir>('desc')
-  const [selected, setSelected] = useState<Campaign | null>(null)
+  const [search, setSearch] = useState('')
 
-  const fetchCampaigns = useCallback(async () => {
-    setLoading(true)
-    try {
-      const params = new URLSearchParams()
-      if (channelFilter !== 'all') params.set('channel', channelFilter)
-      const res = await fetch(`/api/campaigns?${params.toString()}`)
-      if (res.ok) {
-        const data = await res.json()
-        setCampaigns(data.campaigns)
-      }
-    } catch (e) {
-      console.error('Error fetching campaigns:', e)
-    } finally {
-      setLoading(false)
-    }
-  }, [channelFilter])
-
-  useEffect(() => { fetchCampaigns() }, [fetchCampaigns])
-
-  const handleSort = (key: SortKey) => {
+  const handleSort = (key: string) => {
     if (key === sortKey) setSortDir(d => d === 'asc' ? 'desc' : 'asc')
     else { setSortKey(key); setSortDir('desc') }
   }
 
   const filtered = useMemo(() => {
-    let list = campaigns
+    let list = rows
     if (search.trim()) {
       const q = search.toLowerCase()
-      list = list.filter(c => c.name.toLowerCase().includes(q) || c.channel.toLowerCase().includes(q))
+      list = list.filter(r => {
+        return cols.some(c => {
+          const v = (r as any)[c.key]
+          return typeof v === 'string' && v.toLowerCase().includes(q)
+        })
+      })
     }
     return [...list].sort((a, b) => {
-      const av = a[sortKey] ?? ''
-      const bv = b[sortKey] ?? ''
-      if (typeof av === 'number' && typeof bv === 'number') {
-        return sortDir === 'asc' ? av - bv : bv - av
-      }
-      return sortDir === 'asc'
-        ? String(av).localeCompare(String(bv))
-        : String(bv).localeCompare(String(av))
+      const col = cols.find(c => c.key === sortKey)
+      const av = col?.sortValue ? col.sortValue(a) : (a as any)[sortKey] ?? ''
+      const bv = col?.sortValue ? col.sortValue(b) : (b as any)[sortKey] ?? ''
+      if (typeof av === 'number' && typeof bv === 'number') return sortDir === 'asc' ? av - bv : bv - av
+      return sortDir === 'asc' ? String(av).localeCompare(String(bv)) : String(bv).localeCompare(String(av))
     })
-  }, [campaigns, search, sortKey, sortDir])
-
-  // ── KPIs ────────────────────────────────────────────────────────────────────
-  const totalSpend = campaigns.reduce((s, c) => s + c.spend, 0)
-  const totalImpressions = campaigns.reduce((s, c) => s + (c.impressions ?? 0), 0)
-  const totalClicks = campaigns.reduce((s, c) => s + (c.clicks ?? 0), 0)
-  const totalConversions = campaigns.reduce((s, c) => s + (c.conversions ?? c.leads ?? 0), 0)
-  const avgCTR = totalImpressions > 0 ? (totalClicks / totalImpressions) * 100 : 0
-  const avgCPC = totalClicks > 0 ? totalSpend / totalClicks : 0
-  const avgROAS = useMemo(() => {
-    const cs = campaigns.filter(c => c.roas != null)
-    return cs.length > 0 ? cs.reduce((s, c) => s + (c.roas ?? 0), 0) / cs.length : 0
-  }, [campaigns])
-
-  // ── Chart data ───────────────────────────────────────────────────────────────
-  const top10Spend = useMemo(() =>
-    [...campaigns]
-      .sort((a, b) => b.spend - a.spend)
-      .slice(0, 10)
-      .map(c => ({ name: c.name.length > 22 ? c.name.slice(0, 21) + '…' : c.name, gasto: c.spend })),
-    [campaigns])
-
-  const clicksConvData = useMemo(() =>
-    [...campaigns]
-      .filter(c => (c.clicks ?? 0) > 0)
-      .sort((a, b) => b.spend - a.spend)
-      .slice(0, 8)
-      .map(c => ({
-        name: c.name.length > 18 ? c.name.slice(0, 17) + '…' : c.name,
-        clicks: c.clicks ?? 0,
-        conv: c.conversions ?? c.leads ?? 0,
-      })),
-    [campaigns])
-
-  const ctrData = useMemo(() =>
-    [...campaigns]
-      .filter(c => (c.ctr ?? 0) > 0)
-      .sort((a, b) => (b.ctr ?? 0) - (a.ctr ?? 0))
-      .slice(0, 8)
-      .map(c => ({
-        name: c.name.length > 18 ? c.name.slice(0, 17) + '…' : c.name,
-        ctr: c.ctr ?? 0,
-      })),
-    [campaigns])
-
-  const spendByChannel = useMemo(() => {
-    const map = new Map<string, number>()
-    for (const c of campaigns) map.set(c.channel, (map.get(c.channel) ?? 0) + c.spend)
-    return Array.from(map.entries()).map(([name, value]) => ({ name, value }))
-  }, [campaigns])
-
-  const KPI_CARDS = [
-    { label: 'Gasto Total', value: fmtARSCompact(totalSpend), sub: `${campaigns.length} campañas` },
-    { label: 'Impresiones', value: fmtNum(totalImpressions), sub: 'alcance total' },
-    { label: 'Clicks', value: fmtNum(totalClicks), sub: `CTR ${fmtPct(avgCTR)}` },
-    { label: 'Conversiones', value: fmtNum(totalConversions), sub: totalClicks > 0 ? `${fmtPct(totalConversions / totalClicks * 100)} tasa conv.` : '-' },
-    { label: 'CPC Promedio', value: fmtARSCompact(avgCPC), sub: 'costo por click' },
-    { label: 'CTR Promedio', value: fmtPct(avgCTR), sub: 'clicks / impresiones' },
-    { label: 'ROAS Promedio', value: avgROAS > 0 ? `${avgROAS.toFixed(2)}x` : '-', sub: 'retorno por gasto' },
-  ]
+  }, [rows, search, sortKey, sortDir, cols])
 
   return (
-    <div className="p-6 space-y-6 fade-in">
-      {/* ── Header ─────────────────────────────────────────────────────────── */}
-      <div className="flex items-start justify-between gap-4 flex-wrap">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-100 tracking-tight">Marketing & Campañas</h1>
-          <p className="text-sm text-gray-500 mt-0.5">Meta Ads · Perfit · Google Ads</p>
-        </div>
-        <button
-          onClick={fetchCampaigns}
-          disabled={loading}
-          className="text-xs px-3 py-1.5 rounded-lg border border-[rgba(0,166,81,0.2)] text-gray-500 hover:text-gray-200 hover:border-[rgba(0,166,81,0.4)] transition-all disabled:opacity-50"
-        >
-          {loading ? 'Cargando…' : 'Actualizar'}
-        </button>
-      </div>
-
-      {/* ── KPI Cards ──────────────────────────────────────────────────────── */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-3">
-        {KPI_CARDS.map(k => (
-          <div key={k.label} className="bg-[#0c1a0d] border border-[rgba(0,166,81,0.15)] rounded-xl p-4">
-            <div className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 mb-1.5">{k.label}</div>
-            <div className="text-xl font-bold text-gray-100">{k.value}</div>
-            {k.sub && <div className="text-[11px] text-gray-600 mt-1">{k.sub}</div>}
-          </div>
-        ))}
-      </div>
-
-      {/* ── Charts ─────────────────────────────────────────────────────────── */}
-      {!loading && campaigns.length > 0 && (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-          {/* Gasto por canal */}
-          <div className="bg-[#0c1a0d] border border-[rgba(0,166,81,0.15)] rounded-xl p-5">
-            <div className="text-[11px] font-semibold uppercase tracking-wider text-gray-400 mb-4">Gasto por Canal</div>
-            <ResponsiveContainer width="100%" height={180}>
-              <PieChart>
-                <Pie
-                  data={spendByChannel}
-                  dataKey="value"
-                  nameKey="name"
-                  cx="50%"
-                  cy="50%"
-                  outerRadius={70}
-                  innerRadius={40}
-                  paddingAngle={3}
-                >
-                  {spendByChannel.map((entry, i) => (
-                    <Cell key={entry.name} fill={CHANNEL_COLORS[entry.name] ?? PIE_FALLBACK_COLORS[i % PIE_FALLBACK_COLORS.length]} />
-                  ))}
-                </Pie>
-                <Tooltip content={<ChartTooltip fmt="currency" />} />
-                <Legend
-                  formatter={(v: string) => <span style={{ color: '#9ca3af', fontSize: 11 }}>{v}</span>}
-                  iconSize={8}
-                />
-              </PieChart>
-            </ResponsiveContainer>
-          </div>
-
-          {/* Top campañas por gasto */}
-          <div className="lg:col-span-2 bg-[#0c1a0d] border border-[rgba(0,166,81,0.15)] rounded-xl p-5">
-            <div className="text-[11px] font-semibold uppercase tracking-wider text-gray-400 mb-4">Top 10 Campañas por Gasto</div>
-            <ResponsiveContainer width="100%" height={180}>
-              <BarChart data={top10Spend} layout="vertical" margin={{ left: 0, right: 16 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#1a2e1b" horizontal={false} />
-                <XAxis type="number" tickFormatter={v => fmtARSCompact(v)} tick={{ fill: '#6b7280', fontSize: 10 }} axisLine={false} tickLine={false} />
-                <YAxis type="category" dataKey="name" width={130} tick={{ fill: '#9ca3af', fontSize: 10 }} axisLine={false} tickLine={false} />
-                <Tooltip content={<ChartTooltip fmt="currency" />} />
-                <Bar dataKey="gasto" name="Gasto" fill="#00A651" radius={[0, 4, 4, 0]} maxBarSize={14} />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-
-          {/* Clicks vs Conversiones */}
-          {clicksConvData.length > 0 && (
-            <div className="lg:col-span-2 bg-[#0c1a0d] border border-[rgba(0,166,81,0.15)] rounded-xl p-5">
-              <div className="text-[11px] font-semibold uppercase tracking-wider text-gray-400 mb-4">Clicks vs Conversiones (top 8)</div>
-              <ResponsiveContainer width="100%" height={180}>
-                <BarChart data={clicksConvData} margin={{ left: 0, right: 8, bottom: 20 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#1a2e1b" vertical={false} />
-                  <XAxis dataKey="name" tick={{ fill: '#6b7280', fontSize: 9 }} angle={-35} textAnchor="end" axisLine={false} tickLine={false} />
-                  <YAxis tick={{ fill: '#6b7280', fontSize: 10 }} axisLine={false} tickLine={false} />
-                  <Tooltip content={<ChartTooltip />} />
-                  <Legend formatter={(v: string) => <span style={{ color: '#9ca3af', fontSize: 11 }}>{v === 'clicks' ? 'Clicks' : 'Conversiones'}</span>} iconSize={8} />
-                  <Bar dataKey="clicks" name="clicks" fill="#3b82f6" radius={[3, 3, 0, 0]} maxBarSize={20} />
-                  <Bar dataKey="conv" name="conv" fill="#00A651" radius={[3, 3, 0, 0]} maxBarSize={20} />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          )}
-
-          {/* CTR por campaña */}
-          {ctrData.length > 0 && (
-            <div className="bg-[#0c1a0d] border border-[rgba(0,166,81,0.15)] rounded-xl p-5">
-              <div className="text-[11px] font-semibold uppercase tracking-wider text-gray-400 mb-4">CTR por Campaña</div>
-              <ResponsiveContainer width="100%" height={180}>
-                <BarChart data={ctrData} layout="vertical" margin={{ left: 0, right: 16 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#1a2e1b" horizontal={false} />
-                  <XAxis type="number" tickFormatter={v => fmtPct(v)} tick={{ fill: '#6b7280', fontSize: 10 }} axisLine={false} tickLine={false} />
-                  <YAxis type="category" dataKey="name" width={130} tick={{ fill: '#9ca3af', fontSize: 10 }} axisLine={false} tickLine={false} />
-                  <Tooltip content={<ChartTooltip fmt="pct" />} />
-                  <Bar dataKey="ctr" name="CTR" fill="#f59e0b" radius={[0, 4, 4, 0]} maxBarSize={14} />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* ── Filters / Search ───────────────────────────────────────────────── */}
-      <div className="flex items-center gap-3 flex-wrap">
-        {/* Búsqueda */}
-        <div className="relative">
-          <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-500 text-xs">🔍</span>
-          <input
-            type="text"
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            placeholder="Buscar campaña…"
-            className="pl-7 pr-3 py-1.5 text-xs rounded-lg bg-[#071409] border border-[rgba(0,166,81,0.2)] text-gray-200 placeholder:text-gray-600 outline-none focus:border-[#00A651] transition-colors w-48"
-          />
-        </div>
-
-        {/* Canal filter */}
-        <span className="text-xs text-gray-500 font-medium">Canal:</span>
-        {['all', 'meta', 'perfit', 'google'].map(ch => (
-          <button
-            key={ch}
-            onClick={() => setChannelFilter(ch)}
-            className={`text-xs px-3 py-1.5 rounded-full border transition-all ${
-              channelFilter === ch
-                ? 'bg-[#00A651] text-white border-[#00A651]'
-                : 'bg-transparent text-gray-400 border-[rgba(0,166,81,0.2)] hover:border-[rgba(0,166,81,0.5)] hover:text-gray-200'
-            }`}
-          >
-            {ch === 'all' ? 'Todas' : ch === 'meta' ? 'Meta' : ch === 'perfit' ? 'Perfit' : 'Google'}
-          </button>
-        ))}
-
+    <div className="space-y-3">
+      <div className="flex items-center gap-3">
+        <SearchInput value={search} onChange={setSearch} placeholder="Buscar…" />
         <span className="ml-auto text-xs text-gray-600">{filtered.length} resultado{filtered.length !== 1 ? 's' : ''}</span>
       </div>
-
-      {/* ── Table ──────────────────────────────────────────────────────────── */}
       <div className="bg-[#0c1a0d] border border-[rgba(0,166,81,0.15)] rounded-xl overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full">
             <thead>
               <tr className="bg-[#071409]">
-                {COLUMNS.map(col => (
+                {cols.map(col => (
                   <th
-                    key={col.key}
-                    onClick={() => handleSort(col.key)}
+                    key={col.key as string}
+                    onClick={() => handleSort(col.key as string)}
                     className={`px-4 py-3 text-[11px] font-semibold uppercase tracking-wider text-gray-500 cursor-pointer select-none hover:text-gray-300 transition-colors ${col.right ? 'text-right' : 'text-left'}`}
                   >
                     {col.label}
-                    <SortIcon col={col.key} sortKey={sortKey} sortDir={sortDir} />
+                    <SortIcon col={col.key as string} sortKey={sortKey} sortDir={sortDir} />
                   </th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {loading ? (
-                Array.from({ length: 6 }).map((_, i) => (
-                  <tr key={i} className="border-t border-[rgba(0,166,81,0.06)]">
-                    {COLUMNS.map((_, j) => (
-                      <td key={j} className="px-4 py-3.5">
-                        <div className="h-3.5 bg-[#1a2e1b] rounded animate-pulse" />
-                      </td>
-                    ))}
-                  </tr>
-                ))
+                <SkeletonRows cols={cols.length} />
               ) : filtered.length === 0 ? (
                 <tr>
-                  <td colSpan={COLUMNS.length} className="px-5 py-10 text-center text-gray-500 text-sm">
-                    {campaigns.length === 0
-                      ? 'No hay campañas. Cargá credenciales en Integraciones.'
-                      : 'Sin resultados para esa búsqueda.'}
-                  </td>
+                  <td colSpan={cols.length} className="px-5 py-10 text-center text-gray-500 text-sm">{emptyMsg}</td>
                 </tr>
-              ) : (
-                filtered.map(c => (
-                  <tr
-                    key={`${c.channelKey}-${c.id}`}
-                    onClick={() => setSelected(c)}
-                    className="border-t border-[rgba(0,166,81,0.06)] hover:bg-[#112011] cursor-pointer transition-colors"
-                  >
-                    <td className="px-4 py-3.5 max-w-[220px]">
-                      <div className="text-sm text-gray-200 font-medium truncate">{c.name}</div>
+              ) : filtered.map(row => (
+                <tr
+                  key={row.id}
+                  onClick={() => onRowClick?.(row)}
+                  className={`border-t border-[rgba(0,166,81,0.06)] hover:bg-[#112011] transition-colors ${onRowClick ? 'cursor-pointer' : ''}`}
+                >
+                  {cols.map(col => (
+                    <td
+                      key={col.key as string}
+                      className={`px-4 py-3.5 text-sm ${col.right ? 'text-right font-mono text-gray-400' : ''}`}
+                    >
+                      {col.render ? col.render(row) : <span className="text-gray-300">{String((row as any)[col.key] ?? '-')}</span>}
                     </td>
-                    <td className="px-4 py-3.5">
-                      <span className={`text-[11px] px-2 py-0.5 rounded font-medium ${CHANNEL_PILL[c.channelKey] || ''}`}>
-                        {c.channel}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3.5 text-right font-mono font-semibold text-sm text-gray-200">
-                      {fmtARSCompact(c.spend)}
-                    </td>
-                    <td className="px-4 py-3.5 text-right text-sm font-mono text-gray-400">
-                      {c.impressions ? fmtNum(c.impressions) : '-'}
-                    </td>
-                    <td className="px-4 py-3.5 text-right text-sm font-mono text-gray-400">
-                      {c.clicks ? fmtNum(c.clicks) : '-'}
-                    </td>
-                    <td className="px-4 py-3.5 text-right text-sm font-mono text-gray-400">
-                      {c.conversions ? fmtNum(c.conversions) : c.leads ? fmtNum(c.leads) : '-'}
-                    </td>
-                    <td className="px-4 py-3.5 text-right text-sm font-mono text-gray-400">
-                      {c.ctr ? <span className="text-amber-400">{fmtPct(c.ctr)}</span> : '-'}
-                    </td>
-                    <td className="px-4 py-3.5 text-right text-sm font-mono text-gray-400">
-                      {c.cpc ? fmtARSCompact(c.cpc) : '-'}
-                    </td>
-                    <td className="px-4 py-3.5 text-right">
-                      {c.roas ? (
-                        <span className="text-sm font-mono font-semibold text-emerald-400">{c.roas.toFixed(2)}x</span>
-                      ) : c.roi ? (
-                        <span className="text-sm font-mono font-semibold text-emerald-400">{fmtNum(c.roi)}%</span>
-                      ) : '-'}
-                    </td>
-                    <td className="px-4 py-3.5 text-right">
-                      <StatusBadge status={c.status} />
-                    </td>
-                  </tr>
-                ))
-              )}
+                  ))}
+                </tr>
+              ))}
             </tbody>
           </table>
         </div>
       </div>
+    </div>
+  )
+}
 
-      {/* ── Campaign detail modal ───────────────────────────────────────────── */}
-      {selected && <CampaignModal campaign={selected} onClose={() => setSelected(null)} />}
+// ── Detail Modal ──────────────────────────────────────────────────────────────
+
+function DetailModal({
+  title,
+  channel,
+  channelKey,
+  status,
+  metrics,
+  onClose,
+}: {
+  title: string
+  channel?: string
+  channelKey?: string
+  status?: string
+  metrics: { label: string; value: string }[]
+  onClose: () => void
+}) {
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-end md:items-center justify-center bg-black/70 backdrop-blur-sm"
+      onClick={onClose}
+    >
+      <div
+        className="w-full md:max-w-xl max-h-[90vh] overflow-y-auto bg-[#081209] border border-[rgba(0,166,81,0.25)] rounded-t-2xl md:rounded-2xl p-6 space-y-5 shadow-2xl"
+        onClick={e => e.stopPropagation()}
+      >
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <div className="flex items-center gap-2 mb-1">
+              {channel && channelKey && (
+                <span className={`text-[11px] px-2 py-0.5 rounded font-medium ${CHANNEL_PILL[channelKey] ?? ''}`}>
+                  {channel}
+                </span>
+              )}
+              {status && <StatusBadge status={status} />}
+            </div>
+            <h2 className="text-lg font-bold text-gray-100 leading-snug">{title}</h2>
+          </div>
+          <button
+            onClick={onClose}
+            className="text-gray-500 hover:text-gray-200 text-xl mt-0.5 shrink-0 transition-colors"
+          >
+            &#x2715;
+          </button>
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          {metrics.map(m => (
+            <div key={m.label} className="bg-[#0c1a0d] rounded-lg p-3">
+              <div className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 mb-1">{m.label}</div>
+              <div className="text-base font-bold text-gray-100">{m.value}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Resumen Tab ───────────────────────────────────────────────────────────────
+
+function ResumenTab({ allCampaigns, loading }: { allCampaigns: Campaign[]; loading: boolean }) {
+  const totalSpend = allCampaigns.reduce((s, c) => s + c.spend, 0)
+  const totalImpressions = allCampaigns.reduce((s, c) => s + (c.impressions ?? 0), 0)
+  const totalClicks = allCampaigns.reduce((s, c) => s + (c.clicks ?? 0), 0)
+  const totalConversions = allCampaigns.reduce((s, c) => s + (c.conversions ?? c.leads ?? 0), 0)
+  const avgCTR = totalImpressions > 0 ? (totalClicks / totalImpressions) * 100 : 0
+  const avgCPC = totalClicks > 0 ? totalSpend / totalClicks : 0
+
+  const spendByChannel = useMemo(() => {
+    const map = new Map<string, number>()
+    for (const c of allCampaigns) map.set(c.channel, (map.get(c.channel) ?? 0) + c.spend)
+    return Array.from(map.entries()).map(([name, value]) => ({ name, value }))
+  }, [allCampaigns])
+
+  const top8Spend = useMemo(() =>
+    [...allCampaigns].sort((a, b) => b.spend - a.spend).slice(0, 8).map(c => ({
+      name: c.name.length > 22 ? c.name.slice(0, 21) + '…' : c.name,
+      gasto: c.spend,
+    })),
+    [allCampaigns])
+
+  const kpis = [
+    { label: 'Gasto Total', value: fmtARSCompact(totalSpend), sub: `${allCampaigns.length} campañas` },
+    { label: 'Impresiones', value: fmtNum(totalImpressions), sub: 'alcance total' },
+    { label: 'Clicks', value: fmtNum(totalClicks), sub: `CTR ${fmtPct(avgCTR)}` },
+    { label: 'Conversiones', value: fmtNum(totalConversions) },
+    { label: 'CPC Promedio', value: fmtARSCompact(avgCPC) },
+    { label: 'CTR Promedio', value: fmtPct(avgCTR) },
+  ]
+
+  return (
+    <div className="space-y-5">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+        {kpis.map(k => <KpiCard key={k.label} {...k} />)}
+      </div>
+
+      {!loading && allCampaigns.length > 0 && (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+          {/* Pie: gasto por canal */}
+          <div className="bg-[#0c1a0d] border border-[rgba(0,166,81,0.15)] rounded-xl p-5">
+            <div className="text-[11px] font-semibold uppercase tracking-wider text-gray-400 mb-4">Gasto por Canal</div>
+            <ResponsiveContainer width="100%" height={200}>
+              <PieChart>
+                <Pie data={spendByChannel} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={75} innerRadius={42} paddingAngle={3}>
+                  {spendByChannel.map((e, i) => (
+                    <Cell key={e.name} fill={CHANNEL_COLORS_MAP[e.name] ?? PIE_COLORS[i % PIE_COLORS.length]} />
+                  ))}
+                </Pie>
+                <Tooltip content={<ChartTooltip fmt="currency" />} />
+                <Legend formatter={(v: string) => <span style={{ color: '#9ca3af', fontSize: 11 }}>{v}</span>} iconSize={8} />
+              </PieChart>
+            </ResponsiveContainer>
+          </div>
+
+          {/* Bar: top 8 por gasto */}
+          <div className="lg:col-span-2 bg-[#0c1a0d] border border-[rgba(0,166,81,0.15)] rounded-xl p-5">
+            <div className="text-[11px] font-semibold uppercase tracking-wider text-gray-400 mb-4">Top Campañas por Gasto</div>
+            <ResponsiveContainer width="100%" height={200}>
+              <BarChart data={top8Spend} layout="vertical" margin={{ left: 0, right: 20 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#1a2e1b" horizontal={false} />
+                <XAxis type="number" tickFormatter={v => fmtARSCompact(v)} tick={{ fill: '#6b7280', fontSize: 10 }} axisLine={false} tickLine={false} />
+                <YAxis type="category" dataKey="name" width={140} tick={{ fill: '#9ca3af', fontSize: 10 }} axisLine={false} tickLine={false} />
+                <Tooltip content={<ChartTooltip fmt="currency" />} />
+                <Bar dataKey="gasto" name="Gasto" fill="#00A651" radius={[0, 4, 4, 0]} maxBarSize={14} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      )}
+
+      {loading && (
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <div key={i} className="bg-[#0c1a0d] border border-[rgba(0,166,81,0.15)] rounded-xl p-4 h-20 animate-pulse" />
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── Meta Tab ──────────────────────────────────────────────────────────────────
+
+function SocialChip({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="bg-[#0c1a0d] border border-[rgba(0,166,81,0.15)] rounded-xl px-4 py-3 flex flex-col gap-1">
+      <div className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">{label}</div>
+      <div className="text-lg font-bold text-gray-100">{value}</div>
+    </div>
+  )
+}
+
+function MetaTab({ data, loading }: { data: MetaFullData | null; loading: boolean }) {
+  const [subTab, setSubTab] = useState<MetaSubTab>('campaigns')
+  const [selected, setSelected] = useState<any | null>(null)
+
+  const campaigns = data?.campaigns ?? []
+  const adsets = data?.adsets ?? []
+  const ads = data?.ads ?? []
+  const page = data?.page
+
+  // Charts for campaigns
+  const top5SpendCamp = useMemo(() =>
+    [...campaigns].sort((a, b) => b.spend - a.spend).slice(0, 5).map(c => ({
+      name: c.name.length > 20 ? c.name.slice(0, 19) + '…' : c.name,
+      gasto: c.spend,
+      ctr: c.ctr ?? 0,
+      clicks: c.clicks ?? 0,
+      conv: c.conversions ?? 0,
+    })), [campaigns])
+
+  // Charts for adsets
+  const top5SpendAdsets = useMemo(() =>
+    [...adsets].sort((a, b) => b.spend - a.spend).slice(0, 5).map(a => ({
+      name: a.name.length > 20 ? a.name.slice(0, 19) + '…' : a.name,
+      gasto: a.spend,
+      ctr: a.ctr,
+      clicks: a.clicks,
+      conv: a.conversions,
+    })), [adsets])
+
+  // Charts for ads
+  const top5SpendAds = useMemo(() =>
+    [...ads].sort((a, b) => b.spend - a.spend).slice(0, 5).map(a => ({
+      name: a.name.length > 20 ? a.name.slice(0, 19) + '…' : a.name,
+      gasto: a.spend,
+      ctr: a.ctr,
+      clicks: a.clicks,
+      conv: a.conversions,
+    })), [ads])
+
+  const currentTop5 = subTab === 'campaigns' ? top5SpendCamp : subTab === 'adsets' ? top5SpendAdsets : top5SpendAds
+
+  // Campaign columns
+  const campCols: ColDef<Campaign>[] = [
+    { key: 'name', label: 'Campaña', render: r => <span className="text-gray-200 font-medium truncate max-w-[200px] block">{r.name}</span> },
+    { key: 'status', label: 'Estado', right: true, render: r => <StatusBadge status={r.status} /> },
+    { key: 'spend', label: 'Gasto', right: true, render: r => <span className="font-semibold text-gray-200">{fmtARSCompact(r.spend)}</span> },
+    { key: 'impressions', label: 'Impresiones', right: true, render: r => <span>{fmtNum(r.impressions)}</span> },
+    { key: 'clicks', label: 'Clicks', right: true, render: r => <span>{fmtNum(r.clicks)}</span> },
+    { key: 'conversions', label: 'Conv.', right: true, render: r => <span>{fmtNum(r.conversions)}</span> },
+    { key: 'ctr', label: 'CTR', right: true, render: r => <span className="text-amber-400">{fmtPct(r.ctr)}</span> },
+    { key: 'cpc', label: 'CPC', right: true, render: r => <span>{r.cpc ? fmtARSCompact(r.cpc) : '-'}</span> },
+    { key: 'cpm', label: 'CPM', right: true, render: r => <span>{r.cpm ? fmtARSCompact(r.cpm) : '-'}</span> },
+  ]
+
+  // AdSet columns
+  const adsetCols: ColDef<MetaAdSet>[] = [
+    { key: 'name', label: 'Conjunto', render: r => <span className="text-gray-200 font-medium truncate max-w-[180px] block">{r.name}</span> },
+    { key: 'campaignName', label: 'Campaña', render: r => <span className="text-gray-400 text-xs">{r.campaignName}</span> },
+    { key: 'status', label: 'Estado', right: true, render: r => <StatusBadge status={r.status} /> },
+    { key: 'spend', label: 'Gasto', right: true, render: r => <span className="font-semibold text-gray-200">{fmtARSCompact(r.spend)}</span> },
+    { key: 'impressions', label: 'Impresiones', right: true, render: r => <span>{fmtNum(r.impressions)}</span> },
+    { key: 'clicks', label: 'Clicks', right: true, render: r => <span>{fmtNum(r.clicks)}</span> },
+    { key: 'conversions', label: 'Conv.', right: true, render: r => <span>{fmtNum(r.conversions)}</span> },
+    { key: 'ctr', label: 'CTR', right: true, render: r => <span className="text-amber-400">{fmtPct(r.ctr)}</span> },
+    { key: 'cpc', label: 'CPC', right: true, render: r => <span>{fmtARSCompact(r.cpc)}</span> },
+  ]
+
+  // Ad columns
+  const adCols: ColDef<MetaAd>[] = [
+    { key: 'name', label: 'Anuncio', render: r => <span className="text-gray-200 font-medium truncate max-w-[180px] block">{r.name}</span> },
+    { key: 'adSetName', label: 'Conjunto', render: r => <span className="text-gray-400 text-xs">{r.adSetName}</span> },
+    { key: 'status', label: 'Estado', right: true, render: r => <StatusBadge status={r.status} /> },
+    { key: 'spend', label: 'Gasto', right: true, render: r => <span className="font-semibold text-gray-200">{fmtARSCompact(r.spend)}</span> },
+    { key: 'impressions', label: 'Impresiones', right: true, render: r => <span>{fmtNum(r.impressions)}</span> },
+    { key: 'clicks', label: 'Clicks', right: true, render: r => <span>{fmtNum(r.clicks)}</span> },
+    { key: 'conversions', label: 'Conv.', right: true, render: r => <span>{fmtNum(r.conversions)}</span> },
+    { key: 'ctr', label: 'CTR', right: true, render: r => <span className="text-amber-400">{fmtPct(r.ctr)}</span> },
+    { key: 'cpc', label: 'CPC', right: true, render: r => <span>{fmtARSCompact(r.cpc)}</span> },
+  ]
+
+  const openModal = (row: any) => {
+    setSelected(row)
+  }
+
+  const getModalMetrics = (row: any) => [
+    { label: 'Gasto', value: fmtARSCompact(row.spend ?? 0) },
+    { label: 'Impresiones', value: fmtNum(row.impressions) },
+    { label: 'Clicks', value: fmtNum(row.clicks) },
+    { label: 'Conversiones', value: fmtNum(row.conversions) },
+    { label: 'CTR', value: fmtPct(row.ctr) },
+    { label: 'CPC', value: fmtARSCompact(row.cpc ?? 0) },
+    { label: 'CPM', value: fmtARSCompact(row.cpm ?? 0) },
+    { label: 'Tasa Conv.', value: fmtPct(row.conversionRate) },
+  ]
+
+  const SUB_TABS = [
+    { key: 'campaigns' as MetaSubTab, label: 'Campañas' },
+    { key: 'adsets' as MetaSubTab, label: 'Conjuntos' },
+    { key: 'ads' as MetaSubTab, label: 'Anuncios' },
+  ]
+
+  return (
+    <div className="space-y-5">
+      {/* Social row */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <SocialChip label="FB Seguidores" value={page ? fmtNum(page.fbFollowers) : '—'} />
+        <SocialChip label="FB Page Likes" value={page ? fmtNum(page.fbPageLikes) : '—'} />
+        <SocialChip label="IG Seguidores" value={page ? fmtNum(page.igFollowers) : '—'} />
+        <SocialChip label="IG Publicaciones" value={page ? fmtNum(page.igMediaCount) : '—'} />
+      </div>
+
+      {/* Summary KPIs */}
+      {data && (
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+          <KpiCard label="Gasto Total" value={fmtARSCompact(data.summary.totalSpend)} sub={`${campaigns.length} campañas`} />
+          <KpiCard label="Impresiones" value={fmtNum(data.summary.totalImpressions)} />
+          <KpiCard label="Clicks" value={fmtNum(data.summary.totalClicks)} />
+          <KpiCard label="Conversiones" value={fmtNum(data.summary.totalConversions)} />
+          <KpiCard label="CTR Promedio" value={fmtPct(data.summary.avgCTR)} />
+          <KpiCard label="CPC Promedio" value={fmtARSCompact(data.summary.avgCPC)} />
+        </div>
+      )}
+
+      {/* Charts row */}
+      {!loading && currentTop5.length > 0 && (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+          <div className="bg-[#0c1a0d] border border-[rgba(0,166,81,0.15)] rounded-xl p-5">
+            <div className="text-[11px] font-semibold uppercase tracking-wider text-gray-400 mb-4">Top 5 por Gasto</div>
+            <ResponsiveContainer width="100%" height={170}>
+              <BarChart data={currentTop5} layout="vertical" margin={{ left: 0, right: 16 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#1a2e1b" horizontal={false} />
+                <XAxis type="number" tickFormatter={v => fmtARSCompact(v)} tick={{ fill: '#6b7280', fontSize: 10 }} axisLine={false} tickLine={false} />
+                <YAxis type="category" dataKey="name" width={120} tick={{ fill: '#9ca3af', fontSize: 10 }} axisLine={false} tickLine={false} />
+                <Tooltip content={<ChartTooltip fmt="currency" />} />
+                <Bar dataKey="gasto" name="Gasto" fill="#00A651" radius={[0, 4, 4, 0]} maxBarSize={14} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+          <div className="bg-[#0c1a0d] border border-[rgba(0,166,81,0.15)] rounded-xl p-5">
+            <div className="text-[11px] font-semibold uppercase tracking-wider text-gray-400 mb-4">CTR Ranking</div>
+            <ResponsiveContainer width="100%" height={170}>
+              <BarChart data={[...currentTop5].sort((a, b) => b.ctr - a.ctr)} layout="vertical" margin={{ left: 0, right: 16 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#1a2e1b" horizontal={false} />
+                <XAxis type="number" tickFormatter={v => fmtPct(v)} tick={{ fill: '#6b7280', fontSize: 10 }} axisLine={false} tickLine={false} />
+                <YAxis type="category" dataKey="name" width={120} tick={{ fill: '#9ca3af', fontSize: 10 }} axisLine={false} tickLine={false} />
+                <Tooltip content={<ChartTooltip fmt="pct" />} />
+                <Bar dataKey="ctr" name="CTR" fill="#f59e0b" radius={[0, 4, 4, 0]} maxBarSize={14} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+          <div className="bg-[#0c1a0d] border border-[rgba(0,166,81,0.15)] rounded-xl p-5">
+            <div className="text-[11px] font-semibold uppercase tracking-wider text-gray-400 mb-4">Clicks vs Conv.</div>
+            <ResponsiveContainer width="100%" height={170}>
+              <BarChart data={currentTop5} margin={{ left: 0, right: 8, bottom: 24 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#1a2e1b" vertical={false} />
+                <XAxis dataKey="name" tick={{ fill: '#6b7280', fontSize: 9 }} angle={-30} textAnchor="end" axisLine={false} tickLine={false} />
+                <YAxis tick={{ fill: '#6b7280', fontSize: 10 }} axisLine={false} tickLine={false} />
+                <Tooltip content={<ChartTooltip />} />
+                <Legend formatter={(v: string) => <span style={{ color: '#9ca3af', fontSize: 11 }}>{v === 'clicks' ? 'Clicks' : 'Conv.'}</span>} iconSize={8} />
+                <Bar dataKey="clicks" name="clicks" fill="#3b82f6" radius={[3, 3, 0, 0]} maxBarSize={18} />
+                <Bar dataKey="conv" name="conv" fill="#00A651" radius={[3, 3, 0, 0]} maxBarSize={18} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      )}
+
+      {/* Sub-tab navigation */}
+      <div className="flex gap-2 border-b border-[rgba(0,166,81,0.1)] pb-0">
+        {SUB_TABS.map(t => (
+          <button
+            key={t.key}
+            onClick={() => setSubTab(t.key)}
+            className={`text-xs px-4 py-2 rounded-t-lg border border-b-0 transition-all ${
+              subTab === t.key
+                ? 'bg-[#0c1a0d] border-[rgba(0,166,81,0.3)] text-[#00A651]'
+                : 'border-transparent text-gray-500 hover:text-gray-300'
+            }`}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {subTab === 'campaigns' && (
+        <SortableTable
+          cols={campCols}
+          rows={campaigns as any[]}
+          loading={loading}
+          onRowClick={openModal}
+          emptyMsg="Sin campañas. Configurá credenciales de Meta Ads en Integraciones."
+        />
+      )}
+      {subTab === 'adsets' && (
+        <SortableTable
+          cols={adsetCols}
+          rows={adsets as any[]}
+          loading={loading}
+          onRowClick={openModal}
+          emptyMsg="Sin conjuntos de anuncios."
+        />
+      )}
+      {subTab === 'ads' && (
+        <SortableTable
+          cols={adCols}
+          rows={ads as any[]}
+          loading={loading}
+          onRowClick={openModal}
+          emptyMsg="Sin anuncios."
+        />
+      )}
+
+      {selected && (
+        <DetailModal
+          title={selected.name}
+          channel="Meta Ads"
+          channelKey="meta"
+          status={selected.status}
+          metrics={getModalMetrics(selected)}
+          onClose={() => setSelected(null)}
+        />
+      )}
+    </div>
+  )
+}
+
+// ── Perfit Tab ────────────────────────────────────────────────────────────────
+
+function PerfitTab({ campaigns, perfitData, loading }: {
+  campaigns: Campaign[]
+  perfitData: PerfitData | null
+  loading: boolean
+}) {
+  const [selected, setSelected] = useState<Campaign | null>(null)
+  const totals = perfitData?.totals
+
+  const kpis = totals ? [
+    { label: 'Enviados', value: fmtNum(totals.sent) },
+    { label: 'Entregados', value: fmtNum(totals.delivered) },
+    { label: 'Abiertos', value: fmtNum(totals.opened), sub: `Tasa ${fmtPct(totals.open_rate)}` },
+    { label: 'Clicks', value: fmtNum(totals.clicked), sub: `Tasa ${fmtPct(totals.click_rate)}` },
+    { label: 'Tasa Apertura', value: fmtPct(totals.open_rate), accent: true },
+    { label: 'Tasa Clicks', value: fmtPct(totals.click_rate), accent: true },
+    { label: 'Desubscriptos', value: fmtNum(totals.unsubscribed) },
+  ] : []
+
+  const cols: ColDef<Campaign>[] = [
+    { key: 'name', label: 'Campaña', render: r => <span className="text-gray-200 font-medium truncate max-w-[220px] block">{r.name}</span> },
+    { key: 'status', label: 'Estado', right: true, render: r => <StatusBadge status={r.status} /> },
+    { key: 'spend', label: 'Gasto', right: true, render: r => <span className="font-semibold text-gray-200">{fmtARSCompact(r.spend)}</span> },
+    { key: 'leads', label: 'Leads', right: true, render: r => <span>{fmtNum(r.leads)}</span> },
+    { key: 'roi', label: 'ROI', right: true, render: r => r.roi ? <span className="text-emerald-400 font-semibold">{fmtNum(r.roi)}%</span> : <span className="text-gray-600">-</span> },
+  ]
+
+  return (
+    <div className="space-y-5">
+      {loading ? (
+        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3">
+          {Array.from({ length: 7 }).map((_, i) => (
+            <div key={i} className="bg-[#0c1a0d] border border-[rgba(0,166,81,0.15)] rounded-xl p-4 h-20 animate-pulse" />
+          ))}
+        </div>
+      ) : (
+        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3">
+          {kpis.map(k => <KpiCard key={k.label} {...k} />)}
+        </div>
+      )}
+
+      <SortableTable
+        cols={cols}
+        rows={campaigns as any[]}
+        loading={loading}
+        onRowClick={c => setSelected(c as Campaign)}
+        emptyMsg="Sin campañas de Perfit."
+      />
+
+      {selected && (
+        <DetailModal
+          title={selected.name}
+          channel="Perfit"
+          channelKey="perfit"
+          status={selected.status}
+          metrics={[
+            { label: 'Gasto', value: fmtARSCompact(selected.spend) },
+            { label: 'Leads', value: fmtNum(selected.leads) },
+            { label: 'ROI', value: selected.roi ? `${fmtNum(selected.roi)}%` : '-' },
+            { label: 'ROAS', value: selected.roas ? `${selected.roas.toFixed(2)}x` : '-' },
+          ]}
+          onClose={() => setSelected(null)}
+        />
+      )}
+    </div>
+  )
+}
+
+// ── Google Tab ────────────────────────────────────────────────────────────────
+
+function GoogleTab({ campaigns, googleData, loading }: {
+  campaigns: Campaign[]
+  googleData: GoogleData | null
+  loading: boolean
+}) {
+  const [selected, setSelected] = useState<Campaign | null>(null)
+  const totals = googleData?.totals
+
+  const kpis = totals ? [
+    { label: 'Gasto', value: fmtARSCompact(totals.spend) },
+    { label: 'Clicks', value: fmtNum(totals.clicks) },
+    { label: 'Impresiones', value: fmtNum(totals.impressions) },
+    { label: 'Conversiones', value: fmtNum(totals.conversions) },
+    { label: 'Revenue', value: fmtARSCompact(totals.revenue) },
+    { label: 'ROAS', value: `${totals.roas.toFixed(2)}x`, accent: true },
+  ] : []
+
+  const cols: ColDef<Campaign>[] = [
+    { key: 'name', label: 'Campaña', render: r => <span className="text-gray-200 font-medium truncate max-w-[220px] block">{r.name}</span> },
+    { key: 'status', label: 'Estado', right: true, render: r => <StatusBadge status={r.status} /> },
+    { key: 'spend', label: 'Gasto', right: true, render: r => <span className="font-semibold text-gray-200">{fmtARSCompact(r.spend)}</span> },
+    { key: 'impressions', label: 'Impresiones', right: true, render: r => <span>{fmtNum(r.impressions)}</span> },
+    { key: 'clicks', label: 'Clicks', right: true, render: r => <span>{fmtNum(r.clicks)}</span> },
+    { key: 'conversions', label: 'Conv.', right: true, render: r => <span>{fmtNum(r.conversions)}</span> },
+    { key: 'ctr', label: 'CTR', right: true, render: r => r.ctr ? <span className="text-amber-400">{fmtPct(r.ctr)}</span> : <span className="text-gray-600">-</span> },
+    { key: 'roas', label: 'ROAS', right: true, render: r => r.roas ? <span className="text-emerald-400 font-semibold">{r.roas.toFixed(2)}x</span> : <span className="text-gray-600">-</span> },
+  ]
+
+  return (
+    <div className="space-y-5">
+      {loading ? (
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <div key={i} className="bg-[#0c1a0d] border border-[rgba(0,166,81,0.15)] rounded-xl p-4 h-20 animate-pulse" />
+          ))}
+        </div>
+      ) : (
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+          {kpis.map(k => <KpiCard key={k.label} {...k} />)}
+        </div>
+      )}
+
+      <SortableTable
+        cols={cols}
+        rows={campaigns as any[]}
+        loading={loading}
+        onRowClick={c => setSelected(c as Campaign)}
+        emptyMsg="Sin campañas de Google Ads."
+      />
+
+      {selected && (
+        <DetailModal
+          title={selected.name}
+          channel="Google Ads"
+          channelKey="google"
+          status={selected.status}
+          metrics={[
+            { label: 'Gasto', value: fmtARSCompact(selected.spend) },
+            { label: 'Impresiones', value: fmtNum(selected.impressions) },
+            { label: 'Clicks', value: fmtNum(selected.clicks) },
+            { label: 'Conversiones', value: fmtNum(selected.conversions) },
+            { label: 'CTR', value: fmtPct(selected.ctr) },
+            { label: 'CPC', value: selected.cpc ? fmtARSCompact(selected.cpc) : '-' },
+            { label: 'ROAS', value: selected.roas ? `${selected.roas.toFixed(2)}x` : '-' },
+          ]}
+          onClose={() => setSelected(null)}
+        />
+      )}
+    </div>
+  )
+}
+
+// ── Kommo Tab ─────────────────────────────────────────────────────────────────
+
+function KommoTab({ data, loading }: { data: KommoFullData | null; loading: boolean }) {
+  const stats = data?.stats
+
+  const kpis = stats ? [
+    { label: 'Nuevos Leads', value: fmtNum(stats.new_leads) },
+    { label: 'Abiertos', value: fmtNum(stats.open) },
+    { label: 'Ganados', value: fmtNum(stats.won), accent: true },
+    { label: 'Perdidos', value: fmtNum(stats.lost) },
+    { label: 'Tasa Conv.', value: fmtPct(stats.conversion_rate), accent: true },
+    { label: 'Valor Total', value: fmtARSCompact(stats.total_value) },
+    { label: 'Valor Ganado', value: fmtARSCompact(stats.won_value) },
+    { label: 'Ticket Promedio', value: fmtARSCompact(stats.avg_deal_value) },
+  ] : []
+
+  const maxCount = stats ? Math.max(...stats.leads_by_status.map(s => s.count), 1) : 1
+
+  type LeadStatus = { statusName: string; pipelineName: string; count: number; value: number; id: string }
+  const statusRows: LeadStatus[] = (stats?.leads_by_status ?? []).map(s => ({
+    ...s,
+    id: s.statusName,
+  }))
+
+  const cols: ColDef<LeadStatus>[] = [
+    { key: 'statusName', label: 'Estado', render: r => <span className="text-gray-200 font-medium">{r.statusName}</span> },
+    { key: 'pipelineName', label: 'Pipeline', render: r => <span className="text-gray-400 text-xs">{r.pipelineName}</span> },
+    { key: 'count', label: 'Leads', right: true, render: r => <span className="text-gray-200 font-semibold">{fmtNum(r.count)}</span> },
+    { key: 'value', label: 'Valor', right: true, render: r => <span>{fmtARSCompact(r.value)}</span> },
+  ]
+
+  const barData = (stats?.leads_by_status ?? []).slice(0, 8).map(s => ({
+    name: s.statusName.length > 16 ? s.statusName.slice(0, 15) + '…' : s.statusName,
+    leads: s.count,
+    valor: s.value,
+  }))
+
+  return (
+    <div className="space-y-5">
+      {loading ? (
+        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3">
+          {Array.from({ length: 8 }).map((_, i) => (
+            <div key={i} className="bg-[#0c1a0d] border border-[rgba(0,166,81,0.15)] rounded-xl p-4 h-20 animate-pulse" />
+          ))}
+        </div>
+      ) : (
+        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3">
+          {kpis.map(k => <KpiCard key={k.label} {...k} />)}
+        </div>
+      )}
+
+      {!loading && stats && stats.leads_by_status.length > 0 && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          {/* Funnel horizontal */}
+          <div className="bg-[#0c1a0d] border border-[rgba(0,166,81,0.15)] rounded-xl p-5">
+            <div className="text-[11px] font-semibold uppercase tracking-wider text-gray-400 mb-4">Pipeline Funnel</div>
+            <div className="space-y-2.5">
+              {stats.leads_by_status.slice(0, 8).map((s, i) => {
+                const pct = maxCount > 0 ? (s.count / maxCount) * 100 : 0
+                const colors = ['#00A651', '#3b82f6', '#f59e0b', '#ec4899', '#06b6d4', '#8b5cf6', '#ef4444', '#10b981']
+                return (
+                  <div key={s.statusName}>
+                    <div className="flex justify-between text-xs text-gray-400 mb-1">
+                      <span>{s.statusName}</span>
+                      <span className="font-mono font-semibold text-gray-200">{fmtNum(s.count)}</span>
+                    </div>
+                    <div className="h-2.5 bg-[#1a2e1b] rounded-full overflow-hidden">
+                      <div
+                        className="h-full rounded-full transition-all"
+                        style={{ width: `${pct}%`, background: colors[i % colors.length] }}
+                      />
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+
+          {/* Bar chart */}
+          <div className="bg-[#0c1a0d] border border-[rgba(0,166,81,0.15)] rounded-xl p-5">
+            <div className="text-[11px] font-semibold uppercase tracking-wider text-gray-400 mb-4">Leads por Estado</div>
+            <ResponsiveContainer width="100%" height={220}>
+              <BarChart data={barData} layout="vertical" margin={{ left: 0, right: 20 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#1a2e1b" horizontal={false} />
+                <XAxis type="number" tick={{ fill: '#6b7280', fontSize: 10 }} axisLine={false} tickLine={false} />
+                <YAxis type="category" dataKey="name" width={110} tick={{ fill: '#9ca3af', fontSize: 10 }} axisLine={false} tickLine={false} />
+                <Tooltip content={<ChartTooltip />} />
+                <Bar dataKey="leads" name="Leads" fill="#10b981" radius={[0, 4, 4, 0]} maxBarSize={14} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      )}
+
+      <SortableTable
+        cols={cols}
+        rows={statusRows}
+        loading={loading}
+        emptyMsg="Sin datos de Kommo CRM."
+      />
+    </div>
+  )
+}
+
+// ── Main Page ─────────────────────────────────────────────────────────────────
+
+const TABS: { key: MainTab; label: string }[] = [
+  { key: 'resumen', label: 'Resumen' },
+  { key: 'meta', label: 'Meta Ads' },
+  { key: 'perfit', label: 'Perfit' },
+  { key: 'google', label: 'Google Ads' },
+  { key: 'kommo', label: 'Kommo CRM' },
+]
+
+export default function MarketingPage() {
+  const [activeTab, setActiveTab] = useState<MainTab>('resumen')
+
+  // All campaigns (for Resumen + Perfit/Google subtables)
+  const [campaigns, setCampaigns] = useState<Campaign[]>([])
+  const [campLoading, setCampLoading] = useState(true)
+
+  // Meta full data
+  const [metaData, setMetaData] = useState<MetaFullData | null>(null)
+  const [metaLoading, setMetaLoading] = useState(false)
+  const [metaLoaded, setMetaLoaded] = useState(false)
+
+  // Perfit mock totals
+  const [perfitData, setPerfitData] = useState<PerfitData | null>(null)
+  const [perfitLoading, setPerfitLoading] = useState(false)
+  const [perfitLoaded, setPerfitLoaded] = useState(false)
+
+  // Google mock totals
+  const [googleData, setGoogleData] = useState<GoogleData | null>(null)
+  const [googleLoading, setGoogleLoading] = useState(false)
+  const [googleLoaded, setGoogleLoaded] = useState(false)
+
+  // Kommo full data
+  const [kommoData, setKommoData] = useState<KommoFullData | null>(null)
+  const [kommoLoading, setKommoLoading] = useState(false)
+  const [kommoLoaded, setKommoLoaded] = useState(false)
+
+  // Initial load: all campaigns for Resumen
+  const fetchCampaigns = useCallback(async () => {
+    setCampLoading(true)
+    try {
+      const res = await fetch('/api/campaigns')
+      if (res.ok) {
+        const d = await res.json()
+        setCampaigns(d.campaigns ?? [])
+      }
+    } catch (e) {
+      console.error('Error fetching campaigns:', e)
+    } finally {
+      setCampLoading(false)
+    }
+  }, [])
+
+  useEffect(() => { fetchCampaigns() }, [fetchCampaigns])
+
+  // Lazy-load per tab
+  useEffect(() => {
+    if (activeTab === 'meta' && !metaLoaded) {
+      setMetaLoading(true)
+      fetch('/api/marketing/meta-full')
+        .then(r => r.ok ? r.json() : null)
+        .then(d => { if (d) setMetaData(d) })
+        .catch(console.error)
+        .finally(() => { setMetaLoading(false); setMetaLoaded(true) })
+    }
+    if (activeTab === 'perfit' && !perfitLoaded) {
+      setPerfitLoading(true)
+      fetch('/api/marketing/perfit')
+        .then(r => r.ok ? r.json() : null)
+        .then(d => { if (d) setPerfitData(d) })
+        .catch(console.error)
+        .finally(() => { setPerfitLoading(false); setPerfitLoaded(true) })
+    }
+    if (activeTab === 'google' && !googleLoaded) {
+      setGoogleLoading(true)
+      fetch('/api/marketing/google')
+        .then(r => r.ok ? r.json() : null)
+        .then(d => { if (d) setGoogleData(d) })
+        .catch(console.error)
+        .finally(() => { setGoogleLoading(false); setGoogleLoaded(true) })
+    }
+    if (activeTab === 'kommo' && !kommoLoaded) {
+      setKommoLoading(true)
+      fetch('/api/marketing/kommo-full')
+        .then(r => r.ok ? r.json() : null)
+        .then(d => { if (d) setKommoData(d) })
+        .catch(console.error)
+        .finally(() => { setKommoLoading(false); setKommoLoaded(true) })
+    }
+  }, [activeTab, metaLoaded, perfitLoaded, googleLoaded, kommoLoaded])
+
+  const perfitCampaigns = useMemo(() => campaigns.filter(c => c.channelKey === 'perfit'), [campaigns])
+  const googleCampaigns = useMemo(() => campaigns.filter(c => c.channelKey === 'google'), [campaigns])
+
+  const handleRefresh = () => {
+    fetchCampaigns()
+    // Reset loaded state for active tab
+    if (activeTab === 'meta') { setMetaLoaded(false); setMetaData(null) }
+    if (activeTab === 'perfit') { setPerfitLoaded(false); setPerfitData(null) }
+    if (activeTab === 'google') { setGoogleLoaded(false); setGoogleData(null) }
+    if (activeTab === 'kommo') { setKommoLoaded(false); setKommoData(null) }
+  }
+
+  const isLoading = activeTab === 'resumen' ? campLoading
+    : activeTab === 'meta' ? metaLoading
+    : activeTab === 'perfit' ? (campLoading || perfitLoading)
+    : activeTab === 'google' ? (campLoading || googleLoading)
+    : kommoLoading
+
+  return (
+    <div className="p-6 space-y-5 fade-in">
+      {/* Header */}
+      <div className="flex items-start justify-between gap-4 flex-wrap">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-100 tracking-tight">Marketing &amp; Campañas</h1>
+          <p className="text-sm text-gray-500 mt-0.5">Meta Ads · Perfit · Google Ads · Kommo CRM</p>
+        </div>
+        <button
+          onClick={handleRefresh}
+          disabled={isLoading}
+          className="text-xs px-3 py-1.5 rounded-lg border border-[rgba(0,166,81,0.2)] text-gray-500 hover:text-gray-200 hover:border-[rgba(0,166,81,0.4)] transition-all disabled:opacity-50"
+        >
+          {isLoading ? 'Cargando…' : 'Actualizar'}
+        </button>
+      </div>
+
+      {/* Tab navigation */}
+      <div className="flex gap-1 border-b border-[rgba(0,166,81,0.1)]">
+        {TABS.map(t => (
+          <button
+            key={t.key}
+            onClick={() => setActiveTab(t.key)}
+            className={`text-sm px-5 py-2.5 rounded-t-lg border border-b-0 transition-all font-medium ${
+              activeTab === t.key
+                ? 'bg-[#0c1a0d] border-[rgba(0,166,81,0.3)] text-[#00A651]'
+                : 'border-transparent text-gray-500 hover:text-gray-300'
+            }`}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Tab content */}
+      <div>
+        {activeTab === 'resumen' && (
+          <ResumenTab allCampaigns={campaigns} loading={campLoading} />
+        )}
+        {activeTab === 'meta' && (
+          <MetaTab data={metaData} loading={metaLoading} />
+        )}
+        {activeTab === 'perfit' && (
+          <PerfitTab campaigns={perfitCampaigns} perfitData={perfitData} loading={campLoading || perfitLoading} />
+        )}
+        {activeTab === 'google' && (
+          <GoogleTab campaigns={googleCampaigns} googleData={googleData} loading={campLoading || googleLoading} />
+        )}
+        {activeTab === 'kommo' && (
+          <KommoTab data={kommoData} loading={kommoLoading} />
+        )}
+      </div>
     </div>
   )
 }
