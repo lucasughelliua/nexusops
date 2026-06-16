@@ -44,7 +44,7 @@ export function ColorProvider({ children }: { children: React.ReactNode }) {
 export function useColor() {
   const context = useContext(ColorContext)
   if (!context) {
-    throw new Error('useColor must be used within ColorProvider')
+    return { theme: 'green' as ColorTheme, setTheme: () => {} }
   }
   return context
 }
