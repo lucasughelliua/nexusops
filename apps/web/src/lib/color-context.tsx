@@ -13,10 +13,8 @@ const ColorContext = createContext<ColorContextType | undefined>(undefined)
 
 export function ColorProvider({ children }: { children: React.ReactNode }) {
   const [theme, setThemeState] = useState<ColorTheme>('green')
-  const [mounted, setMounted] = useState(false)
 
   useEffect(() => {
-    setMounted(true)
     const stored = localStorage.getItem('colorTheme') as ColorTheme | null
     if (stored && ['green', 'blue', 'purple', 'orange'].includes(stored)) {
       setThemeState(stored)
@@ -31,8 +29,6 @@ export function ColorProvider({ children }: { children: React.ReactNode }) {
     localStorage.setItem('colorTheme', newTheme)
     document.documentElement.setAttribute('data-color', newTheme)
   }
-
-  if (!mounted) return <>{children}</>
 
   return (
     <ColorContext.Provider value={{ theme, setTheme }}>
