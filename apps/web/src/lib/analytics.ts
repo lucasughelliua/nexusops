@@ -260,22 +260,22 @@ export async function getMetricsAnalytics(
   const allOrders = Object.values(ordersByChannel).flat();
   const prevAllOrders = Object.values(prevOrdersByChannel).flat();
 
-  // VTEX: aplicar filtro (excluir canceladas). MeLi y otros: contar TODO
   const vtexOrders = ordersByChannel["vtex"] || [];
   const meliOrders = (ordersByChannel["meli_1"] || []).concat(ordersByChannel["meli_2"] || []);
   const otherOrders = allOrders.filter((o) => !vtexOrders.includes(o) && !meliOrders.includes(o));
 
-  // Para VTEX: excluir canceladas
+  // Excluir canceladas de todos los canales para revenue/count (igual que hace cada plataforma)
   const vtexValidOrders = vtexOrders.filter((o) => o.statusBucket !== "cancelled");
-  // Para MeLi y otros: incluir TODO
-  const validOrders = [...vtexValidOrders, ...meliOrders, ...otherOrders];
+  const meliValidOrders = meliOrders.filter((o) => o.statusBucket !== "cancelled");
+  const validOrders = [...vtexValidOrders, ...meliValidOrders, ...otherOrders.filter((o) => o.statusBucket !== "cancelled")];
 
   // Mismo para período anterior
   const prevVtexOrders = prevOrdersByChannel["vtex"] || [];
   const prevMeliOrders = (prevOrdersByChannel["meli_1"] || []).concat(prevOrdersByChannel["meli_2"] || []);
   const prevOtherOrders = prevAllOrders.filter((o) => !prevVtexOrders.includes(o) && !prevMeliOrders.includes(o));
   const prevVtexValidOrders = prevVtexOrders.filter((o) => o.statusBucket !== "cancelled");
-  const prevValidOrders = [...prevVtexValidOrders, ...prevMeliOrders, ...prevOtherOrders];
+  const prevMeliValidOrders = prevMeliOrders.filter((o) => o.statusBucket !== "cancelled");
+  const prevValidOrders = [...prevVtexValidOrders, ...prevMeliValidOrders, ...prevOtherOrders.filter((o) => o.statusBucket !== "cancelled")];
 
   // Métricas principales
   const revenue = sum(validOrders.map((o) => o.total));

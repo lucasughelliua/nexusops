@@ -34,7 +34,8 @@ export type MeliTokenRefreshHandler = (tokens: MeliRefreshedTokens) => void | Pr
  * dashboard (Live / Logística).
  */
 function meliStatusBucket(status: string, shippingStatus?: string): NormalizedOrder["statusBucket"] {
-  if (status === "cancelled" || status === "invalid") return "cancelled";
+  if (status === "cancelled") return "cancelled";
+  if (status === "invalid") return "pending";
 
   switch (shippingStatus) {
     case "delivered":
