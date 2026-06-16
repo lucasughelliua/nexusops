@@ -5,46 +5,19 @@ import { getChannelConfig } from "@/lib/integrations/credentials";
 import { createKommoClient } from "@/lib/integrations/kommo";
 import type { KommoStats } from "@/lib/integrations/kommo";
 
-function mockStats(): KommoStats {
-  const new_leads = 170 + Math.round(Math.random() * 30);
-  const won = Math.round(new_leads * (0.42 + Math.random() * 0.08));
-  const lost = Math.round(new_leads * (0.18 + Math.random() * 0.06));
-  const open = Math.max(0, new_leads - won - lost);
-  const won_value = won * (45000 + Math.round(Math.random() * 15000));
-  const total_value = new_leads * (32000 + Math.round(Math.random() * 8000));
-
+function emptyStats(): KommoStats {
   return {
-    total: new_leads,
-    new_leads,
-    won,
-    lost,
-    open,
-    total_value,
-    won_value,
-    avg_deal_value: new_leads > 0 ? total_value / new_leads : 0,
-    conversion_rate: new_leads > 0 ? (won / new_leads) * 100 : 0,
-    pipelines: [
-      {
-        id: 1,
-        name: "Pipeline Principal",
-        statuses: [
-          { id: 101, name: "Nuevo", type: 0 },
-          { id: 102, name: "Contactado", type: 0 },
-          { id: 103, name: "Propuesta enviada", type: 0 },
-          { id: 104, name: "Negociación", type: 0 },
-          { id: 142, name: "Ganado", type: 142 },
-          { id: 143, name: "Perdido", type: 143 },
-        ],
-      },
-    ],
-    leads_by_status: [
-      { statusName: "Nuevo", pipelineName: "Pipeline Principal", count: Math.round(new_leads * 0.25), value: Math.round(total_value * 0.20) },
-      { statusName: "Contactado", pipelineName: "Pipeline Principal", count: Math.round(new_leads * 0.20), value: Math.round(total_value * 0.18) },
-      { statusName: "Propuesta enviada", pipelineName: "Pipeline Principal", count: Math.round(new_leads * 0.15), value: Math.round(total_value * 0.15) },
-      { statusName: "Negociación", pipelineName: "Pipeline Principal", count: Math.round(open * 0.4), value: Math.round(total_value * 0.12) },
-      { statusName: "Ganado", pipelineName: "Pipeline Principal", count: won, value: won_value },
-      { statusName: "Perdido", pipelineName: "Pipeline Principal", count: lost, value: 0 },
-    ],
+    total: 0,
+    new_leads: 0,
+    won: 0,
+    lost: 0,
+    open: 0,
+    total_value: 0,
+    won_value: 0,
+    avg_deal_value: 0,
+    conversion_rate: 0,
+    pipelines: [],
+    leads_by_status: [],
   };
 }
 
@@ -72,25 +45,28 @@ export async function GET(request: NextRequest) {
   try {
     const config = await getChannelConfig("kommo");
 
-    let stats: KommoStats;
-    let isMock = false;
-
-    if (config) {
-      const client = createKommoClient(config);
-      stats = await client.getStats(dateFrom, dateTo);
-    } else {
-      stats = mockStats();
-      isMock = true;
+    if (!config) {
+      return NextResponse.json(
+        { stats: emptyStats(), isMock: true, error: null },
+        { headers: { "Cache-Control": "no-store" } }
+      );
     }
 
+    const client = createKommoClient(config);
+    const stats = await client.getStats(dateFrom, dateTo);
+
     return NextResponse.json(
-      { stats, isMock },
+      { stats, isMock: false },
       { headers: { "Cache-Control": "no-store" } }
     );
   } catch (error: any) {
     console.error("Error fetching Kommo full data:", error);
+    const message =
+      error?.originalError?.response?.data?.title ||
+      error?.message ||
+      String(error);
     return NextResponse.json(
-      { stats: mockStats(), isMock: true, error: error?.message },
+      { stats: emptyStats(), isMock: true, error: message },
       { headers: { "Cache-Control": "no-store" } }
     );
   }

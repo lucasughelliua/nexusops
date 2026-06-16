@@ -794,6 +794,11 @@ function AdminPageContent() {
                     )
                   })()}
                 </div>
+                <div className="bg-[#071409] border border-[rgba(0,166,81,0.1)] rounded-lg px-3 py-2.5 text-xs text-gray-400 space-y-0.5">
+                  <p className="font-medium text-gray-300">¿Cómo obtener el Access Token?</p>
+                  <p>En Kommo: <span className="text-gray-200">Configuración → Integraciones → API → Mis claves API</span></p>
+                  <p className="text-amber-400/80">⚠ Los tokens OAuth expiran cada 24 hs. Usá la clave de integración privada para que no expire.</p>
+                </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="block text-xs text-gray-500 mb-1">Subdominio</label>
