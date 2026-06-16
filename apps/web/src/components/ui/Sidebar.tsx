@@ -41,13 +41,15 @@ export default function Sidebar() {
   const userRole = session?.user?.role === 'ADMIN' ? 'Administrador' : 'Usuario'
 
   return (
-    <aside className="w-60 flex-shrink-0 bg-[#071409] border-r border-[rgba(0,166,81,0.12)]
-                      h-screen sticky top-0 flex flex-col overflow-hidden">
+    <aside className="w-60 flex-shrink-0 bg-[#071409] border-r border-[rgba(0,0,0,0.12)]
+                      h-screen sticky top-0 flex flex-col overflow-hidden"
+           style={{ borderColor: 'color-mix(in srgb, var(--ua-green) 12%, transparent)' }}>
       {/* Logo */}
-      <div className="px-5 py-5 border-b border-[rgba(0,166,81,0.12)]">
+      <div className="px-5 py-5" style={{ borderBottom: '1px solid color-mix(in srgb, var(--ua-green) 12%, transparent)' }}>
         <div className="flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded-lg bg-[#00A651] flex items-center justify-center
-                          text-white text-sm font-bold">N</div>
+          <div className="w-8 h-8 rounded-lg flex items-center justify-center
+                          text-white text-sm font-bold"
+               style={{ backgroundColor: 'var(--ua-green)' }}>N</div>
           <div>
             <div className="text-sm font-semibold text-gray-100 leading-none">NexusOps</div>
             <div className="text-[10px] text-gray-500 uppercase tracking-wider mt-0.5">
@@ -73,9 +75,13 @@ export default function Sidebar() {
                   className={cn(
                     'flex items-center gap-2.5 mx-2 px-3 py-2.5 rounded-lg text-sm transition-all',
                     isActive
-                      ? 'bg-[rgba(0,166,81,0.15)] text-[#00C65E] font-medium'
+                      ? 'font-medium'
                       : 'text-gray-400 hover:bg-[#0c1a0d] hover:text-gray-200'
                   )}
+                  style={isActive ? {
+                    backgroundColor: 'color-mix(in srgb, var(--ua-green) 15%, transparent)',
+                    color: 'var(--ua-green-light)',
+                  } : undefined}
                 >
                   <span className="text-base leading-none">{item.icon}</span>
                   <span className="flex-1">{item.label}</span>
@@ -85,7 +91,7 @@ export default function Sidebar() {
                     </span>
                   )}
                   {isActive && (
-                    <div className="absolute left-0 w-0.5 h-6 bg-[#00A651] rounded-r" />
+                    <div className="absolute left-0 w-0.5 h-6 rounded-r" style={{ backgroundColor: 'var(--ua-green)' }} />
                   )}
                 </Link>
               )
@@ -102,13 +108,14 @@ export default function Sidebar() {
             onClick={() => setShowMenu(!showMenu)}
             className="w-full flex items-center gap-2.5 px-2 py-2 rounded-lg hover:bg-[#0c1a0d] cursor-pointer transition-colors"
           >
-            <div className="w-8 h-8 rounded-full bg-[#007A3D] flex items-center justify-center
-                            text-white text-xs font-bold">{userInitials}</div>
+            <div className="w-8 h-8 rounded-full flex items-center justify-center
+                            text-white text-xs font-bold"
+                 style={{ backgroundColor: 'var(--ua-green-dark)' }}>{userInitials}</div>
             <div className="flex-1 min-w-0">
               <div className="text-xs font-medium text-gray-200 truncate">{session?.user?.name || 'Usuario'}</div>
               <div className="text-[10px] text-gray-500">{userRole}</div>
             </div>
-            <div className="w-1.5 h-1.5 rounded-full bg-[#00A651]" />
+            <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: 'var(--ua-green)' }} />
           </button>
 
           {showMenu && (
