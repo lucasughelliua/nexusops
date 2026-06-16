@@ -29,6 +29,7 @@ const SYNC_STATUS_PILL: Record<string, string> = {
   ERROR: 'bg-red-900/30 text-red-400 border border-red-800/40',
   PENDING: 'bg-amber-900/30 text-amber-400 border border-amber-800/40',
   SYNCING: 'bg-blue-900/30 text-blue-400 border border-blue-800/40',
+  NOT_CONFIGURED: 'bg-gray-900/30 text-gray-500 border border-gray-800/40',
 }
 
 const SYNC_STATUS_LABEL: Record<string, string> = {
@@ -36,6 +37,7 @@ const SYNC_STATUS_LABEL: Record<string, string> = {
   ERROR: 'Error de conexión',
   PENDING: 'Pendiente de prueba',
   SYNCING: 'Sincronizando',
+  NOT_CONFIGURED: 'No configurado',
 }
 
 const USERS = [
@@ -212,6 +214,26 @@ function AdminPageContent() {
 
   function statusFor(channel: string): ChannelStatus | undefined {
     return integrations.find((c) => c.channel === channel)
+  }
+
+  function getStatusDisplay(channel: string): { status: string; label: string } {
+    const status = statusFor(channel)
+    if (!status?.configured) {
+      return { status: 'NOT_CONFIGURED', label: 'No configurado' }
+    }
+    if (status.syncStatus === 'SUCCESS') {
+      return { status: 'SUCCESS', label: 'Conectado' }
+    }
+    if (status.syncStatus === 'ERROR') {
+      return { status: 'ERROR', label: 'Error de conexión' }
+    }
+    if (status.syncStatus === 'PENDING') {
+      return { status: 'PENDING', label: 'Pendiente de prueba' }
+    }
+    if (status.syncStatus === 'SYNCING') {
+      return { status: 'SYNCING', label: 'Sincronizando' }
+    }
+    return { status: 'PENDING', label: 'Pendiente de prueba' }
   }
 
   return (
@@ -410,11 +432,14 @@ function AdminPageContent() {
               <div className="bg-[#0c1a0d] border border-[rgba(0,166,81,0.15)] rounded-xl p-6 space-y-4">
                 <div className="flex items-center justify-between">
                   <h3 className="text-sm font-semibold text-gray-200">VTEX</h3>
-                  {status?.syncStatus && (
-                    <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${SYNC_STATUS_PILL[status.syncStatus] ?? ''}`}>
-                      {SYNC_STATUS_LABEL[status.syncStatus] ?? status.syncStatus}
-                    </span>
-                  )}
+                  {(() => {
+                    const displayStatus = getStatusDisplay('vtex')
+                    return (
+                      <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${SYNC_STATUS_PILL[displayStatus.status] ?? ''}`}>
+                        {displayStatus.label}
+                      </span>
+                    )
+                  })()}
                 </div>
                 <div className="grid grid-cols-3 gap-3">
                   <div>
@@ -475,11 +500,14 @@ function AdminPageContent() {
               <div key={channel} className="bg-[#0c1a0d] border border-[rgba(0,166,81,0.15)] rounded-xl p-6 space-y-4">
                 <div className="flex items-center justify-between">
                   <h3 className="text-sm font-semibold text-gray-200">{label}</h3>
-                  {status?.syncStatus && (
-                    <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${SYNC_STATUS_PILL[status.syncStatus] ?? ''}`}>
-                      {SYNC_STATUS_LABEL[status.syncStatus] ?? status.syncStatus}
-                    </span>
-                  )}
+                  {(() => {
+                    const displayStatus = getStatusDisplay(channel)
+                    return (
+                      <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${SYNC_STATUS_PILL[displayStatus.status] ?? ''}`}>
+                        {displayStatus.label}
+                      </span>
+                    )
+                  })()}
                 </div>
 
                 {status?.summary && (status.summary['Vendedor'] !== '—' || isConnected) && (
@@ -599,11 +627,14 @@ function AdminPageContent() {
               <div className="bg-[#0c1a0d] border border-[rgba(0,166,81,0.15)] rounded-xl p-6 space-y-4">
                 <div className="flex items-center justify-between">
                   <h3 className="text-sm font-semibold text-gray-200">Meta (Facebook Ads)</h3>
-                  {status?.syncStatus && (
-                    <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${SYNC_STATUS_PILL[status.syncStatus] ?? ''}`}>
-                      {SYNC_STATUS_LABEL[status.syncStatus] ?? status.syncStatus}
-                    </span>
-                  )}
+                  {(() => {
+                    const displayStatus = getStatusDisplay('meta')
+                    return (
+                      <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${SYNC_STATUS_PILL[displayStatus.status] ?? ''}`}>
+                        {displayStatus.label}
+                      </span>
+                    )
+                  })()}
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
@@ -648,11 +679,14 @@ function AdminPageContent() {
               <div className="bg-[#0c1a0d] border border-[rgba(0,166,81,0.15)] rounded-xl p-6 space-y-4">
                 <div className="flex items-center justify-between">
                   <h3 className="text-sm font-semibold text-gray-200">Google Ads (AppScript)</h3>
-                  {status?.syncStatus && (
-                    <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${SYNC_STATUS_PILL[status.syncStatus] ?? ''}`}>
-                      {SYNC_STATUS_LABEL[status.syncStatus] ?? status.syncStatus}
-                    </span>
-                  )}
+                  {(() => {
+                    const displayStatus = getStatusDisplay('google')
+                    return (
+                      <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${SYNC_STATUS_PILL[displayStatus.status] ?? ''}`}>
+                        {displayStatus.label}
+                      </span>
+                    )
+                  })()}
                 </div>
                 <p className="text-xs text-gray-400">Cargá los datos desde un Google AppScript con tus campañas y gastos de Google Ads</p>
                 <div className="grid grid-cols-2 gap-3">
@@ -699,11 +733,14 @@ function AdminPageContent() {
               <div className="bg-[#0c1a0d] border border-[rgba(0,166,81,0.15)] rounded-xl p-6 space-y-4">
                 <div className="flex items-center justify-between">
                   <h3 className="text-sm font-semibold text-gray-200">Perfit</h3>
-                  {status?.syncStatus && (
-                    <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${SYNC_STATUS_PILL[status.syncStatus] ?? ''}`}>
-                      {SYNC_STATUS_LABEL[status.syncStatus] ?? status.syncStatus}
-                    </span>
-                  )}
+                  {(() => {
+                    const displayStatus = getStatusDisplay('perfit')
+                    return (
+                      <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${SYNC_STATUS_PILL[displayStatus.status] ?? ''}`}>
+                        {displayStatus.label}
+                      </span>
+                    )
+                  })()}
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
@@ -748,11 +785,14 @@ function AdminPageContent() {
               <div className="bg-[#0c1a0d] border border-[rgba(0,166,81,0.15)] rounded-xl p-6 space-y-4">
                 <div className="flex items-center justify-between">
                   <h3 className="text-sm font-semibold text-gray-200">Kommo CRM</h3>
-                  {status?.syncStatus && (
-                    <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${SYNC_STATUS_PILL[status.syncStatus] ?? ''}`}>
-                      {SYNC_STATUS_LABEL[status.syncStatus] ?? status.syncStatus}
-                    </span>
-                  )}
+                  {(() => {
+                    const displayStatus = getStatusDisplay('kommo')
+                    return (
+                      <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${SYNC_STATUS_PILL[displayStatus.status] ?? ''}`}>
+                        {displayStatus.label}
+                      </span>
+                    )
+                  })()}
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
@@ -797,11 +837,14 @@ function AdminPageContent() {
               <div className="bg-[#0c1a0d] border border-[rgba(0,166,81,0.15)] rounded-xl p-6 space-y-4">
                 <div className="flex items-center justify-between">
                   <h3 className="text-sm font-semibold text-gray-200">Tiendanube UA</h3>
-                  {status?.syncStatus && (
-                    <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${SYNC_STATUS_PILL[status.syncStatus] ?? ''}`}>
-                      {SYNC_STATUS_LABEL[status.syncStatus] ?? status.syncStatus}
-                    </span>
-                  )}
+                  {(() => {
+                    const displayStatus = getStatusDisplay('tiendanube_ua')
+                    return (
+                      <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${SYNC_STATUS_PILL[displayStatus.status] ?? ''}`}>
+                        {displayStatus.label}
+                      </span>
+                    )
+                  })()}
                 </div>
                 <p className="text-xs text-gray-400">Conectá tu tienda Tiendanube UA para sincronizar pedidos</p>
                 <div className="grid grid-cols-2 gap-3">
@@ -847,11 +890,14 @@ function AdminPageContent() {
               <div className="bg-[#0c1a0d] border border-[rgba(0,166,81,0.15)] rounded-xl p-6 space-y-4">
                 <div className="flex items-center justify-between">
                   <h3 className="text-sm font-semibold text-gray-200">Tiendanube Alaska</h3>
-                  {status?.syncStatus && (
-                    <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${SYNC_STATUS_PILL[status.syncStatus] ?? ''}`}>
-                      {SYNC_STATUS_LABEL[status.syncStatus] ?? status.syncStatus}
-                    </span>
-                  )}
+                  {(() => {
+                    const displayStatus = getStatusDisplay('tiendanube_alaska')
+                    return (
+                      <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${SYNC_STATUS_PILL[displayStatus.status] ?? ''}`}>
+                        {displayStatus.label}
+                      </span>
+                    )
+                  })()}
                 </div>
                 <p className="text-xs text-gray-400">Conectá tu tienda Tiendanube Alaska para sincronizar pedidos</p>
                 <div className="grid grid-cols-2 gap-3">
@@ -903,11 +949,14 @@ function AdminPageContent() {
               <div className="bg-[#0c1a0d] border border-[rgba(0,166,81,0.15)] rounded-xl p-6 space-y-4">
                 <div className="flex items-center justify-between">
                   <h3 className="text-sm font-semibold text-gray-200">Epresis</h3>
-                  {status?.syncStatus && (
-                    <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${SYNC_STATUS_PILL[status.syncStatus] ?? ''}`}>
-                      {SYNC_STATUS_LABEL[status.syncStatus] ?? status.syncStatus}
-                    </span>
-                  )}
+                  {(() => {
+                    const displayStatus = getStatusDisplay('epresis')
+                    return (
+                      <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${SYNC_STATUS_PILL[displayStatus.status] ?? ''}`}>
+                        {displayStatus.label}
+                      </span>
+                    )
+                  })()}
                 </div>
                 <p className="text-xs text-gray-400">Conectá tu cuenta de Epresis para sincronizar datos de seguimiento de envíos</p>
                 <div className="space-y-3">

@@ -547,9 +547,7 @@ function DetailModal({
   }, [])
 
   const getModalClasses = () => {
-    const baseClasses = 'w-full md:max-w-5xl max-h-[90vh] overflow-y-auto bg-[#081209] border border-[rgba(0,166,81,0.25)] rounded-t-2xl md:rounded-2xl p-6 space-y-5 shadow-2xl'
-    if (window.innerWidth < 768) return baseClasses
-    return baseClasses
+    return 'w-[100vw] md:w-[95vw] h-[100vh] md:h-[95vh] overflow-y-auto bg-[#081209] border border-[rgba(0,166,81,0.25)] rounded-2xl p-6 space-y-5 shadow-2xl'
   }
 
   // Calculate performance vs previous period (mock)
@@ -593,7 +591,7 @@ function DetailModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-end md:items-center justify-center bg-black/70 backdrop-blur-sm"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm"
       onClick={onClose}
     >
       <div
@@ -1606,7 +1604,7 @@ export default function MarketingPage() {
     }
     if (activeTab === 'perfit' && !perfitLoaded) {
       setPerfitLoading(true)
-      fetch('/api/marketing/perfit')
+      fetch('/api/marketing/perfit-full')
         .then(r => r.ok ? r.json() : null)
         .then(d => { if (d) setPerfitData(d) })
         .catch(console.error)
