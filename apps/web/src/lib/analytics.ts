@@ -205,13 +205,18 @@ function generateMockOrders(channel: ChannelKey, from: Date, to: Date): Normaliz
   return orders;
 }
 
+const ECOMMERCE_REAL_CHANNELS: ChannelKey[] = ["vtex", "meli_1", "meli_2", "tiendanube_ua", "tiendanube_alaska"];
+
 /**
- * Devuelve las órdenes (reales si el canal está configurado, mock si no)
- * para el rango dado.
+ * Devuelve las órdenes reales si el canal está configurado, o array vacío
+ * para canales de e-commerce sin configurar (vtex, meli, tiendanube).
+ * Para otros canales sin datos reales no se genera mock.
  */
 async function getChannelOrders(channel: ChannelKey, from: Date, to: Date): Promise<NormalizedOrder[]> {
   const real = await getCachedOrders(channel, from, to);
-  return real ?? generateMockOrders(channel, from, to);
+  if (real !== null) return real;
+  if (ECOMMERCE_REAL_CHANNELS.includes(channel)) return [];
+  return generateMockOrders(channel, from, to);
 }
 
 function resolveChannels(channel: string): ChannelKey[] {
