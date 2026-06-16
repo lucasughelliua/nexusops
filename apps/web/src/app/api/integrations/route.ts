@@ -6,6 +6,7 @@ import {
   ChannelKey,
   ECOMMERCE_CHANNELS,
   MARKETING_CHANNELS,
+  LOGISTICS_CHANNELS,
   saveChannelConfig,
   setChannelSyncStatus,
   getAllChannelStatuses,
@@ -21,7 +22,7 @@ import { createEpresisClient } from "@/lib/integrations/epresis";
 import { IntegrationError } from "@/lib/integrations/types";
 import axios from "axios";
 
-const ALL_CHANNELS: ChannelKey[] = [...ECOMMERCE_CHANNELS, ...MARKETING_CHANNELS];
+const ALL_CHANNELS: ChannelKey[] = [...ECOMMERCE_CHANNELS, ...MARKETING_CHANNELS, ...LOGISTICS_CHANNELS];
 
 const bodySchema = z.object({
   channel: z.enum(ALL_CHANNELS as [ChannelKey, ...ChannelKey[]]),
