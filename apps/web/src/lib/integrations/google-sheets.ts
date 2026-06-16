@@ -1,187 +1,173 @@
-import axios, { AxiosInstance } from "axios";
-import {
-  IntegrationClient,
-  IntegrationError,
-  MetricsOptions,
-  MetricData,
-  CredentialValue,
-} from "./types";
+import axios from "axios";
 import { Platform } from "@prisma/client";
+import type { IntegrationClient, IntegrationError as IEType, MetricsOptions, MetricData, CredentialValue } from "./types";
+import { IntegrationError } from "./types";
 
-export interface GoogleSheetsCredentials {
-  scriptUrl: string;
-  token: string;
-}
+// Public Google Sheet with GA4 campaign data
+const SHEET_ID = "1ldZHPTpoiN6OgyMy4zY2GYiYnNj9X6cgIk5Gqv8G40g";
+const SHEET_CSV_URL = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=csv`;
+
+// Columns: date(0) campaign(1) source_medium(2) sessions(3) users(4) new_users(5)
+//          engaged_sessions(6) engagement_rate(7) avg_session_duration(8)
+//          purchases(9) purchase_revenue(10) total_revenue(11) page_views(12)
 
 export interface GoogleAdsCampaign {
   id: string;
   name: string;
-  spend: number;
-  clicks: number;
-  impressions: number;
+  sessions: number;
   conversions: number;
-  ctr: number;
-  cpa: number;
-  roas: number;
+  revenue: number;
+  conv_rate: number;
   status: string;
 }
 
-/**
- * Generates a consistent ID from a campaign name using a simple hash
- */
-function generateCampaignId(name: string): string {
-  let hash = 0;
-  for (let i = 0; i < name.length; i++) {
-    const char = name.charCodeAt(i);
-    hash = (hash << 5) - hash + char;
-    hash = hash & hash; // Convert to 32-bit integer
-  }
-  return `google_${Math.abs(hash).toString(16)}`;
+export interface GoogleAdsStats {
+  campaigns: GoogleAdsCampaign[];
+  totals: {
+    sessions: number;
+    conversions: number;
+    revenue: number;
+    conv_rate: number;
+  };
 }
 
-/**
- * Safely converts value to number
- */
-function toNumber(value: unknown): number {
-  if (typeof value === "number") return value;
-  if (typeof value === "string") {
-    const parsed = parseFloat(value);
-    return isNaN(parsed) ? 0 : parsed;
-  }
-  return 0;
+export interface GoogleSheetsCredentials {
+  scriptUrl?: string;
+  token?: string;
 }
 
-export class GoogleSheetsClient implements IntegrationClient {
-  platform = Platform.GOOGLE_ADS;
-  private scriptUrl: string;
-  private token: string;
-  private client: AxiosInstance;
+function isGooglePaid(sourceMedium: string): boolean {
+  const s = sourceMedium.toLowerCase().trim();
+  return (
+    (s.startsWith("google") && s.includes("cpc")) ||
+    s.startsWith("google ads")
+  );
+}
 
-  constructor(credentials: GoogleSheetsCredentials) {
-    this.scriptUrl = credentials.scriptUrl;
-    this.token = credentials.token;
+function generateId(name: string): string {
+  let h = 0;
+  for (let i = 0; i < name.length; i++) { h = (Math.imul(31, h) + name.charCodeAt(i)) | 0; }
+  return `google_${Math.abs(h).toString(16)}`;
+}
 
-    this.client = axios.create({
-      timeout: 30000,
+function toNum(v: string): number {
+  const n = parseFloat(v);
+  return isNaN(n) ? 0 : n;
+}
+
+// Parse a CSV line handling quoted fields
+function parseCsvLine(line: string): string[] {
+  const cols: string[] = [];
+  let cur = '';
+  let inQ = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (ch === '"') { inQ = !inQ; continue; }
+    if (ch === ',' && !inQ) { cols.push(cur); cur = ''; continue; }
+    cur += ch;
+  }
+  cols.push(cur);
+  return cols;
+}
+
+// Convert Date (ART-aware) to YYYYMMDD int for comparison with sheet dates
+function toDateInt(date: Date): number {
+  // Subtract 3h to convert UTC → ART, then read YYYYMMDD
+  const art = new Date(date.getTime() - 3 * 60 * 60 * 1000);
+  return parseInt(art.toISOString().slice(0, 10).replace(/-/g, ""));
+}
+
+export async function fetchGoogleAdsStats(dateFrom: Date, dateTo: Date): Promise<GoogleAdsStats> {
+  const res = await axios.get<string>(SHEET_CSV_URL, {
+    responseType: "text",
+    timeout: 20_000,
+  });
+
+  const lines = res.data.replace(/\r/g, "").split("\n");
+  const fromInt = toDateInt(dateFrom);
+  const toInt = toDateInt(dateTo);
+
+  const map = new Map<string, { sessions: number; conversions: number; revenue: number }>();
+
+  for (let i = 1; i < lines.length; i++) {
+    const line = lines[i].trim();
+    if (!line) continue;
+    const cols = parseCsvLine(line);
+    if (cols.length < 11) continue;
+
+    const dateInt = parseInt(cols[0]);
+    if (isNaN(dateInt) || dateInt < fromInt || dateInt > toInt) continue;
+
+    const campaign = cols[1].trim();
+    if (!campaign || campaign.startsWith("(")) continue;
+
+    const sourceMedium = cols[2].trim();
+    if (!isGooglePaid(sourceMedium)) continue;
+
+    const sessions = toNum(cols[3]);
+    const purchases = toNum(cols[9]);
+    const revenue = toNum(cols[10]);
+
+    const prev = map.get(campaign) ?? { sessions: 0, conversions: 0, revenue: 0 };
+    map.set(campaign, {
+      sessions: prev.sessions + sessions,
+      conversions: prev.conversions + purchases,
+      revenue: prev.revenue + revenue,
     });
   }
 
+  const campaigns: GoogleAdsCampaign[] = [...map.entries()]
+    .map(([name, d]) => ({
+      id: generateId(name),
+      name,
+      sessions: Math.round(d.sessions),
+      conversions: Math.round(d.conversions),
+      revenue: Math.round(d.revenue),
+      conv_rate: d.sessions > 0 ? Math.round((d.conversions / d.sessions) * 10000) / 100 : 0,
+      status: "ACTIVE",
+    }))
+    .sort((a, b) => b.revenue - a.revenue);
+
+  const totSessions = campaigns.reduce((s, c) => s + c.sessions, 0);
+  const totConversions = campaigns.reduce((s, c) => s + c.conversions, 0);
+  const totRevenue = campaigns.reduce((s, c) => s + c.revenue, 0);
+
+  return {
+    campaigns,
+    totals: {
+      sessions: totSessions,
+      conversions: totConversions,
+      revenue: totRevenue,
+      conv_rate: totSessions > 0 ? Math.round((totConversions / totSessions) * 10000) / 100 : 0,
+    },
+  };
+}
+
+// ── Legacy class kept for /api/campaigns compatibility ──────────────────────
+
+export class GoogleSheetsClient implements IntegrationClient {
+  platform = Platform.GOOGLE_ADS;
+
+  constructor(_credentials: GoogleSheetsCredentials) {}
+
   async testConnection(): Promise<boolean> {
     try {
-      const response = await this.client.get(this.scriptUrl, {
-        params: { token: this.token },
-      });
-
-      return response.status === 200 && response.data?.ok === true;
+      await axios.get(SHEET_CSV_URL, { timeout: 10_000 });
+      return true;
     } catch (error) {
-      throw new IntegrationError(
-        this.platform,
-        "Failed to connect to Google Sheets AppScript",
-        axios.isAxiosError(error) ? error.response?.status : undefined,
-        error
-      );
+      throw new IntegrationError(Platform.GOOGLE_ADS, "Cannot reach Google Sheet", undefined, error);
     }
   }
 
-  async validateCredentials(credentials: CredentialValue): Promise<boolean> {
-    try {
-      const client = new GoogleSheetsClient({
-        scriptUrl: credentials.scriptUrl,
-        token: credentials.token,
-      });
-      return await client.testConnection();
-    } catch {
-      return false;
-    }
+  async validateCredentials(_creds: CredentialValue): Promise<boolean> {
+    return this.testConnection().catch(() => false);
   }
 
-  async getCampaigns(dateFrom?: Date, dateTo?: Date): Promise<GoogleAdsCampaign[]> {
-    try {
-      const response = await this.client.get(this.scriptUrl, {
-        params: { token: this.token },
-      });
-
-      if (!response.data?.ok || !response.data?.data) {
-        return [];
-      }
-
-      const campaigns = response.data.data as Array<{
-        campaign_name?: string;
-        spend?: unknown;
-        clicks?: unknown;
-        impressions?: unknown;
-        conversions?: unknown;
-        ctr?: unknown;
-        cpa?: unknown;
-        roas?: unknown;
-      }>;
-
-      return campaigns.map((c) => ({
-        id: generateCampaignId(c.campaign_name || "unknown"),
-        name: c.campaign_name || "Unknown Campaign",
-        spend: toNumber(c.spend),
-        clicks: toNumber(c.clicks),
-        impressions: toNumber(c.impressions),
-        conversions: toNumber(c.conversions),
-        ctr: toNumber(c.ctr),
-        cpa: toNumber(c.cpa),
-        roas: toNumber(c.roas),
-        status: "ACTIVE",
-      }));
-    } catch (error) {
-      throw new IntegrationError(
-        this.platform,
-        "Failed to fetch Google Ads campaigns",
-        axios.isAxiosError(error) ? error.response?.status : undefined,
-        error
-      );
-    }
-  }
-
-  async getMetrics(options: MetricsOptions): Promise<MetricData[]> {
-    const campaigns = await this.getCampaigns(options.startDate, options.endDate);
-
-    const metrics: MetricData[] = [];
-
-    for (const campaign of campaigns) {
-      metrics.push({
-        metricType: "spend",
-        value: campaign.spend,
-        date: new Date(),
-        dimensions: { campaign: campaign.name },
-      });
-
-      metrics.push({
-        metricType: "clicks",
-        value: campaign.clicks,
-        date: new Date(),
-        dimensions: { campaign: campaign.name },
-      });
-
-      metrics.push({
-        metricType: "impressions",
-        value: campaign.impressions,
-        date: new Date(),
-        dimensions: { campaign: campaign.name },
-      });
-
-      metrics.push({
-        metricType: "conversions",
-        value: campaign.conversions,
-        date: new Date(),
-        dimensions: { campaign: campaign.name },
-      });
-    }
-
-    return metrics;
+  async getMetrics(_options: MetricsOptions): Promise<MetricData[]> {
+    return [];
   }
 }
 
-export function createGoogleSheetsClient(
-  credentials: Record<string, string>
-): GoogleSheetsClient {
-  return new GoogleSheetsClient({
-    scriptUrl: credentials.scriptUrl,
-    token: credentials.token,
-  });
+export function createGoogleSheetsClient(_credentials: Record<string, string>): GoogleSheetsClient {
+  return new GoogleSheetsClient({});
 }

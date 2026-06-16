@@ -111,15 +111,25 @@ interface PerfitData {
   }>
 }
 
+interface GoogleAdsCampaignRow {
+  id: string
+  name: string
+  sessions: number
+  conversions: number
+  revenue: number
+  conv_rate: number
+  status: string
+}
+
 interface GoogleData {
+  campaigns: GoogleAdsCampaignRow[]
   totals: {
-    spend: number
-    clicks: number
-    impressions: number
+    sessions: number
     conversions: number
     revenue: number
-    roas: number
-  }
+    conv_rate: number
+  } | null
+  isMock?: boolean
 }
 
 interface KommoStats {
@@ -1340,66 +1350,49 @@ function PerfitTab({ campaigns, perfitData, loading }: {
 
 // ── Google Tab ────────────────────────────────────────────────────────────────
 
-function GoogleTab({ campaigns, googleData, loading }: {
-  campaigns: Campaign[]
+function GoogleTab({ googleData, loading }: {
   googleData: GoogleData | null
   loading: boolean
 }) {
-  const [selected, setSelected] = useState<Campaign | null>(null)
-  const [dateFrom, setDateFrom] = useState<string>(format(new Date(Date.now() - 30 * 24 * 60 * 60 * 1000), 'yyyy-MM-dd'))
-  const [dateTo, setDateTo] = useState<string>(format(new Date(), 'yyyy-MM-dd'))
-  const [filterStatus, setFilterStatus] = useState<string>('')
+  const [selected, setSelected] = useState<GoogleAdsCampaignRow | null>(null)
   const totals = googleData?.totals
+  const campaigns = googleData?.campaigns ?? []
 
   const kpis = totals ? [
-    { label: 'Gasto', value: fmtARSCompact(totals.spend) },
-    { label: 'Clicks', value: fmtNum(totals.clicks) },
-    { label: 'Impresiones', value: fmtNum(totals.impressions) },
-    { label: 'Conversiones', value: fmtNum(totals.conversions) },
-    { label: 'Revenue', value: fmtARSCompact(totals.revenue) },
-    { label: 'ROAS', value: `${totals.roas.toFixed(2)}x`, accent: true },
+    { label: 'Sesiones', value: fmtNum(totals.sessions) },
+    { label: 'Compras', value: fmtNum(totals.conversions) },
+    { label: 'Ingresos', value: fmtARSCompact(totals.revenue) },
+    { label: 'Tasa Conv.', value: `${totals.conv_rate.toFixed(2)}%`, accent: true },
   ] : []
 
-  const cols: ColDef<Campaign>[] = [
-    { key: 'name', label: 'Campaña', render: r => <span className="text-gray-200 font-medium truncate max-w-[220px] block">{r.name}</span> },
-    { key: 'status', label: 'Estado', right: true, render: r => <StatusBadge status={r.status} /> },
-    { key: 'spend', label: 'Gasto', right: true, render: r => <span className="font-semibold text-gray-200">{fmtARSCompact(r.spend)}</span> },
-    { key: 'impressions', label: 'Impresiones', right: true, render: r => <span>{fmtNum(r.impressions)}</span> },
-    { key: 'clicks', label: 'Clicks', right: true, render: r => <span>{fmtNum(r.clicks)}</span> },
-    { key: 'conversions', label: 'Conv.', right: true, render: r => <span>{fmtNum(r.conversions)}</span> },
-    { key: 'ctr', label: 'CTR', right: true, render: r => r.ctr ? <span className="text-amber-400">{fmtPct(r.ctr)}</span> : <span className="text-gray-600">-</span> },
-    { key: 'roas', label: 'ROAS', right: true, render: r => r.roas ? <span className="text-emerald-400 font-semibold">{r.roas.toFixed(2)}x</span> : <span className="text-gray-600">-</span> },
+  const cols: ColDef<GoogleAdsCampaignRow>[] = [
+    { key: 'name', label: 'Campaña', render: r => <span className="text-gray-200 font-medium truncate max-w-[280px] block">{r.name}</span> },
+    { key: 'sessions', label: 'Sesiones', right: true, render: r => <span>{fmtNum(r.sessions)}</span> },
+    { key: 'conversions', label: 'Compras', right: true, render: r => <span className="font-semibold text-gray-200">{fmtNum(r.conversions)}</span> },
+    { key: 'revenue', label: 'Ingresos', right: true, render: r => <span className="text-emerald-400 font-semibold">{fmtARSCompact(r.revenue)}</span> },
+    { key: 'conv_rate', label: 'Conv. Rate', right: true, render: r => <span className="text-amber-400">{r.conv_rate.toFixed(2)}%</span> },
   ]
 
   return (
     <div className="space-y-5">
       {loading ? (
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-          {Array.from({ length: 6 }).map((_, i) => (
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          {Array.from({ length: 4 }).map((_, i) => (
             <div key={i} className="bg-[#0c1a0d] border border-[rgba(0,166,81,0.15)] rounded-xl p-4 h-20 animate-pulse" />
           ))}
         </div>
       ) : (
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           {kpis.map(k => <KpiCard key={k.label} {...k} />)}
         </div>
       )}
 
-      <FilterBar
-        dateFrom={dateFrom}
-        dateTo={dateTo}
-        onDatesChange={(f, t) => { setDateFrom(f); setDateTo(t) }}
-        status={filterStatus}
-        statusOptions={['ACTIVE', 'PAUSED', 'ARCHIVED']}
-        onStatusChange={setFilterStatus}
-      />
-
       <SortableTable
         cols={cols}
-        rows={campaigns.filter(c => !filterStatus || c.status === filterStatus) as any[]}
+        rows={campaigns as any[]}
         loading={loading}
-        onRowClick={c => setSelected(c as Campaign)}
-        emptyMsg="Sin campañas de Google Ads."
+        onRowClick={r => setSelected(r as GoogleAdsCampaignRow)}
+        emptyMsg="Sin campañas de Google Ads en el período."
       />
 
       {selected && (
@@ -1409,13 +1402,10 @@ function GoogleTab({ campaigns, googleData, loading }: {
           channelKey="google"
           status={selected.status}
           metrics={[
-            { label: 'Gasto', value: fmtARSCompact(selected.spend) },
-            { label: 'Impresiones', value: fmtNum(selected.impressions) },
-            { label: 'Clicks', value: fmtNum(selected.clicks) },
-            { label: 'Conversiones', value: fmtNum(selected.conversions) },
-            { label: 'CTR', value: fmtPct(selected.ctr) },
-            { label: 'CPC', value: selected.cpc ? fmtARSCompact(selected.cpc) : '-' },
-            { label: 'ROAS', value: selected.roas ? `${selected.roas.toFixed(2)}x` : '-' },
+            { label: 'Sesiones', value: fmtNum(selected.sessions) },
+            { label: 'Compras', value: fmtNum(selected.conversions) },
+            { label: 'Ingresos', value: fmtARSCompact(selected.revenue) },
+            { label: 'Tasa Conv.', value: `${selected.conv_rate.toFixed(2)}%` },
           ]}
           onClose={() => setSelected(null)}
         />
@@ -1695,7 +1685,7 @@ export default function MarketingPage() {
           <PerfitTab campaigns={perfitCampaigns} perfitData={perfitData} loading={campLoading || perfitLoading} />
         )}
         {activeTab === 'google' && (
-          <GoogleTab campaigns={googleCampaigns} googleData={googleData} loading={campLoading || googleLoading} />
+          <GoogleTab googleData={googleData} loading={googleLoading} />
         )}
         {activeTab === 'kommo' && (
           <KommoTab data={kommoData} loading={kommoLoading} />
