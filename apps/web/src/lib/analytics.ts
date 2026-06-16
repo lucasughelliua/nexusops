@@ -291,7 +291,10 @@ export async function getMetricsAnalytics(
   const cancellations = allOrders.filter((o) => o.statusBucket === "cancelled").length;
   const prevCancellations = prevAllOrders.filter((o) => o.statusBucket === "cancelled").length;
 
-  const avgTicket = validOrders.length > 0 ? revenue / validOrders.length : 0;
+  // Ticket promedio: solo VTEX + MeLi (excluye Tiendanube y otros)
+  const ticketOrders = [...vtexValidOrders, ...meliValidOrders];
+  const ticketRevenue = sum(ticketOrders.map((o) => o.total));
+  const avgTicket = ticketOrders.length > 0 ? ticketRevenue / ticketOrders.length : 0;
   const cancellationRate = (ordersCount > 0) ? (cancellations / ordersCount) * 100 : 0;
 
   // Breakdown por estado
