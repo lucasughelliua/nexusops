@@ -172,22 +172,45 @@ function TrackingTimeline({ eventos }: { eventos: any[] }) {
 // ── Shipment Card ─────────────────────────────────────────────────────────────
 
 function ConstanciaButton({ nroGuia, guiaAgente }: { nroGuia: string; guiaAgente?: string | null }) {
+  const [loading, setLoading] = useState(false)
 
-  const handleDownload = (e: React.MouseEvent) => {
+  const handleDownload = async (e: React.MouseEvent) => {
     e.stopPropagation()
-    if (!guiaAgente) return
-    const url = `https://epresis.seguimientodeenvios.ar/guias/remito/imprimir-guia?url=constancia_electronica&guia_id=${encodeURIComponent(guiaAgente)}`
-    window.open(url, '_blank')
+    if (!guiaAgente || loading) return
+    setLoading(true)
+    try {
+      const res = await fetch(`/api/logistics/constancia?guiaAgente=${encodeURIComponent(guiaAgente)}`)
+      if (res.ok) {
+        // PDF descargado: abrir en nueva pestaña via blob URL
+        const blob = await res.blob()
+        const url = URL.createObjectURL(blob)
+        window.open(url, '_blank')
+        setTimeout(() => URL.revokeObjectURL(url), 30000)
+      } else {
+        // Fallback: abrir URL directamente (usuario deberá loguearse)
+        const data = await res.json().catch(() => ({}))
+        const fallbackUrl = data.url ?? `https://epresis.seguimientodeenvios.ar/guias/remito/imprimir-guia?url=constancia_electronica&guia_id=${encodeURIComponent(guiaAgente)}`
+        window.open(fallbackUrl, '_blank')
+      }
+    } catch {
+      window.open(`https://epresis.seguimientodeenvios.ar/guias/remito/imprimir-guia?url=constancia_electronica&guia_id=${encodeURIComponent(guiaAgente)}`, '_blank')
+    } finally {
+      setLoading(false)
+    }
   }
 
   return (
     <button
       onClick={handleDownload}
-      className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg bg-[#00A651]/10 border border-[#00A651]/30 text-[#00A651] hover:bg-[#00A651]/20 transition-all font-semibold"
+      disabled={loading}
+      className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg bg-[#00A651]/10 border border-[#00A651]/30 text-[#00A651] hover:bg-[#00A651]/20 transition-all font-semibold disabled:opacity-50"
     >
-      <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-        <path strokeLinecap="round" strokeLinejoin="round" d="M12 10v6m0 0l-3-3m3 3l3-3M3 17V7a2 2 0 012-2h6l2 2h6a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z" />
-      </svg>
+      {loading
+        ? <Spinner size={3} />
+        : <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M12 10v6m0 0l-3-3m3 3l3-3M3 17V7a2 2 0 012-2h6l2 2h6a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z" />
+          </svg>
+      }
       Constancia Electrónica
     </button>
   )
@@ -787,33 +810,40 @@ function ImportTab() {
 
 // ── Coverage Tab ─────────────────────────────────────────────────────────────
 
-const COVERAGE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyVzkowj9Sz2EfZfgIxjmKidE9miNdOOF43GHy1-cCC60CVVZ6IMO0pI7HZs-Jhm0fy/exec'
-
 function CoverageTab() {
   const [cp, setCp] = useState('')
-  const [iframeSrc, setIframeSrc] = useState<string | null>(null)
-  const [iframeLoading, setIframeLoading] = useState(false)
+  const [loading, setLoading] = useState(false)
+  const [result, setResult] = useState<{ cobertura: boolean | null; localidad?: string | null; provincia?: string | null; error?: string } | null>(null)
 
-  const handleSearch = (e: React.FormEvent) => {
+  const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault()
     const val = cp.trim()
     if (!/^\d{4}$/.test(val)) return
-    setIframeLoading(true)
-    setIframeSrc(`${COVERAGE_SCRIPT_URL}?cp=${encodeURIComponent(val)}`)
+    setLoading(true)
+    setResult(null)
+    try {
+      const res = await fetch(`/api/logistics/coverage?cp=${encodeURIComponent(val)}`)
+      const data = await res.json()
+      setResult(data)
+    } catch {
+      setResult({ cobertura: null, error: 'No se pudo consultar la planilla' })
+    } finally {
+      setLoading(false)
+    }
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 max-w-md">
       <div>
         <h2 className="text-base font-semibold text-gray-100 mb-1">Cobertura por Código Postal</h2>
         <p className="text-sm text-gray-500">Consultá si un CP tiene cobertura de entrega según la planilla cargada.</p>
       </div>
 
-      <form onSubmit={handleSearch} className="flex gap-2 max-w-sm">
+      <form onSubmit={handleSearch} className="flex gap-2">
         <input
           type="text"
           value={cp}
-          onChange={e => { setCp(e.target.value.replace(/\D/g, '').slice(0, 4)); setIframeSrc(null) }}
+          onChange={e => { setCp(e.target.value.replace(/\D/g, '').slice(0, 4)); setResult(null) }}
           placeholder="Ej: 1429"
           maxLength={4}
           className="flex-1 bg-[#0a120b] border border-[rgba(0,166,81,0.25)] rounded-lg px-4 py-2.5
@@ -822,31 +852,47 @@ function CoverageTab() {
         />
         <button
           type="submit"
-          disabled={cp.length !== 4}
+          disabled={cp.length !== 4 || loading}
           className="px-5 py-2.5 bg-[#00A651] hover:bg-[#009347] disabled:opacity-40
                      text-white text-sm font-semibold rounded-lg transition-colors flex items-center gap-2"
         >
-          🔍 Consultar
+          {loading ? <Spinner size={4} /> : '🔍'}
+          Consultar
         </button>
       </form>
 
-      {iframeSrc && (
-        <div className="relative rounded-xl overflow-hidden border border-[rgba(0,166,81,0.2)]" style={{ height: 520 }}>
-          {iframeLoading && (
-            <div className="absolute inset-0 flex items-center justify-center bg-[#0c1a0d] z-10">
-              <div className="flex flex-col items-center gap-3 text-gray-500">
-                <Spinner size={6} />
-                <span className="text-sm">Consultando planilla…</span>
-              </div>
+      {result?.error && (
+        <div className="bg-red-950/30 border border-red-800/40 rounded-xl p-4 text-sm text-red-300">
+          {result.error}
+        </div>
+      )}
+
+      {result && !result.error && (
+        <div className={`rounded-xl px-5 py-4 border flex items-center gap-4 ${
+          result.cobertura === true  ? 'bg-[rgba(0,166,81,0.08)] border-[rgba(0,166,81,0.3)]' :
+          result.cobertura === false ? 'bg-red-950/20 border-red-800/30' :
+          'bg-[#1a1a1a] border-gray-700'
+        }`}>
+          <span className="text-4xl flex-shrink-0">
+            {result.cobertura === true ? '✅' : result.cobertura === false ? '❌' : '❓'}
+          </span>
+          <div>
+            <div className={`text-lg font-bold ${
+              result.cobertura === true  ? 'text-[#00A651]' :
+              result.cobertura === false ? 'text-red-400' :
+              'text-gray-400'
+            }`}>
+              CP {cp} —{' '}
+              {result.cobertura === true  ? 'Tiene cobertura' :
+               result.cobertura === false ? 'Sin cobertura' :
+               'No se pudo determinar'}
             </div>
-          )}
-          <iframe
-            src={iframeSrc}
-            onLoad={() => setIframeLoading(false)}
-            className="w-full h-full border-0 bg-white"
-            title="Cobertura CP"
-            sandbox="allow-scripts allow-same-origin allow-forms"
-          />
+            {(result.localidad || result.provincia) && (
+              <div className="text-sm text-gray-400 mt-0.5">
+                {[result.localidad, result.provincia].filter(Boolean).join(', ')}
+              </div>
+            )}
+          </div>
         </div>
       )}
     </div>
