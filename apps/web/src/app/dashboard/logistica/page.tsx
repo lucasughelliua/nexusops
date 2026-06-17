@@ -172,58 +172,24 @@ function TrackingTimeline({ eventos }: { eventos: any[] }) {
 // ── Shipment Card ─────────────────────────────────────────────────────────────
 
 function ConstanciaButton({ nroGuia, guiaAgente }: { nroGuia: string; guiaAgente?: string | null }) {
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
 
-  const handleDownload = async (e: React.MouseEvent) => {
+  const handleDownload = (e: React.MouseEvent) => {
     e.stopPropagation()
-    if (!guiaAgente) {
-      setError('Se necesita el Nro de Guía Agente para generar la constancia. Buscá el envío por su nro de seguimiento para obtenerlo.')
-      return
-    }
-    setLoading(true)
-    setError(null)
-    try {
-      const res = await fetch(`/api/logistics/constancia?guiaAgente=${encodeURIComponent(guiaAgente)}`)
-      const json = await res.json()
-      if (json.url) {
-        window.open(json.url, '_blank')
-      } else {
-        setError(json.error ?? 'Constancia no disponible')
-      }
-    } catch {
-      setError('Error al obtener la constancia')
-    } finally {
-      setLoading(false)
-    }
+    if (!guiaAgente) return
+    const url = `https://epresis.seguimientodeenvios.ar/guias/remito/imprimir-guia?url=constancia_electronica&guia_id=${encodeURIComponent(guiaAgente)}`
+    window.open(url, '_blank')
   }
 
   return (
-    <div className="flex items-center gap-2">
-      <button
-        onClick={handleDownload}
-        disabled={loading}
-        className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg bg-[#00A651]/10 border border-[#00A651]/30 text-[#00A651] hover:bg-[#00A651]/20 transition-all disabled:opacity-50 font-semibold"
-      >
-        {loading ? (
-          <>
-            <svg className="animate-spin h-3 w-3" viewBox="0 0 24 24" fill="none">
-              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
-              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
-            </svg>
-            Descargando...
-          </>
-        ) : (
-          <>
-            <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M12 10v6m0 0l-3-3m3 3l3-3M3 17V7a2 2 0 012-2h6l2 2h6a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z" />
-            </svg>
-            Constancia Electrónica
-          </>
-        )}
-      </button>
-      {error && <span className="text-xs text-red-400">{error}</span>}
-    </div>
+    <button
+      onClick={handleDownload}
+      className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg bg-[#00A651]/10 border border-[#00A651]/30 text-[#00A651] hover:bg-[#00A651]/20 transition-all font-semibold"
+    >
+      <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M12 10v6m0 0l-3-3m3 3l3-3M3 17V7a2 2 0 012-2h6l2 2h6a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z" />
+      </svg>
+      Constancia Electrónica
+    </button>
   )
 }
 
@@ -303,9 +269,9 @@ function ShipmentCard({ s }: { s: ShipmentResult }) {
       </div>
 
       {/* Constancia electrónica — visible siempre en envíos entregados */}
-      {entregado && s.nroGuia && (
+      {s.guiaAgente && (
         <div className="px-4 pb-3 -mt-1" onClick={e => e.stopPropagation()}>
-          <ConstanciaButton nroGuia={s.nroGuia} guiaAgente={s.guiaAgente} />
+          <ConstanciaButton nroGuia={s.nroGuia ?? s.guiaAgente} guiaAgente={s.guiaAgente} />
         </div>
       )}
 
