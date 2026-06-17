@@ -88,8 +88,9 @@ export class KommoClient implements IntegrationClient {
 
   async testConnection(): Promise<boolean> {
     try {
-      const response = await this.client.get("/account");
-      return response.status === 200;
+      // /account returns 401 on api-g.kommo.com gateway; /leads works with crm scope
+      const response = await this.client.get("/leads", { params: { limit: 1 } });
+      return response.status === 200 || response.status === 204;
     } catch (error) {
       throw new IntegrationError(
         this.platform,
