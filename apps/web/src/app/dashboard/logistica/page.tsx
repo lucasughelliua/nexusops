@@ -3,97 +3,83 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { format, subDays } from 'date-fns'
 import {
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
-  PieChart, Pie, Cell,
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
+  ResponsiveContainer, PieChart, Pie, Cell,
 } from 'recharts'
 import { fmtNum } from '@/lib/utils'
-import type { EpresisStats } from '@/lib/integrations/epresis'
-import type { SearchResult, SearchType, TrackingEvent } from '@/app/api/logistics/search/route'
+import type { ShipmentResult, SearchType } from '@/app/api/logistics/shipments/route'
 
-// ── Constants ─────────────────────────────────────────────────────────────────
+// ── Palettes ──────────────────────────────────────────────────────────────────
 
-const ESTADO_COLORS: Record<string, string> = {
-  'Cancelaciones': '#ef4444',
-  'Depósito': '#8b5cf6',
-  'Devoluciones': '#f97316',
-  'Entrega EFECTIVA': '#00A651',
-  'Entrega Impuesto': '#06b6d4',
-  'Envío Impuesto': '#3b82f6',
-  'Pendiente': '#64748b',
+const PIE_COLORS = ['#00A651','#3b82f6','#f59e0b','#ec4899','#ef4444','#8b5cf6','#f97316','#06b6d4']
+
+const ESTADO_DOT: Record<string, string> = {
+  entregado:  '#00A651',
+  en_transito:'#3b82f6',
+  devolucion: '#f97316',
+  cancelado:  '#ef4444',
+  pendiente:  '#64748b',
+  demorado:   '#f59e0b',
 }
 
-const SERVICIO_COLORS: Record<string, string> = {
-  'Camioneta Fija': '#00A651',
-  'Flex Same Day': '#3b82f6',
-  'Butting en Camionceta': '#f59e0b',
-  'Same Day Web': '#ec4899',
-}
-
-const PIE_COLORS = ['#00A651', '#3b82f6', '#f59e0b', '#ec4899', '#ef4444', '#8b5cf6', '#f97316']
-
-const TYPE_COLORS: Record<SearchType, string> = {
+const TYPE_CHIP: Record<SearchType, string> = {
   guia:   'text-blue-400 bg-blue-900/30 border-blue-800/40',
   remito: 'text-purple-400 bg-purple-900/30 border-purple-800/40',
   dni:    'text-amber-400 bg-amber-900/30 border-amber-800/40',
+  tn:     'text-sky-400 bg-sky-900/30 border-sky-800/40',
+  vtex:   'text-red-400 bg-red-900/30 border-red-800/40',
+  ml:     'text-yellow-400 bg-yellow-900/30 border-yellow-800/40',
 }
 
-const TYPE_ICONS: Record<SearchType, string> = {
-  guia:   '📦',
-  remito: '🧾',
-  dni:    '🪪',
-}
-
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
-function detectSearchType(q: string): { type: SearchType; label: string } | null {
-  const trimmed = q.trim()
-  if (trimmed.length < 3) return null
-  const isAllDigits = /^\d+$/.test(trimmed)
-  if (isAllDigits && trimmed.length >= 7 && trimmed.length <= 8) return { type: 'dni', label: 'DNI' }
-  if (isAllDigits) return { type: 'guia', label: 'Nro de Envío' }
-  return { type: 'remito', label: 'Nro de Venta' }
+const TYPE_ICON: Record<SearchType, string> = {
+  guia: '📦', remito: '🧾', dni: '🪪', tn: '🛍️', vtex: '🔴', ml: '🟡',
 }
 
 function getEstadoColor(estado: string): string {
-  const upper = estado.toUpperCase()
-  if (upper.includes('ENTREGA') || upper.includes('EFECTIVA')) return '#00A651'
-  if (upper.includes('TRANSIT')) return '#3b82f6'
-  if (upper.includes('CANCEL')) return '#ef4444'
-  if (upper.includes('DEVOL')) return '#f97316'
-  if (upper.includes('DEPOSITO') || upper.includes('DEPÓSITO')) return '#8b5cf6'
-  if (upper.includes('PENDING') || upper.includes('PICKING') || upper.includes('PROGRAMAC')) return '#f59e0b'
+  const e = estado.toLowerCase()
+  if (e.includes('entregad') || e.includes('efectiva')) return '#00A651'
+  if (e.includes('transit')) return '#3b82f6'
+  if (e.includes('cancelac') || e.includes('cancelad')) return '#ef4444'
+  if (e.includes('devoluci') || e.includes('devuelt')) return '#f97316'
+  if (e.includes('picking') || e.includes('programac')) return '#f59e0b'
   return '#9ca3af'
 }
 
-// ── UI Components ─────────────────────────────────────────────────────────────
+// ── Detect type from input ────────────────────────────────────────────────────
 
-function KPICard({
-  title, value, subtitle, accentColor = '#00A651', loading = false,
-}: {
-  title: string; value: number | string; subtitle?: string; accentColor?: string; loading?: boolean
+function detectType(q: string): { type: SearchType; label: string } | null {
+  const t = q.trim()
+  if (t.length < 3) return null
+  if (/^ML[A-Z]/i.test(t)) return { type: 'ml', label: 'Pedido MercadoLibre' }
+  if (/^\d{7,}-\d+$/.test(t)) return { type: 'vtex', label: 'Pedido VTEX' }
+  if (/^\d{9,}$/.test(t)) return { type: 'tn', label: 'Pedido TiendaNube' }
+  if (/^\d{7,8}$/.test(t)) return { type: 'dni', label: 'DNI' }
+  if (/^\d+$/.test(t)) return { type: 'guia', label: 'Nro de Envío' }
+  return { type: 'remito', label: 'Nro de Venta' }
+}
+
+// ── Reusable Components ───────────────────────────────────────────────────────
+
+function KPICard({ title, value, sub, color = '#00A651', loading = false }: {
+  title: string; value: string | number; sub?: string; color?: string; loading?: boolean
 }) {
   return (
     <div className="bg-[#0c1a0d] border border-[rgba(0,166,81,0.15)] rounded-xl p-5">
       <div className="text-xs font-semibold uppercase tracking-widest text-gray-400 mb-2">{title}</div>
-      {loading ? (
-        <div className="h-8 bg-[#1a2e1b] rounded animate-pulse" />
-      ) : (
-        <div style={{ color: accentColor }} className="text-3xl font-bold font-mono">
-          {fmtNum(Number(value))}
-        </div>
-      )}
-      {subtitle && <div className="text-xs text-gray-600 mt-2">{subtitle}</div>}
+      {loading
+        ? <div className="h-8 bg-[#1a2e1b] rounded animate-pulse" />
+        : <div style={{ color }} className="text-3xl font-bold font-mono">{value}</div>}
+      {sub && <div className="text-xs text-gray-600 mt-1">{sub}</div>}
     </div>
   )
 }
 
-function ChartTooltip({ active, payload }: any) {
+function ChartTip({ active, payload }: any) {
   if (!active || !payload?.length) return null
   return (
     <div className="bg-[#0c1a0d] border border-[rgba(0,166,81,0.25)] rounded-lg px-3 py-2 text-xs shadow-xl">
-      <div className="text-gray-400 mb-1">{payload[0]?.payload?.name || payload[0]?.name}</div>
       {payload.map((p: any) => (
-        <div key={p.dataKey} style={{ color: p.color }} className="font-mono font-semibold">
+        <div key={p.dataKey} style={{ color: p.color || '#00A651' }} className="font-mono font-semibold">
           {fmtNum(p.value)}
         </div>
       ))}
@@ -101,115 +87,32 @@ function ChartTooltip({ active, payload }: any) {
   )
 }
 
-function SortableTable<T extends { id?: string | number }>({
-  cols, rows, loading, emptyMsg = 'Sin datos',
-}: {
-  cols: { key: string; label: string; right?: boolean }[]
-  rows: T[]; loading: boolean; emptyMsg?: string
-}) {
-  const [sortKey, setSortKey] = useState(cols[0]?.key ?? '')
-  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc')
-
-  const sorted = useMemo(() => {
-    if (!sortKey) return rows
-    return [...rows].sort((a, b) => {
-      const aVal = (a as any)[sortKey]
-      const bVal = (b as any)[sortKey]
-      if (typeof aVal === 'number' && typeof bVal === 'number') {
-        return sortDir === 'asc' ? aVal - bVal : bVal - aVal
-      }
-      return sortDir === 'asc'
-        ? String(aVal).toLowerCase().localeCompare(String(bVal).toLowerCase())
-        : String(bVal).toLowerCase().localeCompare(String(aVal).toLowerCase())
-    })
-  }, [rows, sortKey, sortDir])
-
-  const handleSort = (key: string) => {
-    if (key === sortKey) setSortDir(d => d === 'asc' ? 'desc' : 'asc')
-    else { setSortKey(key); setSortDir('desc') }
-  }
-
+function Spinner({ size = 4 }: { size?: number }) {
   return (
-    <div className="overflow-x-auto">
-      <table className="w-full text-sm">
-        <thead>
-          <tr className="border-b border-[rgba(0,166,81,0.1)]">
-            {cols.map(col => (
-              <th
-                key={col.key}
-                onClick={() => handleSort(col.key)}
-                className={`px-4 py-3 text-left font-semibold text-gray-400 text-xs uppercase tracking-wider cursor-pointer hover:text-gray-300 transition-colors ${col.right ? 'text-right' : ''}`}
-              >
-                <div className="flex items-center gap-1">
-                  {col.label}
-                  {sortKey === col.key && <span className="text-[#00A651]">{sortDir === 'asc' ? '↑' : '↓'}</span>}
-                </div>
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {loading ? (
-            Array.from({ length: 5 }).map((_, i) => (
-              <tr key={i} className="border-t border-[rgba(0,166,81,0.06)]">
-                {cols.map((_, j) => (
-                  <td key={j} className="px-4 py-3">
-                    <div className="h-3.5 bg-[#1a2e1b] rounded animate-pulse" />
-                  </td>
-                ))}
-              </tr>
-            ))
-          ) : sorted.length === 0 ? (
-            <tr>
-              <td colSpan={cols.length} className="px-4 py-8 text-center text-gray-500 text-xs">{emptyMsg}</td>
-            </tr>
-          ) : (
-            sorted.map((row, i) => (
-              <tr key={(row as any)?.id || i} className="border-t border-[rgba(0,166,81,0.06)] hover:bg-[rgba(0,166,81,0.03)]">
-                {cols.map(col => (
-                  <td key={col.key} className={`px-4 py-3 text-gray-300 ${col.right ? 'text-right font-mono' : ''}`}>
-                    {col.key === 'name' ? (
-                      <span className="font-medium">{(row as any)[col.key]}</span>
-                    ) : (
-                      fmtNum((row as any)[col.key] ?? 0)
-                    )}
-                  </td>
-                ))}
-              </tr>
-            ))
-          )}
-        </tbody>
-      </table>
-    </div>
+    <svg className={`animate-spin h-${size} w-${size}`} viewBox="0 0 24 24" fill="none">
+      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+    </svg>
   )
 }
 
-// ── Search Section ────────────────────────────────────────────────────────────
+// ── Tracking Timeline ─────────────────────────────────────────────────────────
 
-function TrackingTimeline({ eventos }: { eventos: TrackingEvent[] }) {
-  const last = eventos[eventos.length - 1]
+function TrackingTimeline({ eventos }: { eventos: any[] }) {
   return (
-    <div className="space-y-0">
+    <div className="space-y-0 mt-3">
       {eventos.map((ev, i) => {
         const isLast = i === eventos.length - 1
         const color = getEstadoColor(ev.estado)
         return (
           <div key={i} className="flex gap-3">
-            {/* Timeline line */}
             <div className="flex flex-col items-center">
-              <div
-                className="w-3 h-3 rounded-full mt-0.5 flex-shrink-0 ring-2 ring-offset-2 ring-offset-[#0c1a0d]"
-                style={{ backgroundColor: color, ringColor: color }}
-              />
+              <div className="w-3 h-3 rounded-full mt-0.5 flex-shrink-0" style={{ backgroundColor: color }} />
               {!isLast && <div className="w-px flex-1 mt-1" style={{ backgroundColor: 'rgba(0,166,81,0.15)' }} />}
             </div>
-            {/* Event info */}
-            <div className={`pb-4 flex-1 ${isLast ? 'pb-0' : ''}`}>
+            <div className={`flex-1 ${isLast ? 'pb-0' : 'pb-4'}`}>
               <div className="flex items-center gap-2 flex-wrap">
-                <span
-                  className="text-xs font-semibold px-2 py-0.5 rounded-full"
-                  style={{ color, backgroundColor: `${color}20` }}
-                >
+                <span className="text-xs font-semibold px-2 py-0.5 rounded-full" style={{ color, backgroundColor: `${color}20` }}>
                   {ev.estado}
                 </span>
                 {isLast && (
@@ -218,8 +121,8 @@ function TrackingTimeline({ eventos }: { eventos: TrackingEvent[] }) {
                   </span>
                 )}
               </div>
-              <div className="text-xs text-gray-500 mt-1">
-                {ev.fecha} {ev.hora && `· ${ev.hora}`}
+              <div className="text-xs text-gray-500 mt-0.5">
+                {ev.fecha}{ev.hora && ` · ${ev.hora}`}
                 {ev.receptor && <span className="ml-2 text-gray-400">Recibió: {ev.receptor}</span>}
               </div>
             </div>
@@ -230,73 +133,125 @@ function TrackingTimeline({ eventos }: { eventos: TrackingEvent[] }) {
   )
 }
 
-function ShipmentSearch() {
+// ── Shipment Card ─────────────────────────────────────────────────────────────
+
+function ShipmentCard({ s }: { s: ShipmentResult }) {
+  const [expanded, setExpanded] = useState(false)
+  const color = getEstadoColor(s.estado)
+  const eventos: any[] = Array.isArray(s.eventos) ? s.eventos : []
+
+  return (
+    <div className="bg-[#071409] border border-[rgba(0,166,81,0.12)] rounded-xl overflow-hidden">
+      <div
+        className="p-4 flex items-start justify-between gap-3 cursor-pointer hover:bg-[rgba(0,166,81,0.03)] transition-colors"
+        onClick={() => setExpanded(v => !v)}
+      >
+        <div className="flex-1 min-w-0 space-y-1">
+          <div className="flex items-center gap-2 flex-wrap">
+            {s.nroGuia && <span className="font-mono text-sm font-semibold text-gray-200">Guía #{s.nroGuia}</span>}
+            {s.remito  && <span className="text-xs text-gray-400 font-mono">Remito: {s.remito}</span>}
+            {s.source === 'epresis' && <span className="text-xs text-gray-600 italic">· Epresis tiempo real</span>}
+          </div>
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-xs font-semibold px-2 py-0.5 rounded-full" style={{ color, backgroundColor: `${color}20` }}>
+              {s.estado}
+            </span>
+            {s.servicio && <span className="text-xs text-gray-500">{s.servicio}</span>}
+          </div>
+          {s.destinatario && (
+            <div className="text-xs text-gray-400 truncate">
+              {s.destinatario}{s.localidad && ` · ${s.localidad}`}{s.provincia && `, ${s.provincia}`}
+            </div>
+          )}
+          {/* Cross-platform refs */}
+          <div className="flex gap-2 flex-wrap mt-1">
+            {s.tiendanubeOrderId && <span className="text-xs text-sky-400/80 bg-sky-900/20 px-2 py-0.5 rounded">TN #{s.tiendanubeOrderId}</span>}
+            {s.vtexOrderId       && <span className="text-xs text-red-400/80 bg-red-900/20 px-2 py-0.5 rounded">VTEX {s.vtexOrderId}</span>}
+            {s.mlOrderId         && <span className="text-xs text-yellow-400/80 bg-yellow-900/20 px-2 py-0.5 rounded">ML {s.mlOrderId}</span>}
+          </div>
+        </div>
+        <div className="flex-shrink-0 flex flex-col items-end gap-1">
+          {s.fechaCreacion && (
+            <div className="text-xs text-gray-500">{new Date(s.fechaCreacion).toLocaleDateString('es-AR')}</div>
+          )}
+          <span className="text-gray-500 text-xs">{expanded ? '▲' : '▼'}</span>
+        </div>
+      </div>
+
+      {expanded && eventos.length > 0 && (
+        <div className="border-t border-[rgba(0,166,81,0.08)] px-4 py-4">
+          <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">
+            Historial de movimientos ({eventos.length})
+          </div>
+          <TrackingTimeline eventos={eventos} />
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── Search Tab ────────────────────────────────────────────────────────────────
+
+function SearchTab() {
   const [query, setQuery] = useState('')
   const [searching, setSearching] = useState(false)
-  const [result, setResult] = useState<SearchResult | null>(null)
+  const [results, setResults] = useState<ShipmentResult[]>([])
   const [error, setError] = useState<string | null>(null)
+  const [searched, setSearched] = useState(false)
+  const [searchLabel, setSearchLabel] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
 
-  const detected = useMemo(() => detectSearchType(query), [query])
+  const detected = useMemo(() => detectType(query), [query])
 
   const doSearch = useCallback(async (q: string) => {
     setSearching(true)
-    setResult(null)
+    setResults([])
     setError(null)
+    setSearched(false)
     try {
-      const res = await fetch(`/api/logistics/search?q=${encodeURIComponent(q)}`)
+      const res = await fetch(`/api/logistics/shipments?q=${encodeURIComponent(q)}`)
       const data = await res.json()
       if (!res.ok) {
         setError(data.error || 'Error al buscar')
       } else {
-        setResult(data as SearchResult)
+        setResults(data.results || [])
+        setSearchLabel(data.searchLabel || '')
+        setSearched(true)
       }
     } catch {
-      setError('Error de red al buscar el envío')
+      setError('Error de red')
     } finally {
       setSearching(false)
     }
   }, [])
 
-  const handleSearch = (e: React.FormEvent) => {
+  const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     if (query.trim().length >= 3) doSearch(query.trim())
   }
 
-  const handleClear = () => {
-    setQuery('')
-    setResult(null)
-    setError(null)
-    inputRef.current?.focus()
-  }
-
   return (
-    <div className="bg-[#0c1a0d] border border-[rgba(0,166,81,0.15)] rounded-xl p-6 space-y-5">
+    <div className="space-y-5">
       <div>
-        <h2 className="text-sm font-semibold text-gray-200">Rastrear Envío</h2>
-        <p className="text-xs text-gray-500 mt-0.5">
-          Buscá por DNI del destinatario, Nro de Venta (remito) o Nro de Envío (guía). El sistema detecta el tipo automáticamente.
+        <p className="text-xs text-gray-500">
+          Buscá por Nro de Envío (guía), DNI, Nro de Venta (remito), o número de pedido de TiendaNube, VTEX o MercadoLibre. El sistema detecta el tipo automáticamente y busca primero en la base de datos local, luego en Epresis en tiempo real.
         </p>
       </div>
 
-      {/* Search input */}
-      <form onSubmit={handleSearch} className="flex gap-2">
+      {/* Input */}
+      <form onSubmit={handleSubmit} className="flex gap-2">
         <div className="relative flex-1">
           <input
             ref={inputRef}
-            type="text"
             value={query}
-            onChange={e => setQuery(e.target.value)}
-            placeholder="Ej: 12345678 · A14785 · 258474"
-            className="w-full px-4 py-2.5 pr-10 text-sm rounded-lg bg-[#071409] border border-[rgba(0,166,81,0.2)] text-gray-200 outline-none focus:border-[#00A651] transition-colors placeholder:text-gray-600"
+            onChange={e => { setQuery(e.target.value); setSearched(false) }}
+            placeholder="Ej: 258474 · 12345678 · MLB123456789 · ORD-2025-001"
+            className="w-full px-4 py-2.5 pr-9 text-sm rounded-lg bg-[#071409] border border-[rgba(0,166,81,0.2)] text-gray-200 outline-none focus:border-[#00A651] transition-colors placeholder:text-gray-600"
             autoComplete="off"
           />
           {query && (
-            <button
-              type="button"
-              onClick={handleClear}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300 transition-colors text-lg leading-none"
-            >
+            <button type="button" onClick={() => { setQuery(''); setResults([]); setError(null); setSearched(false); inputRef.current?.focus() }}
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300 text-lg leading-none">
               ×
             </button>
           )}
@@ -306,339 +261,409 @@ function ShipmentSearch() {
           disabled={!detected || searching}
           className="px-5 py-2.5 text-sm font-semibold rounded-lg bg-[#00A651] text-white hover:bg-[#00b85b] disabled:opacity-40 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
         >
-          {searching ? (
-            <>
-              <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-              </svg>
-              Buscando...
-            </>
-          ) : (
-            <>
-              <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-              </svg>
-              Buscar
-            </>
-          )}
+          {searching ? <><Spinner size={4} /> Buscando…</> : <>
+            <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            </svg>
+            Buscar
+          </>}
         </button>
       </form>
 
-      {/* Detected type chip */}
+      {/* Detected type */}
       {detected && (
         <div className="flex items-center gap-2">
           <span className="text-xs text-gray-500">Tipo detectado:</span>
-          <span className={`inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full border ${TYPE_COLORS[detected.type]}`}>
-            <span>{TYPE_ICONS[detected.type]}</span>
-            {detected.label}
+          <span className={`inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full border ${TYPE_CHIP[detected.type]}`}>
+            {TYPE_ICON[detected.type]} {detected.label}
           </span>
-          {detected.type === 'dni' && (
-            <span className="text-xs text-gray-600">· Se buscará como remito asociado al DNI</span>
-          )}
         </div>
       )}
 
-      {/* Searching indicator */}
+      {/* Searching state */}
       {searching && (
         <div className="flex items-center gap-3 p-4 rounded-lg bg-[#071409] border border-[rgba(0,166,81,0.1)]">
-          <svg className="animate-spin h-5 w-5 text-[#00A651]" viewBox="0 0 24 24" fill="none">
-            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-          </svg>
+          <Spinner size={5} />
           <div>
-            <div className="text-sm text-gray-300 font-medium">Consultando Epresis…</div>
-            <div className="text-xs text-gray-500 mt-0.5">Buscando <span className="font-mono text-gray-400">"{query}"</span> como {detected?.label}</div>
+            <div className="text-sm text-gray-300 font-medium">Consultando base de datos y Epresis…</div>
+            <div className="text-xs text-gray-500 mt-0.5">
+              Buscando <span className="font-mono text-gray-400">"{query}"</span> como {detected?.label}
+            </div>
           </div>
         </div>
       )}
 
       {/* Error */}
       {error && !searching && (
-        <div className="p-4 rounded-lg bg-red-900/20 border border-red-800/40 text-sm text-red-400">
-          {error}
-        </div>
+        <div className="p-4 rounded-lg bg-red-900/20 border border-red-800/40 text-sm text-red-400">{error}</div>
       )}
 
-      {/* Result */}
-      {result && !searching && (
-        <div className="space-y-4">
-          {/* Result header */}
-          <div className="flex items-start justify-between gap-3 p-4 rounded-lg bg-[#071409] border border-[rgba(0,166,81,0.12)]">
-            <div>
-              <div className="text-xs text-gray-500 mb-1">
-                Búsqueda por <span className={`font-semibold`}>{result.searchLabel}</span>
-              </div>
-              <div className="text-base font-mono font-semibold text-gray-200">{result.query}</div>
-            </div>
-            {result.status === 'ok' && result.eventos?.length ? (
-              <div>
-                <div className="text-xs text-gray-500 mb-1">Estado actual</div>
-                <span
-                  className="text-xs font-semibold px-2.5 py-1 rounded-full"
-                  style={{
-                    color: getEstadoColor(result.eventos[result.eventos.length - 1].estado),
-                    backgroundColor: `${getEstadoColor(result.eventos[result.eventos.length - 1].estado)}20`,
-                  }}
-                >
-                  {result.eventos[result.eventos.length - 1].estado}
-                </span>
-              </div>
-            ) : null}
+      {/* Results */}
+      {!searching && searched && (
+        results.length === 0 ? (
+          <div className="p-4 rounded-lg bg-amber-900/20 border border-amber-800/40 text-sm text-amber-400">
+            No se encontró ningún envío con <span className="font-mono font-semibold">"{query}"</span> como {searchLabel}.
+            <div className="text-xs mt-1 text-amber-600">Verificá el número o probá con otro tipo de identificador.</div>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            <div className="text-xs text-gray-500">{results.length} resultado{results.length !== 1 ? 's' : ''} para <span className="font-mono text-gray-400">"{query}"</span> como {searchLabel}</div>
+            {results.map(s => <ShipmentCard key={s.id} s={s} />)}
+          </div>
+        )
+      )}
+    </div>
+  )
+}
+
+// ── Metrics Tab ───────────────────────────────────────────────────────────────
+
+function MetricsTab() {
+  const [from, setFrom] = useState(() => format(subDays(new Date(), 30), 'yyyy-MM-dd'))
+  const [to,   setTo]   = useState(() => format(new Date(), 'yyyy-MM-dd'))
+  const [servicio, setServicio] = useState('')
+  const [data, setData] = useState<any>(null)
+  const [loading, setLoading] = useState(false)
+
+  const load = useCallback(async (f: string, t: string, srv: string) => {
+    setLoading(true)
+    try {
+      const params = new URLSearchParams({ from: f, to: t })
+      if (srv) params.set('servicio', srv)
+      const res = await fetch(`/api/logistics/metrics?${params}`)
+      if (res.ok) setData(await res.json())
+    } catch {}
+    finally { setLoading(false) }
+  }, [])
+
+  useEffect(() => { load(from, to, servicio) }, [from, to, servicio, load])
+
+  const noData = !data?.hasData
+
+  return (
+    <div className="space-y-6">
+      {/* Filters */}
+      <div className="flex flex-wrap gap-3 items-end">
+        <div className="flex flex-col gap-1">
+          <label className="text-xs font-semibold text-gray-400 uppercase">Desde</label>
+          <input type="date" value={from} onChange={e => setFrom(e.target.value)}
+            className="px-3 py-1.5 text-xs rounded-lg bg-[#071409] border border-[rgba(0,166,81,0.2)] text-gray-200 outline-none focus:border-[#00A651] transition-colors" />
+        </div>
+        <div className="flex flex-col gap-1">
+          <label className="text-xs font-semibold text-gray-400 uppercase">Hasta</label>
+          <input type="date" value={to} onChange={e => setTo(e.target.value)}
+            className="px-3 py-1.5 text-xs rounded-lg bg-[#071409] border border-[rgba(0,166,81,0.2)] text-gray-200 outline-none focus:border-[#00A651] transition-colors" />
+        </div>
+        {data?.serviciosDisponibles?.length > 0 && (
+          <div className="flex flex-col gap-1">
+            <label className="text-xs font-semibold text-gray-400 uppercase">Servicio</label>
+            <select value={servicio} onChange={e => setServicio(e.target.value)}
+              className="px-3 py-1.5 text-xs rounded-lg bg-[#071409] border border-[rgba(0,166,81,0.2)] text-gray-200 outline-none focus:border-[#00A651] transition-colors">
+              <option value="">Todos</option>
+              {data.serviciosDisponibles.map((s: string) => <option key={s} value={s}>{s}</option>)}
+            </select>
+          </div>
+        )}
+      </div>
+
+      {noData && !loading ? (
+        <div className="p-6 rounded-xl bg-[#0c1a0d] border border-[rgba(0,166,81,0.15)] text-center">
+          <div className="text-2xl mb-2">📊</div>
+          <div className="text-sm text-gray-300 font-medium">Sin datos de envíos</div>
+          <div className="text-xs text-gray-500 mt-1">Importá el histórico de guías desde la pestaña <span className="text-[#00A651]">Importar</span> para ver métricas.</div>
+        </div>
+      ) : (
+        <>
+          {/* KPIs */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <KPICard title="Total Envíos" value={data?.total ?? 0} loading={loading} />
+            <KPICard title="Entregados" value={data?.entregados ?? 0} color="#00A651" loading={loading}
+              sub={data?.tasaEntrega != null ? `${data.tasaEntrega}% tasa de entrega` : undefined} />
+            <KPICard title="En Tránsito" value={data?.enTransito ?? 0} color="#3b82f6" loading={loading} />
+            <KPICard title="Demorados" value={data?.demorados ?? 0} color="#f59e0b" loading={loading} />
+          </div>
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+            <KPICard title="Devoluciones" value={data?.devoluciones ?? 0} color="#f97316" loading={loading} />
+            <KPICard title="Cancelados" value={data?.cancelados ?? 0} color="#ef4444" loading={loading} />
+            <KPICard title="Días prom. entrega" value={data?.promedioDiasEntrega ?? '—'} color="#8b5cf6" loading={loading} />
           </div>
 
-          {result.status === 'not_found' ? (
-            <div className="p-4 rounded-lg bg-amber-900/20 border border-amber-800/40 text-sm text-amber-400">
-              No se encontró ningún envío con <span className="font-mono font-semibold">"{result.query}"</span> como {result.searchLabel}.
-              <div className="text-xs mt-1 text-amber-600">
-                Verificá el número o probá buscarlo con otro tipo (Nro de Envío, Nro de Venta).
+          {/* Tasa entrega big indicator */}
+          {!loading && data?.tasaEntrega != null && (
+            <div className="bg-[#0c1a0d] border border-[rgba(0,166,81,0.15)] rounded-xl p-5 flex items-center gap-5">
+              <div className="relative w-20 h-20 flex-shrink-0">
+                <svg className="w-20 h-20 -rotate-90">
+                  <circle cx="40" cy="40" r="32" fill="none" stroke="rgba(0,166,81,0.15)" strokeWidth="8" />
+                  <circle cx="40" cy="40" r="32" fill="none" stroke="#00A651" strokeWidth="8"
+                    strokeDasharray={`${2 * Math.PI * 32 * data.tasaEntrega / 100} 999`} strokeLinecap="round" />
+                </svg>
+                <div className="absolute inset-0 flex items-center justify-center text-lg font-bold text-[#00A651]">
+                  {data.tasaEntrega}%
+                </div>
+              </div>
+              <div>
+                <div className="text-sm font-semibold text-gray-200">Tasa de entrega efectiva</div>
+                <div className="text-xs text-gray-500 mt-0.5">{data.entregados} de {data.total} envíos entregados en el período</div>
+                {data.promedioDiasEntrega && (
+                  <div className="text-xs text-purple-400 mt-1">Promedio {data.promedioDiasEntrega} días hasta entrega</div>
+                )}
               </div>
             </div>
-          ) : result.eventos?.length ? (
-            <div>
-              <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-4">
-                Historial de movimientos ({result.eventos.length} eventos)
-              </div>
-              <TrackingTimeline eventos={result.eventos} />
+          )}
+
+          {/* Charts grid */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+            {/* Por estado */}
+            <div className="bg-[#0c1a0d] border border-[rgba(0,166,81,0.15)] rounded-xl p-5">
+              <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-4">Distribución por Estado</div>
+              {loading ? <div className="h-48 bg-[#1a2e1b] rounded animate-pulse" /> : (
+                data?.byEstado?.length > 0 ? (
+                  <ResponsiveContainer width="100%" height={220}>
+                    <PieChart>
+                      <Pie data={data.byEstado} dataKey="cantidad" nameKey="estado" cx="50%" cy="50%" outerRadius={75}
+                        label={({ estado, percent }) => `${(percent * 100).toFixed(0)}%`} labelLine={false}>
+                        {data.byEstado.map((_: any, i: number) => <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />)}
+                      </Pie>
+                      <Tooltip content={<ChartTip />} />
+                    </PieChart>
+                  </ResponsiveContainer>
+                ) : <div className="h-48 flex items-center justify-center text-gray-600 text-xs">Sin datos</div>
+              )}
             </div>
-          ) : null}
-        </div>
+
+            {/* Por servicio */}
+            <div className="bg-[#0c1a0d] border border-[rgba(0,166,81,0.15)] rounded-xl p-5">
+              <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-4">Envíos por Servicio</div>
+              {loading ? <div className="h-48 bg-[#1a2e1b] rounded animate-pulse" /> : (
+                data?.byServicio?.length > 0 ? (
+                  <ResponsiveContainer width="100%" height={220}>
+                    <BarChart data={data.byServicio} layout="vertical" margin={{ top: 0, right: 20, left: 160 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,166,81,0.1)" />
+                      <XAxis type="number" stroke="#9ca3af" tick={{ fontSize: 10 }} />
+                      <YAxis dataKey="servicio" type="category" stroke="#9ca3af" width={155} tick={{ fontSize: 10 }} />
+                      <Tooltip content={<ChartTip />} />
+                      <Bar dataKey="cantidad" fill="#3b82f6" radius={[0, 3, 3, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                ) : <div className="h-48 flex items-center justify-center text-gray-600 text-xs">Sin datos</div>
+              )}
+            </div>
+
+            {/* Por provincia */}
+            {data?.byProvincia?.length > 0 && (
+              <div className="bg-[#0c1a0d] border border-[rgba(0,166,81,0.15)] rounded-xl p-5 lg:col-span-2">
+                <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-4">Top Provincias de Destino</div>
+                <ResponsiveContainer width="100%" height={200}>
+                  <BarChart data={data.byProvincia.slice(0, 10)} layout="vertical" margin={{ top: 0, right: 20, left: 130 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,166,81,0.1)" />
+                    <XAxis type="number" stroke="#9ca3af" tick={{ fontSize: 10 }} />
+                    <YAxis dataKey="provincia" type="category" stroke="#9ca3af" width={125} tick={{ fontSize: 10 }} />
+                    <Tooltip content={<ChartTip />} />
+                    <Bar dataKey="cantidad" fill="#00A651" radius={[0, 3, 3, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            )}
+          </div>
+        </>
       )}
+    </div>
+  )
+}
+
+// ── Import Tab ────────────────────────────────────────────────────────────────
+
+function ImportTab() {
+  const [file, setFile] = useState<File | null>(null)
+  const [importing, setImporting] = useState(false)
+  const [result, setResult] = useState<any>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [registering, setRegistering] = useState(false)
+  const [regResult, setRegResult] = useState<any>(null)
+
+  const handleImport = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!file) return
+    setImporting(true)
+    setResult(null)
+    setError(null)
+    try {
+      const fd = new FormData()
+      fd.append('file', file)
+      const res = await fetch('/api/logistics/import', { method: 'POST', body: fd })
+      const data = await res.json()
+      if (!res.ok) setError(data.error || 'Error al importar')
+      else setResult(data)
+    } catch {
+      setError('Error de red al importar')
+    } finally {
+      setImporting(false)
+    }
+  }
+
+  const handleRegisterWebhook = async () => {
+    setRegistering(true)
+    setRegResult(null)
+    try {
+      const res = await fetch('/api/logistics/register-webhook', { method: 'POST' })
+      const data = await res.json()
+      setRegResult(data)
+    } catch {
+      setRegResult({ error: 'Error de red' })
+    } finally {
+      setRegistering(false)
+    }
+  }
+
+  return (
+    <div className="space-y-6">
+
+      {/* Webhook auto-sync */}
+      <div className="bg-[#0c1a0d] border border-[rgba(0,166,81,0.15)] rounded-xl p-5 space-y-3">
+        <div>
+          <h3 className="text-sm font-semibold text-gray-200">Sincronización automática (Webhook)</h3>
+          <p className="text-xs text-gray-500 mt-1">
+            Registrá un webhook en Epresis para que NexusOps reciba actualizaciones de estado en tiempo real cada vez que PAAQ mueva un envío. Solo necesitás hacerlo una vez.
+          </p>
+        </div>
+        <button
+          onClick={handleRegisterWebhook}
+          disabled={registering}
+          className="px-4 py-2 text-sm font-semibold rounded-lg bg-[#00A651] text-white hover:bg-[#00b85b] disabled:opacity-40 transition-colors flex items-center gap-2"
+        >
+          {registering ? <><Spinner size={4} /> Registrando…</> : '🔗 Registrar webhook en Epresis'}
+        </button>
+        {regResult && (
+          regResult.ok ? (
+            <div className="p-3 rounded-lg bg-green-900/20 border border-green-800/40 text-xs text-green-400">
+              ✓ Webhook registrado en Epresis. NexusOps recibirá notificaciones automáticas de estado.
+              <div className="mt-1 font-mono text-green-600">{regResult.webhookUrl}</div>
+            </div>
+          ) : (
+            <div className="p-3 rounded-lg bg-red-900/20 border border-red-800/40 text-xs text-red-400">
+              {regResult.error}
+            </div>
+          )
+        )}
+      </div>
+
+      {/* CSV import */}
+      <div className="bg-[#0c1a0d] border border-[rgba(0,166,81,0.15)] rounded-xl p-5 space-y-4">
+        <div>
+          <h3 className="text-sm font-semibold text-gray-200">Importar histórico desde CSV</h3>
+          <p className="text-xs text-gray-500 mt-1">
+            Exportá el listado de guías desde el panel de PAAQ y subilo acá. El sistema detecta automáticamente las columnas. Los registros duplicados se actualizan.
+          </p>
+        </div>
+
+        {/* Column guide */}
+        <div className="text-xs text-gray-500 space-y-1">
+          <div className="font-semibold text-gray-400">Columnas soportadas:</div>
+          <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 font-mono">
+            <span><span className="text-[#00A651]">nro_guia</span> · guia · nroguia</span>
+            <span><span className="text-[#00A651]">remito</span> · nro venta · pedido</span>
+            <span><span className="text-[#00A651]">estado</span> · status</span>
+            <span><span className="text-[#00A651]">servicio</span> · tipo servicio</span>
+            <span><span className="text-[#00A651]">destinatario</span> · nombre · cliente</span>
+            <span><span className="text-[#00A651]">dni</span> · cuit · documento</span>
+            <span><span className="text-[#00A651]">fecha_creacion</span> · fecha</span>
+            <span><span className="text-[#00A651]">fecha_entrega</span></span>
+            <span><span className="text-sky-400">tiendanube</span> · tn_order</span>
+            <span><span className="text-red-400">vtex</span> · vtex_order</span>
+            <span><span className="text-yellow-400">mercadolibre</span> · ml_order</span>
+            <span>localidad · provincia · cp</span>
+          </div>
+        </div>
+
+        <form onSubmit={handleImport} className="space-y-3">
+          <div>
+            <label className="flex flex-col gap-2 cursor-pointer">
+              <div className={`border-2 border-dashed rounded-xl p-8 text-center transition-colors ${file ? 'border-[#00A651] bg-[#00A651]/5' : 'border-[rgba(0,166,81,0.2)] hover:border-[rgba(0,166,81,0.4)]'}`}>
+                {file ? (
+                  <div className="space-y-1">
+                    <div className="text-2xl">📄</div>
+                    <div className="text-sm text-gray-200 font-medium">{file.name}</div>
+                    <div className="text-xs text-gray-500">{(file.size / 1024).toFixed(1)} KB</div>
+                  </div>
+                ) : (
+                  <div className="space-y-1">
+                    <div className="text-2xl">📁</div>
+                    <div className="text-sm text-gray-400">Arrastrá o hacé clic para seleccionar el CSV</div>
+                    <div className="text-xs text-gray-600">Formatos: .csv (UTF-8 o con BOM)</div>
+                  </div>
+                )}
+              </div>
+              <input type="file" accept=".csv,text/csv" onChange={e => setFile(e.target.files?.[0] ?? null)} className="hidden" />
+            </label>
+          </div>
+          <button type="submit" disabled={!file || importing}
+            className="w-full py-2.5 text-sm font-semibold rounded-lg bg-[#00A651] text-white hover:bg-[#00b85b] disabled:opacity-40 transition-colors flex items-center justify-center gap-2">
+            {importing ? <><Spinner size={4} /> Importando…</> : '⬆ Importar guías'}
+          </button>
+        </form>
+
+        {error && <div className="p-3 rounded-lg bg-red-900/20 border border-red-800/40 text-xs text-red-400">{error}</div>}
+
+        {result && (
+          <div className="p-4 rounded-lg bg-green-900/20 border border-green-800/40 text-sm text-green-400 space-y-1">
+            <div className="font-semibold">✓ Importación completada</div>
+            <div className="text-xs text-green-600 space-y-0.5">
+              <div>Filas procesadas: <span className="text-green-400 font-mono">{result.total}</span></div>
+              <div>Creadas nuevas: <span className="text-green-400 font-mono">{result.inserted}</span></div>
+              <div>Actualizadas: <span className="text-green-400 font-mono">{result.updated}</span></div>
+              {result.skipped > 0 && <div>Omitidas (sin ID): <span className="text-gray-400 font-mono">{result.skipped}</span></div>}
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   )
 }
 
 // ── Main Page ─────────────────────────────────────────────────────────────────
 
+type Tab = 'buscar' | 'metricas' | 'importar'
+
 export default function LogisticaPage() {
-  const [dateFrom, setDateFrom] = useState(() => format(subDays(new Date(), 30), 'yyyy-MM-dd'))
-  const [dateTo, setDateTo] = useState(() => format(new Date(), 'yyyy-MM-dd'))
-  const [stats, setStats] = useState<EpresisStats | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [isMock, setIsMock] = useState(false)
+  const [tab, setTab] = useState<Tab>('buscar')
 
-  useEffect(() => {
-    async function load() {
-      setLoading(true)
-      try {
-        const params = new URLSearchParams({ from: dateFrom, to: dateTo })
-        const res = await fetch(`/api/logistics/stats?${params}`)
-        if (res.ok) {
-          const data = await res.json()
-          setStats(data.stats)
-          setIsMock(data.isMock ?? false)
-        }
-      } catch (error) {
-        console.error('Error loading logistics stats:', error)
-      } finally {
-        setLoading(false)
-      }
-    }
-    load()
-  }, [dateFrom, dateTo])
-
-  const estadoData = useMemo(() => stats?.estadoCounts ?? [], [stats])
-  const servicioData = useMemo(() => stats?.servicioCounts ?? [], [stats])
-
-  const topEstados = useMemo(
-    () => [...estadoData].sort((a, b) => b.cantidad - a.cantidad).slice(0, 8),
-    [estadoData]
-  )
-  const topServicios = useMemo(
-    () => [...servicioData].sort((a, b) => b.cantidad - a.cantidad).slice(0, 8),
-    [servicioData]
-  )
+  const TABS: { id: Tab; label: string; icon: string }[] = [
+    { id: 'buscar',   label: 'Buscar Envío', icon: '🔍' },
+    { id: 'metricas', label: 'Métricas',     icon: '📊' },
+    { id: 'importar', label: 'Importar',     icon: '⬆' },
+  ]
 
   return (
     <div className="p-6 space-y-6 fade-in">
       {/* Header */}
-      <div className="flex items-start justify-between gap-4 flex-wrap">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-100">Logística</h1>
-          <p className="text-sm text-gray-500 mt-0.5">Seguimiento y estadísticas de envíos PAAQ · Epresis</p>
-        </div>
-        {isMock && (
-          <span className="text-xs px-3 py-1.5 rounded-lg bg-amber-900/30 text-amber-400 border border-amber-800/40">
-            Datos de ejemplo
-          </span>
-        )}
+      <div>
+        <h1 className="text-2xl font-bold text-gray-100">Logística PAAQ</h1>
+        <p className="text-sm text-gray-500 mt-0.5">Seguimiento de envíos · Métricas · Sincronización Epresis</p>
       </div>
 
-      {/* ── Smart Search ── */}
-      <ShipmentSearch />
+      {/* Tabs */}
+      <div className="flex gap-1 bg-[#0c1a0d] border border-[rgba(0,166,81,0.15)] rounded-xl p-1.5 w-fit">
+        {TABS.map(t => (
+          <button
+            key={t.id}
+            onClick={() => setTab(t.id)}
+            className={`px-4 py-2 text-sm font-semibold rounded-lg transition-colors flex items-center gap-2 ${
+              tab === t.id
+                ? 'bg-[#00A651] text-white'
+                : 'text-gray-400 hover:text-gray-200'
+            }`}
+          >
+            <span>{t.icon}</span>
+            {t.label}
+          </button>
+        ))}
+      </div>
 
-      {/* ── Metrics Section ── */}
-      <div className="space-y-6">
-        <div className="flex items-end justify-between gap-4 flex-wrap">
-          <h2 className="text-base font-semibold text-gray-200">Métricas generales</h2>
-          {/* Date filter */}
-          <div className="flex flex-wrap gap-3 items-end">
-            <div className="flex flex-col gap-1">
-              <label className="text-xs font-semibold text-gray-400 uppercase">Desde</label>
-              <input
-                type="date"
-                value={dateFrom}
-                onChange={e => setDateFrom(e.target.value)}
-                className="px-3 py-1.5 text-xs rounded-lg bg-[#071409] border border-[rgba(0,166,81,0.2)] text-gray-200 outline-none focus:border-[#00A651] transition-colors"
-              />
-            </div>
-            <div className="flex flex-col gap-1">
-              <label className="text-xs font-semibold text-gray-400 uppercase">Hasta</label>
-              <input
-                type="date"
-                value={dateTo}
-                onChange={e => setDateTo(e.target.value)}
-                className="px-3 py-1.5 text-xs rounded-lg bg-[#071409] border border-[rgba(0,166,81,0.2)] text-gray-200 outline-none focus:border-[#00A651] transition-colors"
-              />
-            </div>
-          </div>
-        </div>
-
-        {/* Top KPI Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <KPICard
-            title="Total de Guías Confirmadas"
-            value={stats?.totalGuiasConfirmadas ?? 0}
-            accentColor="#00A651"
-            loading={loading}
-          />
-          <KPICard
-            title="Total de Guías Pendientes de Confirmación"
-            value={stats?.totalGuiasPendientes ?? 0}
-            accentColor="#f59e0b"
-            loading={loading}
-          />
-        </div>
-
-        {/* Totales por Estado del Grupo */}
-        <div className="bg-[#0c1a0d] border border-[rgba(0,166,81,0.15)] rounded-xl p-6 space-y-5">
-          <h2 className="text-sm font-semibold text-gray-200">Totales por Estado del Grupo</h2>
-          <div>
-            <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Tabla</div>
-            <SortableTable
-              cols={[
-                { key: 'estado', label: 'Estado' },
-                { key: 'cantidad', label: 'Cantidad', right: true },
-              ]}
-              rows={estadoData.map((e, i) => ({ id: i, ...e }))}
-              loading={loading}
-              emptyMsg="Sin datos de estado"
-            />
-          </div>
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6 pt-6 border-t border-[rgba(0,166,81,0.1)]">
-            <div>
-              <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Gráfico de Pastel</div>
-              {loading ? (
-                <div className="h-64 bg-[#1a2e1b] rounded animate-pulse" />
-              ) : estadoData.length > 0 ? (
-                <ResponsiveContainer width="100%" height={300}>
-                  <PieChart>
-                    <Pie
-                      data={estadoData}
-                      dataKey="cantidad"
-                      nameKey="estado"
-                      cx="50%"
-                      cy="50%"
-                      outerRadius={80}
-                      label={({ estado, percent }) => `${estado} ${(percent * 100).toFixed(0)}%`}
-                      labelLine={false}
-                    >
-                      {estadoData.map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={ESTADO_COLORS[entry.estado] || PIE_COLORS[index % PIE_COLORS.length]} />
-                      ))}
-                    </Pie>
-                    <Tooltip content={<ChartTooltip />} />
-                  </PieChart>
-                </ResponsiveContainer>
-              ) : (
-                <div className="h-64 flex items-center justify-center text-gray-500 text-xs">Sin datos</div>
-              )}
-            </div>
-            <div>
-              <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Top Estados</div>
-              {loading ? (
-                <div className="h-64 bg-[#1a2e1b] rounded animate-pulse" />
-              ) : topEstados.length > 0 ? (
-                <ResponsiveContainer width="100%" height={300}>
-                  <BarChart data={topEstados} layout="vertical" margin={{ top: 5, right: 30, left: 250 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,166,81,0.1)" />
-                    <XAxis type="number" stroke="#9ca3af" />
-                    <YAxis dataKey="estado" type="category" stroke="#9ca3af" width={240} />
-                    <Tooltip content={<ChartTooltip />} />
-                    <Bar dataKey="cantidad" fill="#00A651" />
-                  </BarChart>
-                </ResponsiveContainer>
-              ) : (
-                <div className="h-64 flex items-center justify-center text-gray-500 text-xs">Sin datos</div>
-              )}
-            </div>
-          </div>
-        </div>
-
-        {/* Totales por Servicio */}
-        <div className="bg-[#0c1a0d] border border-[rgba(0,166,81,0.15)] rounded-xl p-6 space-y-5">
-          <h2 className="text-sm font-semibold text-gray-200">Totales por Servicio</h2>
-          <div>
-            <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Tabla</div>
-            <SortableTable
-              cols={[
-                { key: 'servicio', label: 'Servicio' },
-                { key: 'cantidad', label: 'Cantidad', right: true },
-              ]}
-              rows={servicioData.map((s, i) => ({ id: i, ...s }))}
-              loading={loading}
-              emptyMsg="Sin datos de servicio"
-            />
-          </div>
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6 pt-6 border-t border-[rgba(0,166,81,0.1)]">
-            <div>
-              <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Gráfico de Pastel</div>
-              {loading ? (
-                <div className="h-64 bg-[#1a2e1b] rounded animate-pulse" />
-              ) : servicioData.length > 0 ? (
-                <ResponsiveContainer width="100%" height={300}>
-                  <PieChart>
-                    <Pie
-                      data={servicioData}
-                      dataKey="cantidad"
-                      nameKey="servicio"
-                      cx="50%"
-                      cy="50%"
-                      outerRadius={80}
-                      label={({ servicio, percent }) => `${servicio} ${(percent * 100).toFixed(0)}%`}
-                      labelLine={false}
-                    >
-                      {servicioData.map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={SERVICIO_COLORS[entry.servicio] || PIE_COLORS[index % PIE_COLORS.length]} />
-                      ))}
-                    </Pie>
-                    <Tooltip content={<ChartTooltip />} />
-                  </PieChart>
-                </ResponsiveContainer>
-              ) : (
-                <div className="h-64 flex items-center justify-center text-gray-500 text-xs">Sin datos</div>
-              )}
-            </div>
-            <div>
-              <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Top Servicios</div>
-              {loading ? (
-                <div className="h-64 bg-[#1a2e1b] rounded animate-pulse" />
-              ) : topServicios.length > 0 ? (
-                <ResponsiveContainer width="100%" height={300}>
-                  <BarChart data={topServicios} layout="vertical" margin={{ top: 5, right: 30, left: 200 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,166,81,0.1)" />
-                    <XAxis type="number" stroke="#9ca3af" />
-                    <YAxis dataKey="servicio" type="category" stroke="#9ca3af" width={190} />
-                    <Tooltip content={<ChartTooltip />} />
-                    <Bar dataKey="cantidad" fill="#3b82f6" />
-                  </BarChart>
-                </ResponsiveContainer>
-              ) : (
-                <div className="h-64 flex items-center justify-center text-gray-500 text-xs">Sin datos</div>
-              )}
-            </div>
-          </div>
-        </div>
+      {/* Tab content */}
+      <div className="bg-[#0c1a0d] border border-[rgba(0,166,81,0.15)] rounded-xl p-6">
+        {tab === 'buscar'   && <SearchTab />}
+        {tab === 'metricas' && <MetricsTab />}
+        {tab === 'importar' && <ImportTab />}
       </div>
     </div>
   )

@@ -152,6 +152,49 @@ model AuditLog {
   @@index([createdAt])
 }
 
+// Envíos PAAQ (sincronizados vía webhook + importación CSV)
+model Shipment {
+  id                String    @id @default(cuid())
+  nroGuia           String?   @unique          // Nro de guía Epresis
+  remito            String?                    // Remito / referencia cliente
+  estado            String    @default("DESCONOCIDO")
+  codigoEstado      String?
+  servicio          String?
+  destinatario      String?
+  dni               String?
+  direccion         String?
+  localidad         String?
+  provincia         String?
+  cp                String?
+
+  // Referencias cruzadas con plataformas de órdenes
+  tiendanubeOrderId String?
+  vtexOrderId       String?
+  mlOrderId         String?
+
+  // Productos del envío (desde importación o sync de órdenes)
+  productos         Json?     // [{name, sku, qty}]
+  // Historial completo de estados
+  eventos           Json?     // [{fecha, hora, estado, receptor}]
+
+  fechaCreacion     DateTime?
+  fechaEntrega      DateTime?
+  fechaPactada      DateTime?
+
+  importSource      String?   // "csv" | "webhook" | "sync"
+
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  @@index([remito])
+  @@index([dni])
+  @@index([tiendanubeOrderId])
+  @@index([vtexOrderId])
+  @@index([mlOrderId])
+  @@index([estado])
+  @@index([fechaCreacion])
+}
+
 enum Platform {
   VTEX
   MERCADO_LIBRE
@@ -161,6 +204,7 @@ enum Platform {
   PERFIT
   GOOGLE_SHEETS
   TIENDANUBE
+  EPRESIS
 }
 
 enum Role {

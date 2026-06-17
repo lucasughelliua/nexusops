@@ -32,7 +32,7 @@ export const CHANNEL_PLATFORM: Record<ChannelKey, Platform> = {
   kommo: Platform.KOMMO_CRM,
   tiendanube_ua: Platform.TIENDANUBE,
   tiendanube_alaska: Platform.TIENDANUBE,
-  epresis: Platform.GOOGLE_SHEETS, // Placeholder until Prisma adds EPRESIS platform
+  epresis: Platform.EPRESIS,
 };
 
 export const CHANNEL_ACCOUNT_NAME: Record<ChannelKey, string> = {
