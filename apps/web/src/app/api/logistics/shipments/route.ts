@@ -198,7 +198,7 @@ export async function GET(request: NextRequest) {
       vtexOrderId: s.vtexOrderId,
       mlOrderId: s.mlOrderId,
       productos: s.productos,
-      eventos: (s.eventos as TrackingEvent[]) ?? [],
+      eventos: (s.eventos as unknown as TrackingEvent[]) ?? [],
       fechaCreacion: s.fechaCreacion?.toISOString() ?? null,
       fechaEntrega: s.fechaEntrega?.toISOString() ?? null,
       source: "db",
