@@ -1253,12 +1253,30 @@ function PerfitDetailModal({ row, onClose }: { row: PerfitRow; onClose: () => vo
 
 // ── Perfit Tab ────────────────────────────────────────────────────────────────
 
-function PerfitTab({ perfitData, loading }: {
-  perfitData: PerfitData | null
-  loading: boolean
-}) {
+function PerfitTab() {
+  const [dateFrom, setDateFrom] = useState<string>(format(new Date(Date.now() - 30 * 24 * 60 * 60 * 1000), 'yyyy-MM-dd'))
+  const [dateTo, setDateTo] = useState<string>(format(new Date(), 'yyyy-MM-dd'))
+  const [data, setData] = useState<PerfitData | null>(null)
+  const [loading, setLoading] = useState(false)
   const [selected, setSelected] = useState<PerfitRow | null>(null)
-  const totals = perfitData?.totals ?? null
+
+  const fetchData = useCallback(async (from: string, to: string) => {
+    setLoading(true)
+    try {
+      const r = await fetch(`/api/marketing/perfit-full?from=${from}&to=${to}`)
+      if (r.ok) setData(await r.json())
+    } catch (e) {
+      console.error('Perfit fetch error:', e)
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    fetchData(dateFrom, dateTo)
+  }, [fetchData, dateFrom, dateTo])
+
+  const totals = data?.totals ?? null
 
   const kpis = totals ? [
     { label: 'Enviados', value: fmtNum(totals.sent) },
@@ -1278,10 +1296,19 @@ function PerfitTab({ perfitData, loading }: {
     { key: 'clicked', label: 'Clicks', right: true, render: r => <span>{fmtNum(r.clicked)} <span className="text-gray-500 text-xs">({r.sent > 0 ? ((r.clicked/r.sent)*100).toFixed(1) : 0}%)</span></span> },
   ]
 
-  const perfitRows = perfitData?.campaigns ?? []
+  const perfitRows = data?.campaigns ?? []
 
   return (
     <div className="space-y-5">
+      <FilterBar
+        dateFrom={dateFrom}
+        dateTo={dateTo}
+        onDatesChange={(f, t) => { setDateFrom(f); setDateTo(t) }}
+        status=""
+        statusOptions={[]}
+        onStatusChange={() => {}}
+      />
+
       {loading ? (
         <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3">
           {Array.from({ length: 7 }).map((_, i) => (
@@ -1512,11 +1539,6 @@ export default function MarketingPage() {
   const [metaLoading, setMetaLoading] = useState(false)
   const [metaLoaded, setMetaLoaded] = useState(false)
 
-  // Perfit mock totals
-  const [perfitData, setPerfitData] = useState<PerfitData | null>(null)
-  const [perfitLoading, setPerfitLoading] = useState(false)
-  const [perfitLoaded, setPerfitLoaded] = useState(false)
-
   // Google mock totals
   const [googleData, setGoogleData] = useState<GoogleData | null>(null)
   const [googleLoading, setGoogleLoading] = useState(false)
@@ -1555,14 +1577,6 @@ export default function MarketingPage() {
         .catch(console.error)
         .finally(() => { setMetaLoading(false); setMetaLoaded(true) })
     }
-    if (activeTab === 'perfit' && !perfitLoaded) {
-      setPerfitLoading(true)
-      fetch('/api/marketing/perfit-full')
-        .then(r => r.ok ? r.json() : null)
-        .then(d => { if (d) setPerfitData(d) })
-        .catch(console.error)
-        .finally(() => { setPerfitLoading(false); setPerfitLoaded(true) })
-    }
     if (activeTab === 'google' && !googleLoaded) {
       setGoogleLoading(true)
       fetch('/api/marketing/google-sheets')
@@ -1579,23 +1593,21 @@ export default function MarketingPage() {
         .catch(console.error)
         .finally(() => { setKommoLoading(false); setKommoLoaded(true) })
     }
-  }, [activeTab, metaLoaded, perfitLoaded, googleLoaded, kommoLoaded])
+  }, [activeTab, metaLoaded, googleLoaded, kommoLoaded])
 
-  const perfitCampaigns = useMemo(() => campaigns.filter(c => c.channelKey === 'perfit'), [campaigns])
   const googleCampaigns = useMemo(() => campaigns.filter(c => c.channelKey === 'google'), [campaigns])
 
   const handleRefresh = () => {
     fetchCampaigns()
     // Reset loaded state for active tab
     if (activeTab === 'meta') { setMetaLoaded(false); setMetaData(null) }
-    if (activeTab === 'perfit') { setPerfitLoaded(false); setPerfitData(null) }
     if (activeTab === 'google') { setGoogleLoaded(false); setGoogleData(null) }
     if (activeTab === 'kommo') { setKommoLoaded(false); setKommoData(null) }
   }
 
   const isLoading = activeTab === 'resumen' ? campLoading
     : activeTab === 'meta' ? metaLoading
-    : activeTab === 'perfit' ? (campLoading || perfitLoading)
+    : activeTab === 'perfit' ? false
     : activeTab === 'google' ? (campLoading || googleLoading)
     : activeTab === 'kommo' ? kommoLoading
     : false
@@ -1641,7 +1653,7 @@ export default function MarketingPage() {
           <MetaTab data={metaData} loading={metaLoading} />
         )}
         {activeTab === 'perfit' && (
-          <PerfitTab perfitData={perfitData} loading={campLoading || perfitLoading} />
+          <PerfitTab />
         )}
         {activeTab === 'google' && (
           <GoogleTab googleData={googleData} loading={googleLoading} />
