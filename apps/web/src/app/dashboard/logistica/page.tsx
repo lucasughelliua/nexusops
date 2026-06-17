@@ -859,7 +859,7 @@ function CoverageTab() {
   }
 
   // Cargar CPs del localStorage al montar
-  React.useEffect(() => {
+  useEffect(() => {
     const saved = localStorage.getItem('coverage_cps')
     if (saved) {
       try {
