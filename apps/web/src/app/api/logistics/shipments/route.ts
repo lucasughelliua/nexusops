@@ -44,19 +44,27 @@ export interface ShipmentResult {
 
 /**
  * Detección de tipo de búsqueda.
- * Nros de seguimiento PAAQ/Epresis son 9 dígitos (ej: 455164805).
- * NO los confundimos con TiendaNube (sus IDs son cortos y están en nuestra BD).
- * Todos los dígitos que no sean DNI (7-8) se tratan como nro de tracking.
+ *
+ * Reglas ajustadas al comportamiento real de PAAQ/Epresis:
+ * - VTEX sin guión: 8 dígitos numéricos puros (ej: 31533900). PAAQ los recibe como "remito".
+ * - DNI / CUIT: Epresis lo interpreta como CUIT. 7 dígitos (DNI viejo) o 11 dígitos (CUIT).
+ * - PAAQ tracking: 9–10 dígitos (ej: 455164805).
+ * - Remito / nro de venta: alfanumérico o 8 dígitos.
  */
 function detectType(q: string): { type: SearchType; label: string } {
   const t = q.trim();
   if (/^ML[A-Z]\d+$/i.test(t))    return { type: "ml",    label: "Pedido MercadoLibre" };
   if (/^[A-Z0-9]+-\d+$/i.test(t)) return { type: "vtex",  label: "Pedido VTEX" };
-  // DNI argentino: exactamente 7 u 8 dígitos
-  if (/^\d{7,8}$/.test(t))        return { type: "dni",   label: "DNI" };
-  // Cualquier otro número (incluyendo 9+ dígitos como PAAQ tracking) → guía
+  // CUIT argentino: exactamente 11 dígitos → Epresis lo busca como dni/cuit
+  if (/^\d{11}$/.test(t))         return { type: "dni",   label: "CUIT" };
+  // DNI viejo: exactamente 7 dígitos
+  if (/^\d{7}$/.test(t))          return { type: "dni",   label: "DNI" };
+  // PAAQ tracking: 9 o 10 dígitos (ej: 455164805)
+  if (/^\d{9,10}$/.test(t))       return { type: "guia",  label: "Nro de Seguimiento" };
+  // 8 dígitos puros = pedido VTEX sin guión en PAAQ (ej: 31533900)
+  if (/^\d{8}$/.test(t))          return { type: "remito", label: "Nro de Venta" };
+  // Cualquier otro número largo → guía
   if (/^\d+$/.test(t))            return { type: "guia",  label: "Nro de Seguimiento" };
-  // Alfanumérico → nro de venta / remito
   return { type: "remito", label: "Nro de Venta" };
 }
 
@@ -116,12 +124,17 @@ async function fetchByTracking(tracking: string, creds: any): Promise<ShipmentRe
 }
 
 /**
- * Busca por remito/DNI usando el endpoint POST legacy de Epresis.
- * POST /api/v2/seguimiento.json  { api_token, remito }
+ * Busca por remito o DNI/CUIT usando el endpoint POST de Epresis.
+ * POST /api/v2/seguimiento.json
+ * - remito: nro de venta / pedido VTEX sin guión
+ * - cuit:   DNI o CUIT argentino (PAAQ los interpreta igual)
  */
 async function fetchByRemito(q: string, type: SearchType, creds: any): Promise<ShipmentResult | null> {
   const baseURL = epresisBaseURL(creds);
-  const body: any = { api_token: creds.apiToken, remito: q };
+  // PAAQ interpreta DNI como CUIT; para nro de venta usa "remito"
+  const body: any = type === "dni"
+    ? { api_token: creds.apiToken, cuit: q }
+    : { api_token: creds.apiToken, remito: q };
   try {
     const res = await axios.post(`${baseURL}/api/v2/seguimiento.json`, body, { timeout: 12000 });
     if (res.data?.status === "ok" && res.data?.guia?.fechas?.length) {

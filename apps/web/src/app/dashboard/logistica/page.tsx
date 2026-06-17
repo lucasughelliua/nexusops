@@ -35,6 +35,9 @@ const TYPE_ICON: Record<SearchType, string> = {
   guia: '📦', remito: '🧾', dni: '🪪', tn: '🛍️', vtex: '🔴', ml: '🟡',
 }
 
+// Placeholder de texto para el input de búsqueda
+const SEARCH_PLACEHOLDER = 'Ej: 455164805 (tracking) · 31533900 (VTEX) · 20123456789 (CUIT) · MLB123'
+
 function isEntregado(estado: string) {
   const e = estado.toLowerCase()
   return e.includes('entregad') || e.includes('efectiva')
@@ -56,12 +59,17 @@ function getEstadoColor(estado: string): string {
 function detectType(q: string): { type: SearchType; label: string } | null {
   const t = q.trim()
   if (t.length < 3) return null
-  if (/^ML[A-Z]\d+$/i.test(t)) return { type: 'ml', label: 'Pedido MercadoLibre' }
-  if (/^[A-Z0-9]+-\d+$/i.test(t)) return { type: 'vtex', label: 'Pedido VTEX' }
-  // DNI: exactamente 7-8 dígitos
-  if (/^\d{7,8}$/.test(t)) return { type: 'dni', label: 'DNI' }
-  // Todo número restante (incl. 9+ dígitos como PAAQ tracking) → nro de seguimiento
-  if (/^\d+$/.test(t)) return { type: 'guia', label: 'Nro de Seguimiento' }
+  if (/^ML[A-Z]\d+$/i.test(t))    return { type: 'ml',     label: 'Pedido MercadoLibre' }
+  if (/^[A-Z0-9]+-\d+$/i.test(t)) return { type: 'vtex',   label: 'Pedido VTEX' }
+  // CUIT: exactamente 11 dígitos
+  if (/^\d{11}$/.test(t))          return { type: 'dni',    label: 'CUIT' }
+  // DNI viejo: 7 dígitos
+  if (/^\d{7}$/.test(t))           return { type: 'dni',    label: 'DNI' }
+  // PAAQ tracking: 9 o 10 dígitos
+  if (/^\d{9,10}$/.test(t))        return { type: 'guia',   label: 'Nro de Seguimiento' }
+  // 8 dígitos = pedido VTEX sin guión en PAAQ
+  if (/^\d{8}$/.test(t))           return { type: 'remito', label: 'Nro de Venta' }
+  if (/^\d+$/.test(t))             return { type: 'guia',   label: 'Nro de Seguimiento' }
   return { type: 'remito', label: 'Nro de Venta' }
 }
 
@@ -389,7 +397,7 @@ function SearchTab() {
             ref={inputRef}
             value={query}
             onChange={e => { setQuery(e.target.value); setSearched(false) }}
-            placeholder="Ej: 258474 · 12345678 · MLB123456789 · ORD-2025-001"
+            placeholder={SEARCH_PLACEHOLDER}
             className="w-full px-4 py-2.5 pr-9 text-sm rounded-lg bg-[#071409] border border-[rgba(0,166,81,0.2)] text-gray-200 outline-none focus:border-[#00A651] transition-colors placeholder:text-gray-600"
             autoComplete="off"
           />
