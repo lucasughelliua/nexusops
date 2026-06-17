@@ -59,8 +59,8 @@ function getEstadoColor(estado: string): string {
 function detectType(q: string): { type: SearchType; label: string } | null {
   const t = q.trim()
   if (t.length < 3) return null
-  if (/^ML[A-Z]\d+$/i.test(t))         return { type: 'ml',   label: 'Pedido MercadoLibre' }
-  if (/^\d{8,}-\d{1,4}$/.test(t))      return { type: 'ml',   label: 'Pedido MercadoLibre' }
+  if (/^20000\d+$/.test(t))             return { type: 'ml',   label: 'Pedido MercadoLibre' }
+  if (/^\d{8,}-\d{1,4}$/.test(t))      return { type: 'vtex', label: 'Pedido VTEX' }
   if (/^[A-Z][A-Z0-9]*-\d+$/i.test(t)) return { type: 'vtex', label: 'Pedido VTEX' }
   // CUIT: exactamente 11 dígitos
   if (/^\d{11}$/.test(t))          return { type: 'dni',    label: 'CUIT' }
