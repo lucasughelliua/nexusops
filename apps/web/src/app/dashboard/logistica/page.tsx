@@ -182,38 +182,22 @@ function ConstanciaButton({ nroGuia, guiaAgente }: { nroGuia: string; guiaAgente
 
   const handleDownload = async (e: React.MouseEvent) => {
     e.stopPropagation()
+    if (!guiaAgente) {
+      setError('Se necesita el Nro de Guía Agente para generar la constancia. Buscá el envío por su nro de seguimiento para obtenerlo.')
+      return
+    }
     setLoading(true)
     setError(null)
     try {
-      const params = new URLSearchParams({ tracking: nroGuia })
-      if (guiaAgente) params.set('guiaAgente', guiaAgente)
-      const res = await fetch(`/api/logistics/constancia?${params}`)
-      const contentType = res.headers.get('content-type') ?? ''
-
-      if (contentType.includes('application/json')) {
-        const json = await res.json()
-        if (json.url) {
-          window.open(json.url, '_blank')
-          return
-        }
-        setError(json.error ?? 'Constancia no disponible en este momento')
-        return
+      const res = await fetch(`/api/logistics/constancia?guiaAgente=${encodeURIComponent(guiaAgente)}`)
+      const json = await res.json()
+      if (json.url) {
+        window.open(json.url, '_blank')
+      } else {
+        setError(json.error ?? 'Constancia no disponible')
       }
-
-      if (!res.ok) {
-        setError('Constancia no disponible')
-        return
-      }
-
-      const blob = await res.blob()
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = `constancia-${nroGuia}.pdf`
-      a.click()
-      URL.revokeObjectURL(url)
     } catch {
-      setError('Error al descargar')
+      setError('Error al obtener la constancia')
     } finally {
       setLoading(false)
     }

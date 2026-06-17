@@ -124,17 +124,26 @@ async function fetchByTracking(tracking: string, creds: any): Promise<ShipmentRe
 }
 
 /**
- * Busca por remito o DNI/CUIT usando el endpoint POST de Epresis.
+ * Busca en Epresis por remito, guia_agente o cuit según el tipo.
  * POST /api/v2/seguimiento.json
- * - remito: nro de venta / pedido VTEX sin guión
- * - cuit:   DNI o CUIT argentino (PAAQ los interpreta igual)
+ *
+ * Campos que usa PAAQ:
+ * - cuit:        DNI o CUIT del comprador
+ * - guia_agente: nro de pedido VTEX o MercadoLibre
+ * - remito:      nro de venta interno
  */
 async function fetchByRemito(q: string, type: SearchType, creds: any): Promise<ShipmentResult | null> {
   const baseURL = epresisBaseURL(creds);
-  // PAAQ interpreta DNI como CUIT; para nro de venta usa "remito"
-  const body: any = type === "dni"
-    ? { api_token: creds.apiToken, cuit: q }
-    : { api_token: creds.apiToken, remito: q };
+
+  let body: any;
+  if (type === "dni") {
+    body = { api_token: creds.apiToken, cuit: q };
+  } else if (type === "remito" || type === "vtex" || type === "ml") {
+    // VTEX (8 dígitos sin guión) y ML → guia_agente en PAAQ
+    body = { api_token: creds.apiToken, guia_agente: q };
+  } else {
+    body = { api_token: creds.apiToken, remito: q };
+  }
   try {
     const res = await axios.post(`${baseURL}/api/v2/seguimiento.json`, body, { timeout: 12000 });
     if (res.data?.status === "ok" && res.data?.guia?.fechas?.length) {
@@ -227,10 +236,10 @@ export async function GET(request: NextRequest) {
 
     if (type === "guia") {
       epresisResult = await fetchByTracking(q, creds);
-    } else if (type === "dni" || type === "remito") {
+    } else if (type === "dni" || type === "remito" || type === "vtex" || type === "ml") {
+      // dni → cuit, remito → guia_agente (VTEX/ML sin guión), vtex/ml → guia_agente
       epresisResult = await fetchByRemito(q, type, creds);
     }
-    // Para TN/VTEX/ML: solo se busca en BD local (el nro de seguimiento PAAQ lo tendría que tener)
 
     if (epresisResult) {
       return NextResponse.json({ results: [epresisResult], searchType: type, searchLabel: label, query: q, total: 1 });
