@@ -100,34 +100,43 @@ export async function POST(request: NextRequest) {
     const isEntregado = ENTREGADO_KEYWORDS.some(k => estado.toLowerCase().includes(k));
 
     try {
-      await prisma.shipment.upsert({
+      const existing = await prisma.shipment.findFirst({
         where: nroGuia ? { nroGuia } : { remito: remito! },
-        create: {
-          nroGuia,
-          remito,
-          estado,
-          codigoEstado: s.codigo_estado ?? null,
-          servicio: s.servicio ?? null,
-          destinatario: s.destinatario ?? s.receptor ?? null,
-          dni: s.dni ?? null,
-          direccion: s.direccion ?? null,
-          localidad: s.localidad ?? null,
-          provincia: s.provincia ?? null,
-          cp: s.cp ?? null,
-          eventos: s.historico ?? s.eventos ?? [],
-          fechaCreacion: s.fecha_creacion ? new Date(s.fecha_creacion) : new Date(from),
-          fechaEntrega: isEntregado && s.fecha_entrega ? new Date(s.fecha_entrega) : null,
-          importSource: "epresis_sync",
-        },
-        update: {
-          estado,
-          codigoEstado: s.codigo_estado ?? undefined,
-          servicio: s.servicio ?? undefined,
-          eventos: s.historico ?? s.eventos ?? undefined,
-          fechaEntrega: isEntregado && s.fecha_entrega ? new Date(s.fecha_entrega) : undefined,
-          importSource: "epresis_sync",
-        },
+        select: { id: true },
       });
+
+      const updateData = {
+        estado,
+        codigoEstado: s.codigo_estado ?? undefined,
+        servicio: s.servicio ?? undefined,
+        eventos: s.historico ?? s.eventos ?? undefined,
+        fechaEntrega: isEntregado && s.fecha_entrega ? new Date(s.fecha_entrega) : undefined,
+        importSource: "epresis_sync",
+      };
+
+      if (existing) {
+        await prisma.shipment.update({ where: { id: existing.id }, data: updateData });
+      } else {
+        await prisma.shipment.create({
+          data: {
+            nroGuia,
+            remito,
+            estado,
+            codigoEstado: s.codigo_estado ?? null,
+            servicio: s.servicio ?? null,
+            destinatario: s.destinatario ?? s.receptor ?? null,
+            dni: s.dni ?? null,
+            direccion: s.direccion ?? null,
+            localidad: s.localidad ?? null,
+            provincia: s.provincia ?? null,
+            cp: s.cp ?? null,
+            eventos: s.historico ?? s.eventos ?? [],
+            fechaCreacion: s.fecha_creacion ? new Date(s.fecha_creacion) : new Date(from),
+            fechaEntrega: isEntregado && s.fecha_entrega ? new Date(s.fecha_entrega) : null,
+            importSource: "epresis_sync",
+          },
+        });
+      }
       synced++;
     } catch {}
   }
