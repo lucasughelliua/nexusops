@@ -804,6 +804,61 @@ function ImportTab() {
           </div>
         )}
       </div>
+
+      {/* Cargar cobertura CP */}
+      <div className="bg-[#0c1a0d] border border-[rgba(0,166,81,0.15)] rounded-xl p-5 space-y-4">
+        <div>
+          <h3 className="text-sm font-semibold text-gray-200">Cargar planilla de cobertura PAAQ</h3>
+          <p className="text-xs text-gray-500 mt-1">
+            Sube un CSV o Excel con los códigos postales que tienen cobertura. Se usará para consultas en la tab "Cobertura CP".
+          </p>
+        </div>
+
+        <label className="flex flex-col gap-2 cursor-pointer">
+          <div className="border-2 border-dashed rounded-xl p-8 text-center transition-colors border-[rgba(0,166,81,0.2)] hover:border-[rgba(0,166,81,0.4)]">
+            <div className="space-y-1">
+              <div className="text-2xl">📁</div>
+              <div className="text-sm text-gray-400">Arrastrá o hacé clic para seleccionar CSV/Excel</div>
+              <div className="text-xs text-gray-600">Formatos: .csv, .xlsx, .xls</div>
+            </div>
+          </div>
+          <input
+            type="file"
+            accept=".csv,text/csv,.xlsx,.xls,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            onChange={(e) => {
+              const f = e.target.files?.[0]
+              if (!f) return
+              f.text().then(text => {
+                const lines = text.split('\n')
+                  .map(l => l.trim())
+                  .filter(l => l && !/^codigo_postal/i.test(l))
+                  .map(l => l.replace(/\D/g, '').slice(0, 4))
+                  .filter(l => l.length === 4)
+                localStorage.setItem('coverage_cps', JSON.stringify(lines))
+                alert(`✓ ${lines.length} códigos postales cargados`)
+              }).catch(() => alert('Error al leer el archivo'))
+            }}
+            className="hidden"
+          />
+        </label>
+
+        <button
+          type="button"
+          onClick={() => {
+            const csv = 'codigo_postal\n1429\n1802\n1636'
+            const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+            const url = URL.createObjectURL(blob)
+            const link = document.createElement('a')
+            link.href = url
+            link.download = 'plantilla_cobertura.csv'
+            link.click()
+            URL.revokeObjectURL(url)
+          }}
+          className="w-full px-4 py-2 text-sm font-semibold rounded-lg bg-[#1a2e1b] hover:bg-[#2a4a2b] text-gray-300 transition-colors"
+        >
+          📥 Descargar plantilla
+        </button>
+      </div>
     </div>
   )
 }
@@ -811,54 +866,18 @@ function ImportTab() {
 // ── Coverage Tab ─────────────────────────────────────────────────────────────
 
 function CoverageTab() {
-  const [file, setFile] = useState<File | null>(null)
   const [cps, setCps] = useState<Set<string>>(new Set())
   const [cp, setCp] = useState('')
   const [result, setResult] = useState<{ tiene: boolean } | null>(null)
-
-  const downloadTemplate = () => {
-    const csv = 'codigo_postal\n1429\n1802\n1636'
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
-    const url = URL.createObjectURL(blob)
-    const link = document.createElement('a')
-    link.href = url
-    link.download = 'plantilla_cobertura.csv'
-    link.click()
-    URL.revokeObjectURL(url)
-  }
-
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const f = e.target.files?.[0]
-    if (!f) return
-    setFile(f)
-
-    try {
-      const text = await f.text()
-      const lines = text.split('\n')
-        .map(l => l.trim())
-        .filter(l => l && !/^codigo_postal/i.test(l)) // ignorar header
-        .map(l => l.replace(/\D/g, '').slice(0, 4))
-        .filter(l => l.length === 4)
-
-      const set = new Set(lines)
-      setCps(set)
-      setResult(null)
-      localStorage.setItem('coverage_cps', JSON.stringify(Array.from(set)))
-    } catch (err) {
-      alert('Error al leer el archivo: ' + String(err))
-    }
-  }
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault()
     const val = cp.trim()
     if (!/^\d{4}$/.test(val)) return
-
     const tiene = cps.has(val)
     setResult({ tiene })
   }
 
-  // Cargar CPs del localStorage al montar
   useEffect(() => {
     const saved = localStorage.getItem('coverage_cps')
     if (saved) {
@@ -869,57 +888,18 @@ function CoverageTab() {
   }, [])
 
   return (
-    <div className="space-y-6">
-      {/* Upload section */}
-      <div className="bg-[#0c1a0d] border border-[rgba(0,166,81,0.15)] rounded-xl p-5 space-y-4 max-w-lg">
-        <div>
-          <h3 className="text-sm font-semibold text-gray-100 mb-1">Cargar planilla de cobertura</h3>
-          <p className="text-xs text-gray-500">Sube un CSV o Excel con los códigos postales que tienen cobertura.</p>
-        </div>
-
-        <label className="flex flex-col gap-2 cursor-pointer">
-          <div className={`border-2 border-dashed rounded-lg p-6 text-center transition-colors ${
-            file ? 'border-[#00A651] bg-[#00A651]/5' : 'border-[rgba(0,166,81,0.2)] hover:border-[rgba(0,166,81,0.4)]'
-          }`}>
-            {file ? (
-              <div className="space-y-1">
-                <div className="text-lg">✅</div>
-                <div className="text-sm text-gray-200 font-medium">{file.name}</div>
-                <div className="text-xs text-gray-500">{cps.size} códigos postales cargados</div>
-              </div>
-            ) : (
-              <div className="space-y-1">
-                <div className="text-lg">📁</div>
-                <div className="text-sm text-gray-400">Arrastrá o hacé clic para seleccionar CSV/Excel</div>
-                <div className="text-xs text-gray-600">Formatos: .csv, .xlsx, .xls</div>
-              </div>
-            )}
-          </div>
-          <input
-            type="file"
-            accept=".csv,text/csv,.xlsx,.xls,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-            onChange={handleFileUpload}
-            className="hidden"
-          />
-        </label>
-
-        <button
-          type="button"
-          onClick={downloadTemplate}
-          className="w-full px-4 py-2 text-sm font-semibold rounded-lg bg-[#1a2e1b] hover:bg-[#2a4a2b] text-gray-300 transition-colors"
-        >
-          📥 Descargar plantilla
-        </button>
+    <div className="space-y-6 max-w-md">
+      <div>
+        <h2 className="text-base font-semibold text-gray-100 mb-1">Consultar cobertura</h2>
+        <p className="text-sm text-gray-500">Verificá si un código postal tiene cobertura PAAQ.</p>
       </div>
 
-      {/* Search section */}
-      {cps.size > 0 && (
-        <div className="space-y-4 max-w-md">
-          <div>
-            <h3 className="text-base font-semibold text-gray-100 mb-1">Consultar cobertura</h3>
-            <p className="text-sm text-gray-500">Verificar si un CP está en la planilla cargada.</p>
-          </div>
-
+      {cps.size === 0 ? (
+        <div className="bg-yellow-900/20 border border-yellow-800/30 rounded-xl p-4 text-sm text-yellow-300">
+          ⚠ No hay planilla cargada. Ve a la tab "Importar" para subir los códigos postales de cobertura.
+        </div>
+      ) : (
+        <>
           <form onSubmit={handleSearch} className="flex gap-2">
             <input
               type="text"
@@ -956,13 +936,7 @@ function CoverageTab() {
               </div>
             </div>
           )}
-        </div>
-      )}
-
-      {cps.size === 0 && (
-        <div className="text-sm text-gray-500 text-center py-6">
-          Cargá un archivo para consultar cobertura
-        </div>
+        </>
       )}
     </div>
   )
