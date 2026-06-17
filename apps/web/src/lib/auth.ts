@@ -8,7 +8,7 @@ import "@/lib/auth.types";
 
 const credentialsSchema = z.object({
   email: z.string().email("Email inválido"),
-  password: z.string().min(6, "La contraseña debe tener al menos 6 caracteres"),
+  password: z.string().min(4, "La contraseña debe tener al menos 4 caracteres"),
 });
 
 // Hardcoded test users with bcrypt hashed passwords

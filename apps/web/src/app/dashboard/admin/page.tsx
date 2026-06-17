@@ -75,6 +75,8 @@ function AdminPageContent() {
   const [loadingUsers, setLoadingUsers] = useState(false)
   const [editingUser, setEditingUser] = useState<User | null>(null)
   const [savingUser, setSavingUser] = useState(false)
+  const [deletingUserId, setDeletingUserId] = useState<string | null>(null)
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
 
   const [integrations, setIntegrations] = useState<ChannelStatus[]>([])
   const [loadingInt, setLoadingInt] = useState(false)
@@ -105,6 +107,19 @@ function AdminPageContent() {
       setLoadingUsers(false)
     }
   }, [])
+
+  async function deleteUser(id: string) {
+    setDeletingUserId(id)
+    try {
+      const res = await fetch(`/api/users/${id}`, { method: 'DELETE' })
+      if (res.ok) {
+        setUsers(prev => prev.filter(u => u.id !== id))
+        setConfirmDeleteId(null)
+      }
+    } finally {
+      setDeletingUserId(null)
+    }
+  }
 
   async function saveUser(user: Partial<User> & { id?: string }) {
     setSavingUser(true)
@@ -289,9 +304,45 @@ function AdminPageContent() {
                 >
                   Editar
                 </button>
+                <button
+                  onClick={() => setConfirmDeleteId(u.id)}
+                  className="text-xs px-2.5 py-1 rounded bg-red-900/30 text-red-400 hover:bg-red-900/60 hover:text-red-300 transition-colors border border-red-800/30"
+                >
+                  Eliminar
+                </button>
               </div>
             </div>
           ))}
+
+          {/* Confirm delete modal */}
+          {confirmDeleteId && (() => {
+            const target = users.find(u => u.id === confirmDeleteId)
+            return (
+              <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
+                <div className="bg-[#0c1a0d] border border-red-800/40 rounded-xl p-6 max-w-sm w-full mx-4 space-y-4">
+                  <h2 className="text-lg font-bold text-gray-100">Eliminar usuario</h2>
+                  <p className="text-sm text-gray-400">
+                    ¿Estás seguro que querés eliminar a <span className="text-gray-200 font-semibold">{target?.name}</span>? Esta acción no se puede deshacer.
+                  </p>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => setConfirmDeleteId(null)}
+                      className="flex-1 px-3 py-2 rounded bg-[#1a2e1b] text-gray-400 hover:text-gray-200 transition-colors text-sm"
+                    >
+                      Cancelar
+                    </button>
+                    <button
+                      disabled={deletingUserId === confirmDeleteId}
+                      onClick={() => deleteUser(confirmDeleteId)}
+                      className="flex-1 px-3 py-2 rounded bg-red-700 text-white hover:bg-red-600 transition-colors text-sm font-semibold disabled:opacity-50"
+                    >
+                      {deletingUserId === confirmDeleteId ? 'Eliminando…' : 'Eliminar'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )
+          })()}
 
           {/* Edit modal */}
           {editingUser && (
