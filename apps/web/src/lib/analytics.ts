@@ -513,7 +513,27 @@ export async function getLiveOrdersAnalytics(
   const validOrders = orders.filter((o) => o.statusBucket !== "cancelled");
   const totalRevenue = sum(validOrders.map((o) => o.revenue));
 
-  return { orders, total: orders.length, totalRevenue };
+  // Top productos del día por cantidad (excluye canceladas)
+  const productMap = new Map<string, { name: string; sku: string; channel: string; qty: number; revenue: number }>();
+  for (const o of allOrders) {
+    if (o.statusBucket === "cancelled") continue;
+    for (const item of o.items) {
+      const key = `${item.sku}||${item.name}`;
+      const existing = productMap.get(key);
+      if (existing) {
+        existing.qty += item.qty;
+        existing.revenue += item.qty * item.unitPrice;
+      } else {
+        productMap.set(key, { name: item.name, sku: item.sku, channel: o.channel, qty: item.qty, revenue: Math.round(item.qty * item.unitPrice) });
+      }
+    }
+  }
+  const topProducts = Array.from(productMap.values())
+    .sort((a, b) => b.qty - a.qty)
+    .slice(0, 10)
+    .map(p => ({ ...p, revenue: Math.round(p.revenue) }));
+
+  return { orders, total: orders.length, totalRevenue, topProducts };
 }
 
 // ─── /api/logistics ──────────────────────────────────────────────────────────────
