@@ -35,6 +35,11 @@ const TYPE_ICON: Record<SearchType, string> = {
   guia: '📦', remito: '🧾', dni: '🪪', tn: '🛍️', vtex: '🔴', ml: '🟡',
 }
 
+function isEntregado(estado: string) {
+  const e = estado.toLowerCase()
+  return e.includes('entregad') || e.includes('efectiva')
+}
+
 function getEstadoColor(estado: string): string {
   const e = estado.toLowerCase()
   if (e.includes('entregad') || e.includes('efectiva')) return '#00A651'
@@ -51,17 +56,12 @@ function getEstadoColor(estado: string): string {
 function detectType(q: string): { type: SearchType; label: string } | null {
   const t = q.trim()
   if (t.length < 3) return null
-  // ML: MLB/MLA + dígitos
   if (/^ML[A-Z]\d+$/i.test(t)) return { type: 'ml', label: 'Pedido MercadoLibre' }
-  // VTEX: letras/números + guión + números
   if (/^[A-Z0-9]+-\d+$/i.test(t)) return { type: 'vtex', label: 'Pedido VTEX' }
-  // DNI argentino: exactamente 7 u 8 dígitos (va ANTES que TiendaNube)
+  // DNI: exactamente 7-8 dígitos
   if (/^\d{7,8}$/.test(t)) return { type: 'dni', label: 'DNI' }
-  // TiendaNube: 9 o más dígitos
-  if (/^\d{9,}$/.test(t)) return { type: 'tn', label: 'Pedido TiendaNube' }
-  // Número corto → nro de guía PAAQ/Epresis
-  if (/^\d+$/.test(t)) return { type: 'guia', label: 'Nro de Envío' }
-  // Alfanumérico → remito / nro de venta
+  // Todo número restante (incl. 9+ dígitos como PAAQ tracking) → nro de seguimiento
+  if (/^\d+$/.test(t)) return { type: 'guia', label: 'Nro de Seguimiento' }
   return { type: 'remito', label: 'Nro de Venta' }
 }
 
@@ -106,20 +106,41 @@ function Spinner({ size = 4 }: { size?: number }) {
 // ── Tracking Timeline ─────────────────────────────────────────────────────────
 
 function TrackingTimeline({ eventos }: { eventos: any[] }) {
+  // Ordenar cronológicamente (el más viejo primero)
+  const sorted = [...eventos].sort((a, b) => {
+    const da = a.receptor_fecha_hora ?? a.fecha ?? ''
+    const db = b.receptor_fecha_hora ?? b.fecha ?? ''
+    return da.localeCompare(db)
+  })
+
   return (
     <div className="space-y-0 mt-3">
-      {eventos.map((ev, i) => {
-        const isLast = i === eventos.length - 1
-        const color = getEstadoColor(ev.estado)
+      {sorted.map((ev, i) => {
+        const isLast = i === sorted.length - 1
+        const color = getEstadoColor(ev.estado ?? '')
+
+        // Soporta formato nuevo (receptor_fecha_hora) y legacy (fecha + hora)
+        const fechaHora = ev.receptor_fecha_hora
+          ? ev.receptor_fecha_hora.replace('T', ' ')
+          : [ev.fecha, ev.hora].filter(Boolean).join(' · ')
+        const receptor = ev.receptor_nombre?.trim() || ev.receptor || null
+        const detalles = ev.detalles || null
+        const codigo = ev.estado_codigo || null
+
         return (
           <div key={i} className="flex gap-3">
             <div className="flex flex-col items-center">
-              <div className="w-3 h-3 rounded-full mt-0.5 flex-shrink-0" style={{ backgroundColor: color }} />
-              {!isLast && <div className="w-px flex-1 mt-1" style={{ backgroundColor: 'rgba(0,166,81,0.15)' }} />}
+              <div className="w-3 h-3 rounded-full mt-0.5 flex-shrink-0" style={{ backgroundColor: isLast ? color : '#374151' }} />
+              {!isLast && <div className="w-px flex-1 mt-1 bg-[rgba(0,166,81,0.12)]" />}
             </div>
             <div className={`flex-1 ${isLast ? 'pb-0' : 'pb-4'}`}>
               <div className="flex items-center gap-2 flex-wrap">
-                <span className="text-xs font-semibold px-2 py-0.5 rounded-full" style={{ color, backgroundColor: `${color}20` }}>
+                {codigo && (
+                  <span className="text-[10px] font-mono text-gray-600 bg-gray-800 px-1.5 rounded">
+                    {codigo}
+                  </span>
+                )}
+                <span className="text-xs font-semibold" style={{ color }}>
                   {ev.estado}
                 </span>
                 {isLast && (
@@ -128,9 +149,14 @@ function TrackingTimeline({ eventos }: { eventos: any[] }) {
                   </span>
                 )}
               </div>
-              <div className="text-xs text-gray-500 mt-0.5">
-                {ev.fecha}{ev.hora && ` · ${ev.hora}`}
-                {ev.receptor && <span className="ml-2 text-gray-400">Recibió: {ev.receptor}</span>}
+              {detalles && (
+                <div className="text-xs text-gray-500 mt-0.5">{detalles}</div>
+              )}
+              <div className="text-xs text-gray-600 mt-0.5 flex items-center gap-2">
+                {fechaHora && <span>{fechaHora}</span>}
+                {receptor && receptor.trim() && (
+                  <span className="text-gray-400">· Recibió: <span className="font-medium">{receptor}</span></span>
+                )}
               </div>
             </div>
           </div>
@@ -142,10 +168,84 @@ function TrackingTimeline({ eventos }: { eventos: any[] }) {
 
 // ── Shipment Card ─────────────────────────────────────────────────────────────
 
+function ConstanciaButton({ nroGuia }: { nroGuia: string }) {
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const handleDownload = async (e: React.MouseEvent) => {
+    e.stopPropagation()
+    setLoading(true)
+    setError(null)
+    try {
+      const res = await fetch(`/api/logistics/constancia?tracking=${encodeURIComponent(nroGuia)}`)
+      const contentType = res.headers.get('content-type') ?? ''
+
+      if (contentType.includes('application/json')) {
+        const json = await res.json()
+        if (json.url) {
+          window.open(json.url, '_blank')
+          return
+        }
+        if (!res.ok) {
+          setError(json.error ?? 'No disponible')
+          return
+        }
+      }
+
+      if (!res.ok) {
+        setError('Constancia no disponible')
+        return
+      }
+
+      // Es un PDF/binario — descargarlo
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `constancia-${nroGuia}.pdf`
+      a.click()
+      URL.revokeObjectURL(url)
+    } catch {
+      setError('Error al descargar')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <div className="flex items-center gap-2">
+      <button
+        onClick={handleDownload}
+        disabled={loading}
+        className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg bg-[#00A651]/10 border border-[#00A651]/30 text-[#00A651] hover:bg-[#00A651]/20 transition-all disabled:opacity-50 font-semibold"
+      >
+        {loading ? (
+          <>
+            <svg className="animate-spin h-3 w-3" viewBox="0 0 24 24" fill="none">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+            </svg>
+            Descargando...
+          </>
+        ) : (
+          <>
+            <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 10v6m0 0l-3-3m3 3l3-3M3 17V7a2 2 0 012-2h6l2 2h6a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z" />
+            </svg>
+            Constancia Electrónica
+          </>
+        )}
+      </button>
+      {error && <span className="text-xs text-red-400">{error}</span>}
+    </div>
+  )
+}
+
 function ShipmentCard({ s }: { s: ShipmentResult }) {
   const [expanded, setExpanded] = useState(false)
   const color = getEstadoColor(s.estado)
   const eventos: any[] = Array.isArray(s.eventos) ? s.eventos : []
+  const entregado = isEntregado(s.estado)
 
   return (
     <div className="bg-[#071409] border border-[rgba(0,166,81,0.12)] rounded-xl overflow-hidden">
@@ -153,41 +253,79 @@ function ShipmentCard({ s }: { s: ShipmentResult }) {
         className="p-4 flex items-start justify-between gap-3 cursor-pointer hover:bg-[rgba(0,166,81,0.03)] transition-colors"
         onClick={() => setExpanded(v => !v)}
       >
-        <div className="flex-1 min-w-0 space-y-1">
+        <div className="flex-1 min-w-0 space-y-1.5">
           <div className="flex items-center gap-2 flex-wrap">
-            {s.nroGuia && <span className="font-mono text-sm font-semibold text-gray-200">Guía #{s.nroGuia}</span>}
-            {s.remito  && <span className="text-xs text-gray-400 font-mono">Remito: {s.remito}</span>}
-            {s.source === 'epresis' && <span className="text-xs text-gray-600 italic">· Epresis tiempo real</span>}
+            {s.nroGuia && (
+              <span className="font-mono text-sm font-bold text-gray-100">#{s.nroGuia}</span>
+            )}
+            {s.guiaAgente && s.guiaAgente !== s.nroGuia && (
+              <span className="text-xs text-gray-500 font-mono">Agente: {s.guiaAgente}</span>
+            )}
+            {s.remito && !s.nroGuia && (
+              <span className="font-mono text-sm font-bold text-gray-100">Remito {s.remito}</span>
+            )}
+            {s.source === 'epresis' && (
+              <span className="text-[10px] text-gray-600 italic bg-gray-800/50 px-1.5 py-0.5 rounded">
+                Epresis · tiempo real
+              </span>
+            )}
           </div>
+
           <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-xs font-semibold px-2 py-0.5 rounded-full" style={{ color, backgroundColor: `${color}20` }}>
+            <span
+              className="text-xs font-bold px-2.5 py-0.5 rounded-full"
+              style={{ color, backgroundColor: `${color}18` }}
+            >
               {s.estado}
             </span>
             {s.servicio && <span className="text-xs text-gray-500">{s.servicio}</span>}
+            {entregado && s.fechaEntrega && (
+              <span className="text-xs text-gray-500">
+                Entregado {new Date(s.fechaEntrega).toLocaleDateString('es-AR')}
+              </span>
+            )}
           </div>
+
           {s.destinatario && (
-            <div className="text-xs text-gray-400 truncate">
-              {s.destinatario}{s.localidad && ` · ${s.localidad}`}{s.provincia && `, ${s.provincia}`}
+            <div className="text-xs text-gray-400">
+              {s.destinatario}
+              {s.localidad && ` · ${s.localidad}`}
+              {s.provincia && `, ${s.provincia}`}
             </div>
           )}
-          {/* Cross-platform refs */}
-          <div className="flex gap-2 flex-wrap mt-1">
+
+          <div className="flex gap-2 flex-wrap">
+            {s.remito && s.nroGuia && (
+              <span className="text-xs text-gray-500 font-mono">Venta: {s.remito}</span>
+            )}
             {s.tiendanubeOrderId && <span className="text-xs text-sky-400/80 bg-sky-900/20 px-2 py-0.5 rounded">TN #{s.tiendanubeOrderId}</span>}
             {s.vtexOrderId       && <span className="text-xs text-red-400/80 bg-red-900/20 px-2 py-0.5 rounded">VTEX {s.vtexOrderId}</span>}
             {s.mlOrderId         && <span className="text-xs text-yellow-400/80 bg-yellow-900/20 px-2 py-0.5 rounded">ML {s.mlOrderId}</span>}
           </div>
         </div>
-        <div className="flex-shrink-0 flex flex-col items-end gap-1">
+
+        <div className="flex-shrink-0 flex flex-col items-end gap-1.5">
           {s.fechaCreacion && (
-            <div className="text-xs text-gray-500">{new Date(s.fechaCreacion).toLocaleDateString('es-AR')}</div>
+            <div className="text-xs text-gray-500">
+              {new Date(s.fechaCreacion).toLocaleDateString('es-AR')}
+            </div>
           )}
-          <span className="text-gray-500 text-xs">{expanded ? '▲' : '▼'}</span>
+          {eventos.length > 0 && (
+            <span className="text-xs text-gray-600">{eventos.length} eventos {expanded ? '▲' : '▼'}</span>
+          )}
         </div>
       </div>
 
+      {/* Constancia electrónica — visible siempre en envíos entregados */}
+      {entregado && s.nroGuia && (
+        <div className="px-4 pb-3 -mt-1" onClick={e => e.stopPropagation()}>
+          <ConstanciaButton nroGuia={s.nroGuia} />
+        </div>
+      )}
+
       {expanded && eventos.length > 0 && (
         <div className="border-t border-[rgba(0,166,81,0.08)] px-4 py-4">
-          <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">
+          <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
             Historial de movimientos ({eventos.length})
           </div>
           <TrackingTimeline eventos={eventos} />
