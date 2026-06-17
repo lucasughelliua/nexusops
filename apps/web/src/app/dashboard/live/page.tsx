@@ -8,6 +8,7 @@ interface LiveOrder {
   created_at: string
   channel: string
   status: string
+  statusBucket: string
   revenue: number
   items: number
 }
@@ -40,8 +41,9 @@ export default function LivePage() {
       if (res.ok) {
         const data = await res.json()
         setOrders(data.orders ?? [])
-        setTodayOrders(data.orders?.length ?? 0)
-        setTodayTotal(data.orders?.reduce((s: number, o: LiveOrder) => s + o.revenue, 0) ?? 0)
+        setTodayOrders(data.total ?? data.orders?.length ?? 0)
+        // Revenue excluye canceladas (igual que Canales)
+        setTodayTotal(data.totalRevenue ?? data.orders?.filter((o: LiveOrder) => o.statusBucket !== 'cancelled').reduce((s: number, o: LiveOrder) => s + o.revenue, 0) ?? 0)
       }
     } catch {}
     finally { setLoading(false) }
@@ -112,7 +114,7 @@ export default function LivePage() {
           {!loading && orders.map(order => (
             <div
               key={order.id}
-              className="flex items-center gap-4 px-5 py-3 hover:bg-[#112011] transition-colors"
+              className={`flex items-center gap-4 px-5 py-3 hover:bg-[#112011] transition-colors ${order.statusBucket === 'cancelled' ? 'opacity-50' : ''}`}
             >
               <span className="text-[10px] text-gray-600 font-mono w-12 flex-shrink-0">
                 {relativeTime(order.created_at)}
@@ -122,10 +124,10 @@ export default function LivePage() {
               </span>
               <span className="text-xs text-gray-500 truncate flex-1 font-mono">#{order.id.slice(-8)}</span>
               <span className="text-xs text-gray-500">{order.items} item{order.items !== 1 ? 's' : ''}</span>
-              <span className={`text-xs font-medium ${STATUS_COLORS[order.status] ?? 'text-gray-400'}`}>
+              <span className={`text-xs font-medium ${STATUS_COLORS[order.status] ?? STATUS_COLORS[order.statusBucket] ?? 'text-gray-400'}`}>
                 {order.status}
               </span>
-              <span className="text-sm font-mono font-semibold text-gray-200 flex-shrink-0">
+              <span className={`text-sm font-mono font-semibold flex-shrink-0 ${order.statusBucket === 'cancelled' ? 'line-through text-gray-600' : 'text-gray-200'}`}>
                 {fmtARSCompact(order.revenue)}
               </span>
             </div>

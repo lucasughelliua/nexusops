@@ -478,9 +478,18 @@ export async function getLiveOrdersAnalytics(
   options: { statusFilter?: string[] } = {}
 ) {
   const channels = resolveChannels(channel);
-  const to = toARTDate(new Date());
-  const from = new Date(to.getTime() - DAY_MS);
-  const statusFilter = options.statusFilter && options.statusFilter.length > 0 ? options.statusFilter : ["pending", "dispatched", "in_transit", "delivered", "delayed"];
+
+  // Usar "hoy en ART (UTC-3)" exactamente igual que Canales con el preset "Hoy"
+  const nowUTC = new Date();
+  const artOffsetMs = 3 * 60 * 60 * 1000;
+  const nowART = new Date(nowUTC.getTime() - artOffsetMs);
+  const todayART = nowART.toISOString().split("T")[0]; // 'YYYY-MM-DD' en horario ART
+  const from = new Date(`${todayART}T00:00:00-03:00`);
+  const to   = new Date(`${todayART}T23:59:59-03:00`);
+
+  // Incluir canceladas para que el conteo total coincida con Canales (ordersCount = allOrders.length)
+  const ALL_STATUSES = ["pending", "dispatched", "in_transit", "delivered", "delayed", "cancelled"];
+  const statusFilter = options.statusFilter && options.statusFilter.length > 0 ? options.statusFilter : ALL_STATUSES;
 
   const allOrders: NormalizedOrder[] = [];
   for (const ch of channels) {
@@ -495,11 +504,16 @@ export async function getLiveOrdersAnalytics(
     created_at: o.date,
     channel: o.channel,
     status: o.status === "mock" ? o.statusBucket : o.status,
+    statusBucket: o.statusBucket,
     revenue: Math.round(o.total),
     items: o.items.length > 0 ? sum(o.items.map((it) => it.qty)) : 1,
   }));
 
-  return { orders, total: orders.length };
+  // Total revenue y órdenes excluyendo canceladas (mismo criterio que kpi.revenue en metrics)
+  const validOrders = orders.filter((o) => o.statusBucket !== "cancelled");
+  const totalRevenue = sum(validOrders.map((o) => o.revenue));
+
+  return { orders, total: orders.length, totalRevenue };
 }
 
 // ─── /api/logistics ──────────────────────────────────────────────────────────────
