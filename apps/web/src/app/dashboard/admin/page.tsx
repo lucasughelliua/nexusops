@@ -1039,7 +1039,9 @@ function AdminPageContent() {
                       name="epresis-api-url"
                       className="w-full bg-[#071409] border border-[rgba(0,166,81,0.2)] rounded-lg px-3 py-2 text-sm text-gray-200 outline-none focus:border-[#00A651] transition-colors font-mono"
                     />
-                    <p className="text-xs text-gray-500 mt-1">Dejar en blanco para usar la URL de producción estándar</p>
+                    <p className="text-xs text-gray-500 mt-1">
+                      Dejá este campo <strong className="text-gray-400">en blanco</strong> — la URL correcta es <span className="font-mono text-gray-400">https://api.epresis.com</span> y se usa automáticamente. No ingreses la URL del sitio web.
+                    </p>
                   </div>
                 </div>
                 {status?.syncError && <p className="text-xs text-red-400">{status.syncError}</p>}

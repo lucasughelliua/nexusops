@@ -38,7 +38,7 @@ export interface EpresisStats {
  * Documentación: https://epresis.seguimientodeenvios.ar/docs/index.html
  */
 export class EpresisClient implements IntegrationClient {
-  platform = Platform.GOOGLE_SHEETS; // Temporary: use GOOGLE_SHEETS as a placeholder since EPRESIS is not in Prisma yet
+  platform = Platform.EPRESIS;
   private client: AxiosInstance;
   private apiToken: string;
 
@@ -46,55 +46,43 @@ export class EpresisClient implements IntegrationClient {
     const creds = credentials as any;
     this.apiToken = creds.apiToken;
 
-    const baseURL = creds.apiUrl || "https://api.epresis.com";
+    // Ignorar apiUrl si parece ser el sitio web (no la API)
+    const rawUrl: string | undefined = creds.apiUrl;
+    const isWebsite = rawUrl && !rawUrl.includes("api.epresis") && rawUrl.includes("epresis.seguimientodeenvios");
+    const baseURL = (!rawUrl || isWebsite) ? "https://api.epresis.com" : rawUrl;
 
     this.client = axios.create({
       baseURL,
-      headers: {
-        "Content-Type": "application/json",
-      },
+      headers: { "Content-Type": "application/json" },
       timeout: 30000,
+      // Seguir redirects manteniendo el método (evita POST→GET en 301/302)
+      maxRedirects: 5,
     });
   }
 
-  /**
-   * Test de conexión - verifica que el token sea válido
-   */
   async testConnection(): Promise<boolean> {
     try {
-      // Intentar un request simple con credenciales válidas
-      const response = await this.client.post("/api/v2/seguimiento.json", {
-        api_token: this.apiToken,
-        nro_guia: "test",
-      });
-      // Si no lanza excepción, es válido (aunque el nro_guia no exista)
+      // dummy-test.json es el endpoint oficial de health check de Epresis
+      await this.client.post("/api/v2/dummy-test.json", { api_token: this.apiToken });
       return true;
     } catch (error) {
       if (axios.isAxiosError(error)) {
-        // 401/403 = token inválido
         if (error.response?.status === 401 || error.response?.status === 403) {
           throw new IntegrationError(
             this.platform,
-            "Epresis API token is invalid or expired",
+            "Epresis API token inválido o expirado",
             error.response?.status,
             error
           );
         }
-        // Otros errores (404, timeouts, etc.) podría ser válido si el endpoint existe
-        // pero queremos ser conservadores
         throw new IntegrationError(
           this.platform,
-          `Failed to connect to Epresis: ${error.response?.statusText || error.message}`,
+          `Failed to connect to Epresis: ${error.response?.data?.message || error.response?.statusText || error.message}`,
           error.response?.status,
           error
         );
       }
-      throw new IntegrationError(
-        this.platform,
-        "Failed to connect to Epresis",
-        undefined,
-        error
-      );
+      throw new IntegrationError(this.platform, "Failed to connect to Epresis", undefined, error);
     }
   }
 
