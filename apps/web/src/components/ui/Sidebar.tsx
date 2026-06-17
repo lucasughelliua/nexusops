@@ -64,16 +64,18 @@ export default function Sidebar() {
     >
       {/* Logo + toggle */}
       <div
-        className="px-3 py-4 flex items-center gap-2.5"
+        className={`py-4 flex items-center ${collapsed ? 'justify-center px-0' : 'px-3 gap-2.5'}`}
         style={{ borderBottom: '1px solid color-mix(in srgb, var(--ua-green) 12%, transparent)' }}
       >
-        {/* Logo icon */}
-        <div
-          className="w-8 h-8 rounded-lg flex items-center justify-center text-white text-sm font-bold flex-shrink-0"
-          style={{ backgroundColor: 'var(--ua-green)' }}
-        >
-          N
-        </div>
+        {/* Logo icon — hidden when collapsed to make room for toggle */}
+        {!collapsed && (
+          <div
+            className="w-8 h-8 rounded-lg flex items-center justify-center text-white text-sm font-bold flex-shrink-0"
+            style={{ backgroundColor: 'var(--ua-green)' }}
+          >
+            N
+          </div>
+        )}
 
         {/* Text — hidden when collapsed */}
         {!collapsed && (
@@ -85,10 +87,10 @@ export default function Sidebar() {
           </div>
         )}
 
-        {/* Toggle button */}
+        {/* Toggle button — always visible */}
         <button
           onClick={toggleCollapsed}
-          className="flex-shrink-0 w-7 h-7 flex flex-col items-center justify-center gap-[5px] rounded-md hover:bg-[#0c1a0d] transition-colors"
+          className="flex-shrink-0 w-8 h-8 flex flex-col items-center justify-center gap-[5px] rounded-md hover:bg-[#0c1a0d] transition-colors"
           title={collapsed ? 'Expandir barra lateral' : 'Colapsar barra lateral'}
         >
           <span className="w-4 h-[2px] rounded bg-gray-400" />

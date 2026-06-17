@@ -1062,7 +1062,7 @@ function AdminPageContent() {
       {activeTab === 'settings' && (
         <div className="bg-[#0c1a0d] border border-[rgba(0,166,81,0.15)] rounded-xl p-6 max-w-lg space-y-5">
           <div>
-            <label className="block text-xs text-gray-500 mb-1">Meta diaria de revenue ($)</label>
+            <label className="block text-xs text-gray-500 mb-1">Meta mensual de revenue ($)</label>
             <input
               value={goal} onChange={e => setGoal(e.target.value)} type="number"
               className="w-full bg-[#071409] border border-[rgba(0,166,81,0.2)] rounded-lg px-3 py-2

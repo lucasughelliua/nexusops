@@ -49,6 +49,7 @@ export default function MetricasPage() {
   const [loadingProducts, setLoadingProducts] = useState(true)
   const [productOffset, setProductOffset]   = useState(0)
   const [lastUpdated, setLastUpdated]       = useState('')
+  const [monthlyGoal, setMonthlyGoal]       = useState(4_500_000)
 
   // ─── Fetch metrics ──────────────────────────────────────────────────────────
   const fetchMetrics = useCallback(async () => {
@@ -109,6 +110,15 @@ export default function MetricasPage() {
     const interval = setInterval(fetchMetrics, 120_000)
     return () => clearInterval(interval)
   }, [fetchMetrics])
+
+  // ─── Leer meta mensual desde localStorage ──────────────────────────────────
+  useEffect(() => {
+    const saved = localStorage.getItem('nexusops_goal')
+    if (saved) {
+      const n = Number(saved)
+      if (!isNaN(n) && n > 0) setMonthlyGoal(n)
+    }
+  }, [])
 
   const kpi = metrics?.kpi
 
@@ -306,14 +316,14 @@ export default function MetricasPage() {
             <div
               className="h-full rounded-full transition-all duration-700"
               style={{
-                width: `${Math.min(100, ((kpi?.revenue ?? 0) / 4_500_000) * 100)}%`,
+                width: `${Math.min(100, ((kpi?.revenue ?? 0) / monthlyGoal) * 100)}%`,
                 background: 'linear-gradient(90deg, #00A651, #00C65E)',
               }}
             />
           </div>
           <div className="flex items-center justify-between mt-1.5">
             <span className="text-[10px] text-gray-600">$0</span>
-            <span className="text-[10px] text-gray-600">Meta: $4.5M</span>
+            <span className="text-[10px] text-gray-600">Meta: {fmtARSCompact(monthlyGoal)}</span>
           </div>
         </div>
       </div>
