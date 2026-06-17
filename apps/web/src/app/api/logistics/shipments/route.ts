@@ -54,21 +54,15 @@ export interface ShipmentResult {
 function detectType(q: string): { type: SearchType; label: string } {
   const t = q.trim();
   // ML: nro de venta empieza con 20000 (ej: 20000135479898009)
-  if (/^20000\d+$/.test(t))            return { type: "ml",   label: "Pedido MercadoLibre" };
+  if (/^20000\d+$/.test(t))        return { type: "ml",   label: "Pedido MercadoLibre" };
   // VTEX: número largo + guión + dígitos (ej: 1639990689180-01)
-  if (/^\d{8,}-\d{1,4}$/.test(t))     return { type: "vtex", label: "Pedido VTEX" };
-  // VTEX con prefijo alfabético (ej: GRU-123456)
-  if (/^[A-Z][A-Z0-9]*-\d+$/i.test(t)) return { type: "vtex", label: "Pedido VTEX" };
-  // CUIT argentino: exactamente 11 dígitos → Epresis lo busca como dni/cuit
-  if (/^\d{11}$/.test(t))         return { type: "dni",   label: "CUIT" };
-  // DNI viejo: exactamente 7 dígitos
-  if (/^\d{7}$/.test(t))          return { type: "dni",   label: "DNI" };
-  // PAAQ tracking: 9 o 10 dígitos (ej: 455164805)
-  if (/^\d{9,10}$/.test(t))       return { type: "guia",  label: "Nro de Seguimiento" };
-  // 8 dígitos puros = pedido VTEX sin guión en PAAQ (ej: 31533900)
-  if (/^\d{8}$/.test(t))          return { type: "remito", label: "Nro de Venta" };
-  // Cualquier otro número largo → guía
-  if (/^\d+$/.test(t))            return { type: "guia",  label: "Nro de Seguimiento" };
+  if (/^\d{8,}-\d{1,4}$/.test(t)) return { type: "vtex", label: "Pedido VTEX" };
+  // DNI: exactamente 8 dígitos (PAAQ lo interpreta como DNI/CUIT)
+  if (/^\d{8}$/.test(t))           return { type: "dni",  label: "DNI" };
+  // PAAQ tracking: 9 o más dígitos
+  if (/^\d{9,}$/.test(t))          return { type: "guia", label: "Nro de Seguimiento" };
+  // Número corto → nro de seguimiento
+  if (/^\d+$/.test(t))             return { type: "guia", label: "Nro de Seguimiento" };
   return { type: "remito", label: "Nro de Venta" };
 }
 

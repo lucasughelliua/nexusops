@@ -59,18 +59,12 @@ function getEstadoColor(estado: string): string {
 function detectType(q: string): { type: SearchType; label: string } | null {
   const t = q.trim()
   if (t.length < 3) return null
-  if (/^20000\d+$/.test(t))             return { type: 'ml',   label: 'Pedido MercadoLibre' }
-  if (/^\d{8,}-\d{1,4}$/.test(t))      return { type: 'vtex', label: 'Pedido VTEX' }
-  if (/^[A-Z][A-Z0-9]*-\d+$/i.test(t)) return { type: 'vtex', label: 'Pedido VTEX' }
-  // CUIT: exactamente 11 dígitos
-  if (/^\d{11}$/.test(t))          return { type: 'dni',    label: 'CUIT' }
-  // DNI viejo: 7 dígitos
-  if (/^\d{7}$/.test(t))           return { type: 'dni',    label: 'DNI' }
-  // PAAQ tracking: 9 o 10 dígitos
-  if (/^\d{9,10}$/.test(t))        return { type: 'guia',   label: 'Nro de Seguimiento' }
-  // 8 dígitos = pedido VTEX sin guión en PAAQ
-  if (/^\d{8}$/.test(t))           return { type: 'remito', label: 'Nro de Venta' }
-  if (/^\d+$/.test(t))             return { type: 'guia',   label: 'Nro de Seguimiento' }
+  if (/^20000\d+$/.test(t))        return { type: 'ml',   label: 'Pedido MercadoLibre' }
+  if (/^\d{8,}-\d{1,4}$/.test(t)) return { type: 'vtex', label: 'Pedido VTEX' }
+  // DNI: exactamente 8 dígitos (PAAQ lo interpreta como DNI/CUIT)
+  if (/^\d{8}$/.test(t))          return { type: 'dni',  label: 'DNI' }
+  // PAAQ tracking: 9 o más dígitos
+  if (/^\d+$/.test(t))            return { type: 'guia', label: 'Nro de Seguimiento' }
   return { type: 'remito', label: 'Nro de Venta' }
 }
 
