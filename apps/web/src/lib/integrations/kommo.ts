@@ -68,8 +68,17 @@ export class KommoClient implements IntegrationClient {
   private client: AxiosInstance;
 
   constructor(credentials: KommoCredentials) {
+    // Kommo API v4 requires the api_domain from the JWT token, not the subdomain
+    let apiDomain = `${credentials.subdomain}.kommo.com`;
+    try {
+      const payload = JSON.parse(
+        Buffer.from(credentials.accessToken.split(".")[1], "base64url").toString("utf8")
+      );
+      if (payload?.api_domain) apiDomain = payload.api_domain;
+    } catch {}
+
     this.client = axios.create({
-      baseURL: `https://${credentials.subdomain}.kommo.com/api/v4`,
+      baseURL: `https://${apiDomain}/api/v4`,
       headers: {
         Authorization: `Bearer ${credentials.accessToken}`,
         "Content-Type": "application/json",
