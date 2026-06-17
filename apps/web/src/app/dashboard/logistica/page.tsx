@@ -787,43 +787,33 @@ function ImportTab() {
 
 // ── Coverage Tab ─────────────────────────────────────────────────────────────
 
+const COVERAGE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyVzkowj9Sz2EfZfgIxjmKidE9miNdOOF43GHy1-cCC60CVVZ6IMO0pI7HZs-Jhm0fy/exec'
+
 function CoverageTab() {
   const [cp, setCp] = useState('')
-  const [loading, setLoading] = useState(false)
-  const [result, setResult] = useState<{ cobertura?: boolean; localidad?: string; provincia?: string; raw?: string; error?: string } | null>(null)
+  const [iframeSrc, setIframeSrc] = useState<string | null>(null)
+  const [iframeLoading, setIframeLoading] = useState(false)
 
-  const handleSearch = async (e: React.FormEvent) => {
+  const handleSearch = (e: React.FormEvent) => {
     e.preventDefault()
     const val = cp.trim()
     if (!/^\d{4}$/.test(val)) return
-    setLoading(true)
-    setResult(null)
-    try {
-      const res = await fetch(`/api/logistics/coverage?cp=${encodeURIComponent(val)}`)
-      const data = await res.json()
-      setResult(data)
-    } catch {
-      setResult({ error: 'No se pudo consultar la planilla' })
-    } finally {
-      setLoading(false)
-    }
+    setIframeLoading(true)
+    setIframeSrc(`${COVERAGE_SCRIPT_URL}?cp=${encodeURIComponent(val)}`)
   }
 
-  const hasCobertura = result && !result.error && result.cobertura !== false
-  const noCobertura  = result && !result.error && result.cobertura === false
-
   return (
-    <div className="max-w-lg space-y-6">
+    <div className="space-y-6">
       <div>
         <h2 className="text-base font-semibold text-gray-100 mb-1">Cobertura por Código Postal</h2>
         <p className="text-sm text-gray-500">Consultá si un CP tiene cobertura de entrega según la planilla cargada.</p>
       </div>
 
-      <form onSubmit={handleSearch} className="flex gap-2">
+      <form onSubmit={handleSearch} className="flex gap-2 max-w-sm">
         <input
           type="text"
           value={cp}
-          onChange={e => { setCp(e.target.value.replace(/\D/g, '').slice(0, 4)); setResult(null) }}
+          onChange={e => { setCp(e.target.value.replace(/\D/g, '').slice(0, 4)); setIframeSrc(null) }}
           placeholder="Ej: 1429"
           maxLength={4}
           className="flex-1 bg-[#0a120b] border border-[rgba(0,166,81,0.25)] rounded-lg px-4 py-2.5
@@ -832,44 +822,31 @@ function CoverageTab() {
         />
         <button
           type="submit"
-          disabled={cp.length !== 4 || loading}
+          disabled={cp.length !== 4}
           className="px-5 py-2.5 bg-[#00A651] hover:bg-[#009347] disabled:opacity-40
                      text-white text-sm font-semibold rounded-lg transition-colors flex items-center gap-2"
         >
-          {loading ? <Spinner size={4} /> : '🔍'}
-          Consultar
+          🔍 Consultar
         </button>
       </form>
 
-      {result?.error && (
-        <div className="bg-red-950/30 border border-red-800/40 rounded-xl p-4 text-sm text-red-300">
-          {result.error}
-        </div>
-      )}
-
-      {(hasCobertura || noCobertura) && (
-        <div className={`rounded-xl p-5 border ${hasCobertura
-          ? 'bg-[rgba(0,166,81,0.08)] border-[rgba(0,166,81,0.3)]'
-          : 'bg-red-950/20 border-red-800/30'
-        }`}>
-          <div className="flex items-center gap-3 mb-3">
-            <span className="text-3xl">{hasCobertura ? '✅' : '❌'}</span>
-            <div>
-              <div className={`text-lg font-bold ${hasCobertura ? 'text-[#00A651]' : 'text-red-400'}`}>
-                CP {cp} — {hasCobertura ? 'Tiene cobertura' : 'Sin cobertura'}
+      {iframeSrc && (
+        <div className="relative rounded-xl overflow-hidden border border-[rgba(0,166,81,0.2)]" style={{ height: 520 }}>
+          {iframeLoading && (
+            <div className="absolute inset-0 flex items-center justify-center bg-[#0c1a0d] z-10">
+              <div className="flex flex-col items-center gap-3 text-gray-500">
+                <Spinner size={6} />
+                <span className="text-sm">Consultando planilla…</span>
               </div>
-              {result?.localidad && (
-                <div className="text-sm text-gray-400 mt-0.5">
-                  {result.localidad}{result.provincia ? `, ${result.provincia}` : ''}
-                </div>
-              )}
-            </div>
-          </div>
-          {result?.raw && !result.localidad && (
-            <div className="text-xs text-gray-500 font-mono mt-2 bg-black/20 rounded px-3 py-2 break-all">
-              {result.raw}
             </div>
           )}
+          <iframe
+            src={iframeSrc}
+            onLoad={() => setIframeLoading(false)}
+            className="w-full h-full border-0 bg-white"
+            title="Cobertura CP"
+            sandbox="allow-scripts allow-same-origin allow-forms"
+          />
         </div>
       )}
     </div>
