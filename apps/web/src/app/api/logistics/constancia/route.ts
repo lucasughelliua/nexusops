@@ -33,7 +33,7 @@ export async function GET(request: NextRequest) {
       responseType: "arraybuffer",
     });
 
-    const contentType = res.headers["content-type"] ?? "application/pdf";
+    const contentType = String(res.headers["content-type"] ?? "application/pdf");
 
     if (contentType.includes("application/json")) {
       // Respuesta JSON — puede ser una URL de descarga
