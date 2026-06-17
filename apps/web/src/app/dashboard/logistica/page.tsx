@@ -785,17 +785,109 @@ function ImportTab() {
   )
 }
 
+// ── Coverage Tab ─────────────────────────────────────────────────────────────
+
+function CoverageTab() {
+  const [cp, setCp] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [result, setResult] = useState<{ cobertura?: boolean; localidad?: string; provincia?: string; raw?: string; error?: string } | null>(null)
+
+  const handleSearch = async (e: React.FormEvent) => {
+    e.preventDefault()
+    const val = cp.trim()
+    if (!/^\d{4}$/.test(val)) return
+    setLoading(true)
+    setResult(null)
+    try {
+      const res = await fetch(`/api/logistics/coverage?cp=${encodeURIComponent(val)}`)
+      const data = await res.json()
+      setResult(data)
+    } catch {
+      setResult({ error: 'No se pudo consultar la planilla' })
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const hasCobertura = result && !result.error && result.cobertura !== false
+  const noCobertura  = result && !result.error && result.cobertura === false
+
+  return (
+    <div className="max-w-lg space-y-6">
+      <div>
+        <h2 className="text-base font-semibold text-gray-100 mb-1">Cobertura por Código Postal</h2>
+        <p className="text-sm text-gray-500">Consultá si un CP tiene cobertura de entrega según la planilla cargada.</p>
+      </div>
+
+      <form onSubmit={handleSearch} className="flex gap-2">
+        <input
+          type="text"
+          value={cp}
+          onChange={e => { setCp(e.target.value.replace(/\D/g, '').slice(0, 4)); setResult(null) }}
+          placeholder="Ej: 1429"
+          maxLength={4}
+          className="flex-1 bg-[#0a120b] border border-[rgba(0,166,81,0.25)] rounded-lg px-4 py-2.5
+                     text-gray-100 placeholder-gray-600 font-mono text-sm
+                     focus:outline-none focus:border-[#00A651] transition-colors"
+        />
+        <button
+          type="submit"
+          disabled={cp.length !== 4 || loading}
+          className="px-5 py-2.5 bg-[#00A651] hover:bg-[#009347] disabled:opacity-40
+                     text-white text-sm font-semibold rounded-lg transition-colors flex items-center gap-2"
+        >
+          {loading ? <Spinner size={4} /> : '🔍'}
+          Consultar
+        </button>
+      </form>
+
+      {result?.error && (
+        <div className="bg-red-950/30 border border-red-800/40 rounded-xl p-4 text-sm text-red-300">
+          {result.error}
+        </div>
+      )}
+
+      {(hasCobertura || noCobertura) && (
+        <div className={`rounded-xl p-5 border ${hasCobertura
+          ? 'bg-[rgba(0,166,81,0.08)] border-[rgba(0,166,81,0.3)]'
+          : 'bg-red-950/20 border-red-800/30'
+        }`}>
+          <div className="flex items-center gap-3 mb-3">
+            <span className="text-3xl">{hasCobertura ? '✅' : '❌'}</span>
+            <div>
+              <div className={`text-lg font-bold ${hasCobertura ? 'text-[#00A651]' : 'text-red-400'}`}>
+                CP {cp} — {hasCobertura ? 'Tiene cobertura' : 'Sin cobertura'}
+              </div>
+              {result?.localidad && (
+                <div className="text-sm text-gray-400 mt-0.5">
+                  {result.localidad}{result.provincia ? `, ${result.provincia}` : ''}
+                </div>
+              )}
+            </div>
+          </div>
+          {result?.raw && !result.localidad && (
+            <div className="text-xs text-gray-500 font-mono mt-2 bg-black/20 rounded px-3 py-2 break-all">
+              {result.raw}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ── Main Page ─────────────────────────────────────────────────────────────────
 
-type Tab = 'buscar' | 'metricas' | 'importar'
+type Tab = 'buscar' | 'metricas' | 'importar' | 'cobertura'
 
 export default function LogisticaPage() {
   const [tab, setTab] = useState<Tab>('buscar')
 
   const TABS: { id: Tab; label: string; icon: string }[] = [
-    { id: 'buscar',   label: 'Buscar Envío', icon: '🔍' },
-    { id: 'metricas', label: 'Métricas',     icon: '📊' },
-    { id: 'importar', label: 'Importar',     icon: '⬆' },
+    { id: 'buscar',    label: 'Buscar Envío', icon: '🔍' },
+    { id: 'metricas',  label: 'Métricas',     icon: '📊' },
+    { id: 'importar',  label: 'Importar',     icon: '⬆' },
+    { id: 'cobertura', label: 'Cobertura CP', icon: '📍' },
   ]
 
   return (
@@ -826,9 +918,10 @@ export default function LogisticaPage() {
 
       {/* Tab content */}
       <div className="bg-[#0c1a0d] border border-[rgba(0,166,81,0.15)] rounded-xl p-6">
-        {tab === 'buscar'   && <SearchTab />}
-        {tab === 'metricas' && <MetricsTab />}
-        {tab === 'importar' && <ImportTab />}
+        {tab === 'buscar'    && <SearchTab />}
+        {tab === 'metricas'  && <MetricsTab />}
+        {tab === 'importar'  && <ImportTab />}
+        {tab === 'cobertura' && <CoverageTab />}
       </div>
     </div>
   )

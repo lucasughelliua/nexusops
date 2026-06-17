@@ -367,7 +367,7 @@ export async function getMetricsAnalytics(
   }
   const heatmap = Array.from(heatmapMap.entries()).map(([key, value]) => {
     const [day, hour] = key.split("-").map(Number);
-    return { day, hour, orders: value.count, revenue: Math.round(value.revenue) };
+    return { day, hour, value: value.count, orders: value.count, revenue: Math.round(value.revenue) };
   });
 
   // Resumen por canal

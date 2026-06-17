@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { fmtARSCompact, fmtNum, fmtPct, deltaIcon, deltaClass } from '@/lib/utils'
+import { fmtARS, fmtNum, fmtPct, deltaIcon, deltaClass } from '@/lib/utils'
 
 interface KPICardProps {
   title: string
@@ -28,8 +28,8 @@ export default function KPICard({
 }: KPICardProps) {
   const [showTooltip, setShowTooltip] = useState(false)
   const formattedValue =
-    format === 'currency' ? fmtARSCompact(value) :
-    format === 'percent'  ? fmtPct(value)        :
+    format === 'currency' ? fmtARS(value) :
+    format === 'percent'  ? fmtPct(value) :
     fmtNum(value)
 
   const deltaColor = delta != null ? deltaClass(delta) : ''
