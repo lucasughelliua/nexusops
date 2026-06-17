@@ -53,8 +53,11 @@ export interface ShipmentResult {
  */
 function detectType(q: string): { type: SearchType; label: string } {
   const t = q.trim();
-  if (/^ML[A-Z]\d+$/i.test(t))    return { type: "ml",    label: "Pedido MercadoLibre" };
-  if (/^[A-Z0-9]+-\d+$/i.test(t)) return { type: "vtex",  label: "Pedido VTEX" };
+  // ML: MLA/MLB clásico  O  nro largo numérico + guión (ej: 1639990689180-01)
+  if (/^ML[A-Z]\d+$/i.test(t))        return { type: "ml",   label: "Pedido MercadoLibre" };
+  if (/^\d{8,}-\d{1,4}$/.test(t))     return { type: "ml",   label: "Pedido MercadoLibre" };
+  // VTEX: prefijo ALFABÉTICO + guión + números (ej: GRU-123456)
+  if (/^[A-Z][A-Z0-9]*-\d+$/i.test(t)) return { type: "vtex", label: "Pedido VTEX" };
   // CUIT argentino: exactamente 11 dígitos → Epresis lo busca como dni/cuit
   if (/^\d{11}$/.test(t))         return { type: "dni",   label: "CUIT" };
   // DNI viejo: exactamente 7 dígitos
