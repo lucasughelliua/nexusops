@@ -41,7 +41,7 @@ export async function POST(request: NextRequest) {
     const epresisConfig = await getChannelConfig("epresis");
     if (epresisConfig) {
       const creds = epresisConfig as any;
-      const baseURL = creds.apiUrl || "https://api.epresis.com";
+      const baseURL = creds.apiUrl || "https://epresis.seguimientodeenvios.ar";
       const reqBody: any = { api_token: creds.apiToken };
       if (nroGuia) reqBody.nro_guia = nroGuia;
       else if (remitoStr) reqBody.remito = remitoStr;

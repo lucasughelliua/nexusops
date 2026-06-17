@@ -18,7 +18,7 @@ export async function POST(request: NextRequest) {
   }
 
   const creds = cfg as any;
-  const baseURL = creds.apiUrl || "https://api.epresis.com";
+  const baseURL = creds.apiUrl || "https://epresis.seguimientodeenvios.ar";
 
   // URL pública de nuestro webhook
   const appUrl = process.env.NEXTAUTH_URL || "https://nexusops.up.railway.app";

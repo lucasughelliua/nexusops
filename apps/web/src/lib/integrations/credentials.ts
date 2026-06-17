@@ -316,7 +316,7 @@ function summarizeConfig(channel: ChannelKey, config: Record<string, any>): Reco
     case "epresis":
       return {
         "API Token": mask(config.apiToken),
-        "API URL": config.apiUrl || "api.epresis.com",
+        "API URL": config.apiUrl || "epresis.seguimientodeenvios.ar",
       };
     default:
       return {};

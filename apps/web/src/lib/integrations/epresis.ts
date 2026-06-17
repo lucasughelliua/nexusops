@@ -46,10 +46,12 @@ export class EpresisClient implements IntegrationClient {
     const creds = credentials as any;
     this.apiToken = creds.apiToken;
 
-    // Ignorar apiUrl si parece ser el sitio web (no la API)
-    const rawUrl: string | undefined = creds.apiUrl;
-    const isWebsite = rawUrl && !rawUrl.includes("api.epresis") && rawUrl.includes("epresis.seguimientodeenvios");
-    const baseURL = (!rawUrl || isWebsite) ? "https://api.epresis.com" : rawUrl;
+    // La API real de Epresis está en epresis.seguimientodeenvios.ar (no en api.epresis.com)
+    // Ignorar apiUrl si está vacío o si parece ser un URL incorrecto
+    const rawUrl: string | undefined = creds.apiUrl?.trim();
+    const CORRECT_API = "https://epresis.seguimientodeenvios.ar";
+    const isWrongUrl = rawUrl && !rawUrl.includes("epresis.seguimientodeenvios.ar");
+    const baseURL = (!rawUrl || isWrongUrl) ? CORRECT_API : rawUrl;
 
     this.client = axios.create({
       baseURL,

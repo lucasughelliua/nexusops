@@ -1034,13 +1034,13 @@ function AdminPageContent() {
                     <input
                       value={epresisForm.apiUrl}
                       onChange={(e) => setEpresisForm({ ...epresisForm, apiUrl: e.target.value })}
-                      placeholder="https://api.epresis.com"
+                      placeholder="https://epresis.seguimientodeenvios.ar"
                       autoComplete="off"
                       name="epresis-api-url"
                       className="w-full bg-[#071409] border border-[rgba(0,166,81,0.2)] rounded-lg px-3 py-2 text-sm text-gray-200 outline-none focus:border-[#00A651] transition-colors font-mono"
                     />
                     <p className="text-xs text-gray-500 mt-1">
-                      Dejá este campo <strong className="text-gray-400">en blanco</strong> — la URL correcta es <span className="font-mono text-gray-400">https://api.epresis.com</span> y se usa automáticamente. No ingreses la URL del sitio web.
+                      Dejá este campo <strong className="text-gray-400">en blanco</strong> — la URL <span className="font-mono text-gray-400">https://epresis.seguimientodeenvios.ar</span> se usa automáticamente.
                     </p>
                   </div>
                 </div>

@@ -47,14 +47,21 @@ function getEstadoColor(estado: string): string {
 
 // ── Detect type from input ────────────────────────────────────────────────────
 
+// Misma lógica que shipments/route.ts detectType (mantener sincronizadas)
 function detectType(q: string): { type: SearchType; label: string } | null {
   const t = q.trim()
   if (t.length < 3) return null
-  if (/^ML[A-Z]/i.test(t)) return { type: 'ml', label: 'Pedido MercadoLibre' }
-  if (/^\d{7,}-\d+$/.test(t)) return { type: 'vtex', label: 'Pedido VTEX' }
-  if (/^\d{9,}$/.test(t)) return { type: 'tn', label: 'Pedido TiendaNube' }
+  // ML: MLB/MLA + dígitos
+  if (/^ML[A-Z]\d+$/i.test(t)) return { type: 'ml', label: 'Pedido MercadoLibre' }
+  // VTEX: letras/números + guión + números
+  if (/^[A-Z0-9]+-\d+$/i.test(t)) return { type: 'vtex', label: 'Pedido VTEX' }
+  // DNI argentino: exactamente 7 u 8 dígitos (va ANTES que TiendaNube)
   if (/^\d{7,8}$/.test(t)) return { type: 'dni', label: 'DNI' }
+  // TiendaNube: 9 o más dígitos
+  if (/^\d{9,}$/.test(t)) return { type: 'tn', label: 'Pedido TiendaNube' }
+  // Número corto → nro de guía PAAQ/Epresis
   if (/^\d+$/.test(t)) return { type: 'guia', label: 'Nro de Envío' }
+  // Alfanumérico → remito / nro de venta
   return { type: 'remito', label: 'Nro de Venta' }
 }
 

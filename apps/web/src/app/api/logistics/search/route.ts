@@ -55,7 +55,7 @@ export async function GET(request: NextRequest) {
   }
 
   const creds = epresisConfig as any;
-  const baseURL = creds.apiUrl || "https://api.epresis.com";
+  const baseURL = creds.apiUrl || "https://epresis.seguimientodeenvios.ar";
   const api_token = creds.apiToken;
 
   const body: Record<string, string> = { api_token };

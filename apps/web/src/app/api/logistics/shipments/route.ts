@@ -29,14 +29,15 @@ export interface ShipmentResult {
 
 function detectType(q: string): { type: SearchType; label: string } {
   const t = q.trim();
-  // ML: empieza con ML seguido de letras y dígitos
-  if (/^ML[A-Z]/i.test(t)) return { type: "ml", label: "Pedido MercadoLibre" };
-  // VTEX: formato con guión y sufijo numérico
-  if (/^\d{7,}-\d+$/.test(t)) return { type: "vtex", label: "Pedido VTEX" };
-  // TN: número de 8+ dígitos largo (TN usa IDs largos tipo 1234567890)
-  if (/^\d{8,}$/.test(t)) return { type: "tn", label: "Pedido TiendaNube" };
-  // DNI: 7-8 dígitos
+  // ML: empieza con MLB o MLA seguido de dígitos
+  if (/^ML[A-Z]\d+$/i.test(t)) return { type: "ml", label: "Pedido MercadoLibre" };
+  // VTEX: letras/números + guión + números (ej: GRU-1234567 o 1234567890-01)
+  if (/^[A-Z0-9]+-\d+$/i.test(t)) return { type: "vtex", label: "Pedido VTEX" };
+  // DNI argentino: exactamente 7 u 8 dígitos (va ANTES que TiendaNube)
   if (/^\d{7,8}$/.test(t)) return { type: "dni", label: "DNI" };
+  // TiendaNube: 9 o más dígitos seguidos
+  if (/^\d{9,}$/.test(t)) return { type: "tn", label: "Pedido TiendaNube" };
+  // Número corto (1-6 dígitos) → nro de guía Epresis/PAAQ
   // Número puro (6 o menos dígitos) → nro_guia
   if (/^\d+$/.test(t)) return { type: "guia", label: "Nro de Envío" };
   // Alfanumérico → remito
@@ -48,7 +49,7 @@ async function fetchFromEpresis(q: string, type: SearchType): Promise<ShipmentRe
   if (!cfg) return null;
 
   const creds = cfg as any;
-  const baseURL = creds.apiUrl || "https://api.epresis.com";
+  const baseURL = creds.apiUrl || "https://epresis.seguimientodeenvios.ar";
   const body: any = { api_token: creds.apiToken };
 
   if (type === "guia") body.nro_guia = q;
