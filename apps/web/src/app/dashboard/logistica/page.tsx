@@ -836,7 +836,7 @@ function CoverageTab() {
     <div className="space-y-6 max-w-md">
       <div>
         <h2 className="text-base font-semibold text-gray-100 mb-1">Cobertura por Código Postal</h2>
-        <p className="text-sm text-gray-500">Consultá si un CP tiene cobertura de entrega según la planilla cargada.</p>
+        <p className="text-sm text-gray-500">Consultá si un CP tiene cobertura de entrega PAAQ.</p>
       </div>
 
       <form onSubmit={handleSearch} className="flex gap-2">
