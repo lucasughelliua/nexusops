@@ -133,11 +133,15 @@ async function fetchByTracking(tracking: string, creds: any): Promise<ShipmentRe
 async function fetchByRemito(q: string, type: SearchType, creds: any): Promise<ShipmentResult | null> {
   const baseURL = epresisBaseURL(creds);
 
+  // VTEX: Epresis busca sin el guión (ej: 1639990689180-01 → 1639990689180)
+  const vtexClean = type === "vtex" ? q.replace(/-\d+$/, "") : q;
+
   let body: any;
   if (type === "dni") {
     body = { api_token: creds.apiToken, cuit: q };
-  } else if (type === "remito" || type === "vtex" || type === "ml") {
-    // VTEX (8 dígitos sin guión) y ML → guia_agente en PAAQ
+  } else if (type === "vtex" || type === "ml") {
+    body = { api_token: creds.apiToken, guia_agente: vtexClean };
+  } else if (type === "remito") {
     body = { api_token: creds.apiToken, guia_agente: q };
   } else {
     body = { api_token: creds.apiToken, remito: q };
@@ -145,25 +149,29 @@ async function fetchByRemito(q: string, type: SearchType, creds: any): Promise<S
   try {
     const res = await axios.post(`${baseURL}/api/v2/seguimiento.json`, body, { timeout: 12000 });
     if (res.data?.status === "ok" && res.data?.guia?.fechas?.length) {
-      const eventos = res.data.guia.fechas;
+      const guia = res.data.guia;
+      const eventos = guia.fechas;
       const ultimo = eventos[eventos.length - 1];
+      // Extraer nro de guía PAAQ del response para poder generar constancia
+      const guiaAgente: string | null =
+        guia.nro_guia ?? guia.guia_agente ?? guia.tracking ?? guia.nro ?? null;
       return {
         id: `epresis-${q}`,
-        nroGuia: null,
-        guiaAgente: null,
+        nroGuia: guiaAgente,
+        guiaAgente,
         remito: q,
         estado: ultimo?.estado ?? "DESCONOCIDO",
-        servicio: null,
-        destinatario: null,
+        servicio: guia.servicio ?? null,
+        destinatario: guia.destinatario ?? guia.receptor ?? null,
         dni: type === "dni" ? q : null,
-        localidad: null,
-        provincia: null,
+        localidad: guia.localidad ?? null,
+        provincia: guia.provincia ?? null,
         tiendanubeOrderId: null,
-        vtexOrderId: null,
-        mlOrderId: null,
+        vtexOrderId: type === "vtex" ? q : null,
+        mlOrderId: type === "ml" ? q : null,
         productos: null,
         eventos,
-        fechaCreacion: eventos[0]?.fecha ?? null,
+        fechaCreacion: eventos[0]?.fecha ?? guia.fecha_creacion ?? null,
         fechaEntrega: null,
         source: "epresis",
       };
@@ -235,8 +243,14 @@ export async function GET(request: NextRequest) {
     if (type === "guia") {
       epresisResult = await fetchByTracking(q, creds);
     } else if (type === "dni" || type === "remito" || type === "vtex" || type === "ml") {
-      // dni → cuit, remito → guia_agente (VTEX/ML sin guión), vtex/ml → guia_agente
       epresisResult = await fetchByRemito(q, type, creds);
+      // Si tenemos nroGuia del POST pero no guiaAgente, completar con tracking
+      if (epresisResult?.nroGuia && !epresisResult.guiaAgente) {
+        const tracked = await fetchByTracking(epresisResult.nroGuia, creds);
+        if (tracked) {
+          epresisResult = { ...tracked, remito: q, vtexOrderId: type === "vtex" ? q : null, mlOrderId: type === "ml" ? q : null };
+        }
+      }
     }
 
     if (epresisResult) {
