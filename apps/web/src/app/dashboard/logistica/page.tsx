@@ -168,7 +168,7 @@ function TrackingTimeline({ eventos }: { eventos: any[] }) {
 
 // ── Shipment Card ─────────────────────────────────────────────────────────────
 
-function ConstanciaButton({ nroGuia }: { nroGuia: string }) {
+function ConstanciaButton({ nroGuia, guiaAgente }: { nroGuia: string; guiaAgente?: string | null }) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -177,7 +177,9 @@ function ConstanciaButton({ nroGuia }: { nroGuia: string }) {
     setLoading(true)
     setError(null)
     try {
-      const res = await fetch(`/api/logistics/constancia?tracking=${encodeURIComponent(nroGuia)}`)
+      const params = new URLSearchParams({ tracking: nroGuia })
+      if (guiaAgente) params.set('guiaAgente', guiaAgente)
+      const res = await fetch(`/api/logistics/constancia?${params}`)
       const contentType = res.headers.get('content-type') ?? ''
 
       if (contentType.includes('application/json')) {
@@ -186,10 +188,8 @@ function ConstanciaButton({ nroGuia }: { nroGuia: string }) {
           window.open(json.url, '_blank')
           return
         }
-        if (!res.ok) {
-          setError(json.error ?? 'No disponible')
-          return
-        }
+        setError(json.error ?? 'Constancia no disponible en este momento')
+        return
       }
 
       if (!res.ok) {
@@ -197,7 +197,6 @@ function ConstanciaButton({ nroGuia }: { nroGuia: string }) {
         return
       }
 
-      // Es un PDF/binario — descargarlo
       const blob = await res.blob()
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
@@ -319,7 +318,7 @@ function ShipmentCard({ s }: { s: ShipmentResult }) {
       {/* Constancia electrónica — visible siempre en envíos entregados */}
       {entregado && s.nroGuia && (
         <div className="px-4 pb-3 -mt-1" onClick={e => e.stopPropagation()}>
-          <ConstanciaButton nroGuia={s.nroGuia} />
+          <ConstanciaButton nroGuia={s.nroGuia} guiaAgente={s.guiaAgente} />
         </div>
       )}
 
@@ -469,6 +468,8 @@ function MetricsTab() {
   const [servicio, setServicio] = useState('')
   const [data, setData] = useState<any>(null)
   const [loading, setLoading] = useState(false)
+  const [syncing, setSyncing] = useState(false)
+  const [syncMsg, setSyncMsg] = useState<{ ok: boolean; msg: string } | null>(null)
 
   const load = useCallback(async (f: string, t: string, srv: string) => {
     setLoading(true)
@@ -483,39 +484,105 @@ function MetricsTab() {
 
   useEffect(() => { load(from, to, servicio) }, [from, to, servicio, load])
 
+  const handleSync = async () => {
+    setSyncing(true)
+    setSyncMsg(null)
+    try {
+      const res = await fetch('/api/logistics/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ from, to }),
+      })
+      const d = await res.json()
+      if (d.noEndpoint) {
+        setSyncMsg({ ok: false, msg: 'Epresis no expone un endpoint de listado por fechas. Usá el CSV o registrá el Webhook para sincronización automática.' })
+      } else if (!res.ok) {
+        setSyncMsg({ ok: false, msg: d.error ?? 'Error al sincronizar' })
+      } else {
+        setSyncMsg({ ok: true, msg: `Sincronizados ${d.synced} de ${d.total} envíos desde Epresis.` })
+        load(from, to, servicio)
+      }
+    } catch {
+      setSyncMsg({ ok: false, msg: 'Error de red' })
+    } finally {
+      setSyncing(false)
+    }
+  }
+
   const noData = !data?.hasData
 
   return (
     <div className="space-y-6">
-      {/* Filters */}
-      <div className="flex flex-wrap gap-3 items-end">
-        <div className="flex flex-col gap-1">
-          <label className="text-xs font-semibold text-gray-400 uppercase">Desde</label>
-          <input type="date" value={from} onChange={e => setFrom(e.target.value)}
-            className="px-3 py-1.5 text-xs rounded-lg bg-[#071409] border border-[rgba(0,166,81,0.2)] text-gray-200 outline-none focus:border-[#00A651] transition-colors" />
-        </div>
-        <div className="flex flex-col gap-1">
-          <label className="text-xs font-semibold text-gray-400 uppercase">Hasta</label>
-          <input type="date" value={to} onChange={e => setTo(e.target.value)}
-            className="px-3 py-1.5 text-xs rounded-lg bg-[#071409] border border-[rgba(0,166,81,0.2)] text-gray-200 outline-none focus:border-[#00A651] transition-colors" />
-        </div>
-        {data?.serviciosDisponibles?.length > 0 && (
+      {/* Filters + Sync */}
+      <div className="flex flex-wrap gap-3 items-end justify-between">
+        <div className="flex flex-wrap gap-3 items-end">
           <div className="flex flex-col gap-1">
-            <label className="text-xs font-semibold text-gray-400 uppercase">Servicio</label>
-            <select value={servicio} onChange={e => setServicio(e.target.value)}
-              className="px-3 py-1.5 text-xs rounded-lg bg-[#071409] border border-[rgba(0,166,81,0.2)] text-gray-200 outline-none focus:border-[#00A651] transition-colors">
-              <option value="">Todos</option>
-              {data.serviciosDisponibles.map((s: string) => <option key={s} value={s}>{s}</option>)}
-            </select>
+            <label className="text-xs font-semibold text-gray-400 uppercase">Desde</label>
+            <input type="date" value={from} onChange={e => setFrom(e.target.value)}
+              className="px-3 py-1.5 text-xs rounded-lg bg-[#071409] border border-[rgba(0,166,81,0.2)] text-gray-200 outline-none focus:border-[#00A651] transition-colors" />
           </div>
-        )}
+          <div className="flex flex-col gap-1">
+            <label className="text-xs font-semibold text-gray-400 uppercase">Hasta</label>
+            <input type="date" value={to} onChange={e => setTo(e.target.value)}
+              className="px-3 py-1.5 text-xs rounded-lg bg-[#071409] border border-[rgba(0,166,81,0.2)] text-gray-200 outline-none focus:border-[#00A651] transition-colors" />
+          </div>
+          {data?.serviciosDisponibles?.length > 0 && (
+            <div className="flex flex-col gap-1">
+              <label className="text-xs font-semibold text-gray-400 uppercase">Servicio</label>
+              <select value={servicio} onChange={e => setServicio(e.target.value)}
+                className="px-3 py-1.5 text-xs rounded-lg bg-[#071409] border border-[rgba(0,166,81,0.2)] text-gray-200 outline-none focus:border-[#00A651] transition-colors">
+                <option value="">Todos</option>
+                {data.serviciosDisponibles.map((s: string) => <option key={s} value={s}>{s}</option>)}
+              </select>
+            </div>
+          )}
+        </div>
+
+        <button
+          onClick={handleSync}
+          disabled={syncing}
+          className="flex items-center gap-2 px-4 py-2 text-xs font-semibold rounded-lg bg-[#0c1a0d] border border-[rgba(0,166,81,0.25)] text-[#00A651] hover:bg-[rgba(0,166,81,0.08)] disabled:opacity-50 transition-all"
+        >
+          {syncing ? <><Spinner size={3} /> Sincronizando…</> : <>↺ Sincronizar desde Epresis</>}
+        </button>
       </div>
 
+      {syncMsg && (
+        <div className={`px-4 py-3 rounded-lg text-xs ${syncMsg.ok ? 'bg-green-900/20 border border-green-800/40 text-green-400' : 'bg-amber-900/20 border border-amber-800/40 text-amber-400'}`}>
+          {syncMsg.msg}
+        </div>
+      )}
+
       {noData && !loading ? (
-        <div className="p-6 rounded-xl bg-[#0c1a0d] border border-[rgba(0,166,81,0.15)] text-center">
-          <div className="text-2xl mb-2">📊</div>
-          <div className="text-sm text-gray-300 font-medium">Sin datos de envíos</div>
-          <div className="text-xs text-gray-500 mt-1">Importá el histórico de guías desde la pestaña <span className="text-[#00A651]">Importar</span> para ver métricas.</div>
+        <div className="p-8 rounded-xl bg-[#0c1a0d] border border-[rgba(0,166,81,0.15)] text-center space-y-4">
+          <div className="text-3xl">📊</div>
+          <div>
+            <div className="text-sm text-gray-300 font-semibold">Sin envíos en el período seleccionado</div>
+            <div className="text-xs text-gray-500 mt-1">Los datos se cargan automáticamente o de forma manual.</div>
+          </div>
+          <div className="flex items-center justify-center gap-3 text-xs text-gray-500">
+            <div className="flex items-center gap-1.5">
+              <span className="text-[#00A651]">●</span>
+              <span>Webhook activo → sync automático al cambiar estado</span>
+            </div>
+            <span>·</span>
+            <div className="flex items-center gap-1.5">
+              <span className="text-blue-400">●</span>
+              <span>Botón "Sincronizar" → fetch de Epresis para el período</span>
+            </div>
+            <span>·</span>
+            <div className="flex items-center gap-1.5">
+              <span className="text-amber-400">●</span>
+              <span>CSV → importación histórica desde la pestaña Importar</span>
+            </div>
+          </div>
+          <button
+            onClick={handleSync}
+            disabled={syncing}
+            className="mx-auto flex items-center gap-2 px-5 py-2 text-xs font-semibold rounded-lg bg-[#00A651]/10 border border-[#00A651]/30 text-[#00A651] hover:bg-[#00A651]/20 disabled:opacity-50 transition-all"
+          >
+            {syncing ? <><Spinner size={3} /> Sincronizando…</> : <>↺ Sincronizar desde Epresis ({from} → {to})</>}
+          </button>
         </div>
       ) : (
         <>
