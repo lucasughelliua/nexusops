@@ -810,14 +810,26 @@ function ImportTab() {
 
 // ── Coverage Tab ─────────────────────────────────────────────────────────────
 
-const COVERAGE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyVzkowj9Sz2EfZfgIxjmKidE9miNdOOF43GHy1-cCC60CVVZ6IMO0pI7HZs-Jhm0fy/exec'
-
 function CoverageTab() {
   const [cp, setCp] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [result, setResult] = useState<{ cobertura: boolean | null; localidad?: string | null; provincia?: string | null; error?: string } | null>(null)
 
-  const consultar = () => {
-    if (cp.length !== 4) return
-    window.open(`${COVERAGE_SCRIPT_URL}?cp=${encodeURIComponent(cp)}`, '_blank')
+  const handleSearch = async (e: React.FormEvent) => {
+    e.preventDefault()
+    const val = cp.trim()
+    if (!/^\d{4}$/.test(val)) return
+    setLoading(true)
+    setResult(null)
+    try {
+      const res = await fetch(`/api/logistics/coverage?cp=${encodeURIComponent(val)}`)
+      const data = await res.json()
+      setResult(data)
+    } catch {
+      setResult({ cobertura: null, error: 'No se pudo consultar la cobertura' })
+    } finally {
+      setLoading(false)
+    }
   }
 
   return (
@@ -827,12 +839,11 @@ function CoverageTab() {
         <p className="text-sm text-gray-500">Consultá si un CP tiene cobertura de entrega PAAQ.</p>
       </div>
 
-      <div className="flex gap-2">
+      <form onSubmit={handleSearch} className="flex gap-2">
         <input
           type="text"
           value={cp}
-          onChange={e => setCp(e.target.value.replace(/\D/g, '').slice(0, 4))}
-          onKeyDown={e => e.key === 'Enter' && consultar()}
+          onChange={e => { setCp(e.target.value.replace(/\D/g, '').slice(0, 4)); setResult(null) }}
           placeholder="Ej: 1429"
           maxLength={4}
           className="flex-1 bg-[#0a120b] border border-[rgba(0,166,81,0.25)] rounded-lg px-4 py-2.5
@@ -840,14 +851,50 @@ function CoverageTab() {
                      focus:outline-none focus:border-[#00A651] transition-colors"
         />
         <button
-          onClick={consultar}
-          disabled={cp.length !== 4}
+          type="submit"
+          disabled={cp.length !== 4 || loading}
           className="px-5 py-2.5 bg-[#00A651] hover:bg-[#009347] disabled:opacity-40
-                     text-white text-sm font-semibold rounded-lg transition-colors"
+                     text-white text-sm font-semibold rounded-lg transition-colors flex items-center gap-2"
         >
-          🔍 Consultar
+          {loading ? <Spinner size={4} /> : '🔍'}
+          Consultar
         </button>
-      </div>
+      </form>
+
+      {result?.error && (
+        <div className="bg-red-950/30 border border-red-800/40 rounded-xl p-4 text-sm text-red-300">
+          {result.error}
+        </div>
+      )}
+
+      {result && !result.error && (
+        <div className={`rounded-xl px-5 py-4 border flex items-center gap-4 ${
+          result.cobertura === true  ? 'bg-[rgba(0,166,81,0.08)] border-[rgba(0,166,81,0.3)]' :
+          result.cobertura === false ? 'bg-red-950/20 border-red-800/30' :
+          'bg-[#1a1a1a] border-gray-700'
+        }`}>
+          <span className="text-4xl flex-shrink-0">
+            {result.cobertura === true ? '✅' : result.cobertura === false ? '❌' : '❓'}
+          </span>
+          <div>
+            <div className={`text-lg font-bold ${
+              result.cobertura === true  ? 'text-[#00A651]' :
+              result.cobertura === false ? 'text-red-400' :
+              'text-gray-400'
+            }`}>
+              CP {cp} —{' '}
+              {result.cobertura === true  ? 'Tiene cobertura' :
+               result.cobertura === false ? 'Sin cobertura' :
+               'No se pudo determinar'}
+            </div>
+            {(result.localidad || result.provincia) && (
+              <div className="text-sm text-gray-400 mt-0.5">
+                {[result.localidad, result.provincia].filter(Boolean).join(', ')}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   )
 }
