@@ -244,11 +244,18 @@ export async function GET(request: NextRequest) {
       epresisResult = await fetchByTracking(q, creds);
     } else if (type === "dni" || type === "remito" || type === "vtex" || type === "ml") {
       epresisResult = await fetchByRemito(q, type, creds);
-      // Si tenemos nroGuia del POST pero no guiaAgente, completar con tracking
-      if (epresisResult?.nroGuia && !epresisResult.guiaAgente) {
-        const tracked = await fetchByTracking(epresisResult.nroGuia, creds);
-        if (tracked) {
-          epresisResult = { ...tracked, remito: q, vtexOrderId: type === "vtex" ? q : null, mlOrderId: type === "ml" ? q : null };
+      // Si no tenemos guiaAgente del POST, intentar extraerlo de los eventos
+      if (epresisResult && !epresisResult.guiaAgente) {
+        // Buscar en eventos algún número que parezca un nro de seguimiento PAAQ (9+ dígitos)
+        const paqNumber = epresisResult.eventos
+          ?.find((e: any) => /^\d{9,}$/.test(String(e.estado_codigo || e.codigo || "")))
+          ?.[Object.keys(epresisResult.eventos[0] || {})[0]];
+
+        if (paqNumber) {
+          const tracked = await fetchByTracking(String(paqNumber), creds);
+          if (tracked) {
+            epresisResult = { ...tracked, remito: q, vtexOrderId: type === "vtex" ? q : null, mlOrderId: type === "ml" ? q : null };
+          }
         }
       }
     }

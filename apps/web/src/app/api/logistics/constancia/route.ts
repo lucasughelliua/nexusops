@@ -27,57 +27,81 @@ export async function GET(request: NextRequest) {
   const EPRESIS_BASE = "https://epresis.seguimientodeenvios.ar";
 
   try {
-    // Crear cliente axios que mantenga cookies automáticamente
-    const jar = new http.Agent();
-    const httpsJar = new https.Agent();
-
-    const client: AxiosInstance = axios.create({
-      httpAgent: jar,
-      httpsAgent: httpsJar,
-      withCredentials: true,
-      maxRedirects: 10,
+    // Usar urllib3 equivalent - simple fetch
+    const loginParams = new URLSearchParams({
+      email: EPRESIS_USER,
+      password: EPRESIS_PASS,
     });
 
     // 1. Login en Epresis
-    const loginRes = await client.post(
-      `${EPRESIS_BASE}/login`,
-      new URLSearchParams({
-        email: EPRESIS_USER,
-        password: EPRESIS_PASS,
-      }).toString(),
-      {
-        headers: {
-          "Content-Type": "application/x-www-form-urlencoded",
-          "User-Agent": "Mozilla/5.0 (compatible)",
-          "Referer": EPRESIS_BASE,
-        },
-      }
-    );
+    const loginRes = await fetch(`${EPRESIS_BASE}/login`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        "Referer": EPRESIS_BASE,
+        "Origin": EPRESIS_BASE,
+      },
+      body: loginParams.toString(),
+      redirect: "manual",
+    });
 
-    // 2. Descargar constancia usando la misma sesión
-    const constanciaRes = await client.get(
+    console.log("Login status:", loginRes.status);
+
+    // Extraer todas las cookies (puede haber múltiples Set-Cookie headers)
+    const cookies: string[] = [];
+    loginRes.headers.forEach((value, name) => {
+      if (name.toLowerCase() === "set-cookie") {
+        cookies.push(value.split(";")[0]);
+      }
+    });
+
+    const cookieString = cookies.join("; ");
+    console.log("Cookies received:", cookieString ? "yes" : "no");
+
+    if (!cookieString) {
+      console.warn("No cookies in login response");
+    }
+
+    // 2. Descargar constancia usando las cookies
+    const constanciaRes = await fetch(
       `${EPRESIS_BASE}/guias/remito/imprimir-guia?url=constancia_electronica&guia_id=${encodeURIComponent(guiaAgente)}`,
       {
-        responseType: "arraybuffer",
+        method: "GET",
         headers: {
-          "User-Agent": "Mozilla/5.0 (compatible)",
-          "Referer": EPRESIS_BASE,
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+          "Referer": `${EPRESIS_BASE}/login`,
+          "Cookie": cookieString,
         },
       }
     );
 
-    // Verificar que sea PDF (primeros bytes: %PDF)
-    const buffer = Buffer.from(constanciaRes.data);
-    const isPdf = buffer.slice(0, 4).toString() === "%PDF";
+    console.log("Constancia status:", constanciaRes.status);
+
+    if (!constanciaRes.ok) {
+      const text = await constanciaRes.text();
+      console.log("Constancia error response:", text.slice(0, 200));
+      return NextResponse.json(
+        { error: "No se pudo descargar la constancia", status: constanciaRes.status },
+        { status: 502 }
+      );
+    }
+
+    const buffer = await constanciaRes.arrayBuffer();
+    const bufferData = Buffer.from(buffer);
+    const isPdf = bufferData.slice(0, 4).toString() === "%PDF";
+
+    console.log("Is PDF:", isPdf, "Size:", bufferData.length);
 
     if (!isPdf) {
+      console.warn("Response is not PDF. First bytes:", bufferData.slice(0, 100).toString());
       return NextResponse.json(
         { error: "La respuesta no es un PDF válido" },
         { status: 502 }
       );
     }
 
-    return new NextResponse(buffer, {
+    return new NextResponse(bufferData, {
       status: 200,
       headers: {
         "Content-Type": "application/pdf",
@@ -86,7 +110,7 @@ export async function GET(request: NextRequest) {
       },
     });
   } catch (err: any) {
-    console.error("Error descargando constancia:", err.message);
+    console.error("Error descargando constancia:", err.message, err.stack);
     return NextResponse.json(
       { error: "No se pudo descargar la constancia", detail: err?.message },
       { status: 502 }
