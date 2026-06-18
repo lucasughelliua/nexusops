@@ -1,13 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
-import { getChannelConfig } from "@/lib/integrations/credentials";
-import axios from "axios";
 
 /**
  * GET /api/logistics/constancia?guiaAgente=...
- * Descarga la constancia electrónica de Epresis y la proxea al browser.
- * Usa el api_token almacenado para autenticar, evitando login manual.
+ * Descarga la constancia electrónica de Epresis.
+ * Usa credenciales preconfiguradas para login automático.
  */
 export async function GET(request: NextRequest) {
   const session = await getServerSession(authOptions);
@@ -21,42 +19,58 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  const cfg = await getChannelConfig("epresis");
-  const apiToken = (cfg as any)?.apiToken ?? null;
-
-  // URL de la constancia — intentar con api_token como parámetro
-  const base = "https://epresis.seguimientodeenvios.ar/guias/remito/imprimir-guia";
-  const params = new URLSearchParams({ url: "constancia_electronica", guia_id: guiaAgente });
-  if (apiToken) params.set("api_token", apiToken);
-  const constanciaUrl = `${base}?${params.toString()}`;
+  const EPRESIS_USER = process.env.EPRESIS_USER || "lucasughelli";
+  const EPRESIS_PASS = process.env.EPRESIS_PASS || "Lughelli01@";
+  const EPRESIS_BASE = "https://epresis.seguimientodeenvios.ar";
 
   try {
-    const res = await axios.get(constanciaUrl, {
-      responseType: "arraybuffer",
-      timeout: 20000,
-      maxRedirects: 10,
+    // 1. Login en Epresis
+    const loginRes = await fetch(`${EPRESIS_BASE}/login`, {
+      method: "POST",
       headers: {
-        "User-Agent": "Mozilla/5.0",
-        "Accept": "application/pdf,*/*",
+        "Content-Type": "application/x-www-form-urlencoded",
+        "User-Agent": "Mozilla/5.0 (compatible)",
       },
+      body: new URLSearchParams({
+        email: EPRESIS_USER,
+        password: EPRESIS_PASS,
+      }).toString(),
+      redirect: "manual", // no seguir redirecciones automáticas
     });
 
-    const contentType = String(res.headers["content-type"] ?? "application/pdf");
-    const isPdf = contentType.includes("pdf");
-
-    // Si devuelve HTML (login page) sin el token, falló la auth
-    if (!isPdf && contentType.includes("html")) {
-      // Fallback: devolver la URL para que el usuario la abra manualmente
+    // Extraer cookies del login
+    const setCookieHeader = loginRes.headers.get("set-cookie");
+    if (!setCookieHeader) {
       return NextResponse.json(
-        { error: "Epresis requiere autenticación para la constancia.", url: constanciaUrl },
+        { error: "No se pudo autenticar con Epresis" },
         { status: 401 }
       );
     }
 
-    return new NextResponse(res.data, {
+    // 2. Descargar constancia usando la sesión
+    const constanciaRes = await fetch(
+      `${EPRESIS_BASE}/guias/remito/imprimir-guia?url=constancia_electronica&guia_id=${encodeURIComponent(guiaAgente)}`,
+      {
+        method: "GET",
+        headers: {
+          Cookie: setCookieHeader.split(";")[0], // usar la primera cookie
+          "User-Agent": "Mozilla/5.0 (compatible)",
+        },
+      }
+    );
+
+    if (!constanciaRes.ok) {
+      return NextResponse.json(
+        { error: "No se pudo descargar la constancia", status: constanciaRes.status },
+        { status: 502 }
+      );
+    }
+
+    const buffer = await constanciaRes.arrayBuffer();
+    return new NextResponse(buffer, {
       status: 200,
       headers: {
-        "Content-Type": isPdf ? "application/pdf" : contentType,
+        "Content-Type": "application/pdf",
         "Content-Disposition": `inline; filename="constancia_${guiaAgente}.pdf"`,
         "Cache-Control": "no-store",
       },
