@@ -137,13 +137,21 @@ async function fetchByRemito(q: string, type: SearchType, creds: any): Promise<S
 
   try {
     const res = await axios.post(`${baseURL}/api/v2/seguimiento.json`, body, { timeout: 12000 });
+    console.log("Epresis response status:", res.data?.status);
+    console.log("Epresis guia fields:", {
+      guia_agente: res.data?.guia?.guia_agente,
+      nro_guia: res.data?.guia?.nro_guia,
+      tracking: res.data?.guia?.tracking,
+      nro: res.data?.guia?.nro,
+    });
+
     if (res.data?.status === "ok" && res.data?.guia?.fechas?.length) {
       const guia = res.data.guia;
       const eventos = guia.fechas;
       const ultimo = eventos[eventos.length - 1];
 
-      // Extraer número de seguimiento PAAQ (debe ser 9+ dígitos)
-      // Priorizar campos que típicamente contienen tracking PAAQ
+      // Extraer número de seguimiento PAAQ (debe ser 9+ dígitos puros)
+      // Buscar solo números sin guiones ni caracteres especiales
       let guiaAgente: string | null = null;
 
       // Intentar en orden: guia_agente, nro_guia, tracking, nro
@@ -155,22 +163,33 @@ async function fetchByRemito(q: string, type: SearchType, creds: any): Promise<S
       ];
 
       for (const candidate of candidates) {
-        if (candidate && /^\d{9,}$/.test(String(candidate))) {
-          guiaAgente = String(candidate);
+        if (!candidate) continue;
+        const str = String(candidate);
+        // Extraer solo los dígitos (eliminar guiones y otros caracteres)
+        const onlyDigits = str.replace(/\D/g, "");
+        if (onlyDigits.length >= 9 && /^\d{9,}$/.test(onlyDigits)) {
+          guiaAgente = onlyDigits;
+          console.log("guiaAgente encontrado:", onlyDigits, "desde:", candidate);
           break;
         }
       }
 
-      // Si no encontró un número de 9+ dígitos en campos principales,
-      // buscar en eventos
+      // Si no encontró en campos principales, buscar en eventos
       if (!guiaAgente && eventos && eventos.length > 0) {
+        console.log("Buscando en eventos...");
         for (const evento of eventos) {
           const codigo = (evento as any).estado_codigo || (evento as any).codigo || "";
-          if (/^\d{9,}$/.test(String(codigo))) {
-            guiaAgente = String(codigo);
+          const onlyDigits = String(codigo).replace(/\D/g, "");
+          if (onlyDigits.length >= 9 && /^\d{9,}$/.test(onlyDigits)) {
+            guiaAgente = onlyDigits;
+            console.log("guiaAgente encontrado en evento:", onlyDigits);
             break;
           }
         }
+      }
+
+      if (!guiaAgente) {
+        console.warn("No se encontró guiaAgente de 9+ dígitos. Usando fallback...");
       }
       return {
         id: `epresis-${q}`,
