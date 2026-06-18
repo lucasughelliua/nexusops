@@ -34,59 +34,71 @@ export async function GET(request: NextRequest) {
   const EPRESIS_BASE = "https://epresis.seguimientodeenvios.ar";
 
   try {
+    console.log("=== CONSTANCIA REQUEST ===");
+    console.log("guiaAgente:", guiaAgente);
+    console.log("EPRESIS_USER:", EPRESIS_USER);
+
+    let cookieString = "";
+
     // 1. Intentar login en Epresis
-    // Probar con form-urlencoded
-    const loginParams = new URLSearchParams({
-      email: EPRESIS_USER,
-      password: EPRESIS_PASS,
-    });
+    if (EPRESIS_USER && EPRESIS_PASS) {
+      console.log("Attempting login to Epresis...");
 
-    console.log("Attempting login to Epresis with user:", EPRESIS_USER);
+      // Intentar con form-urlencoded primero
+      const loginParams = new URLSearchParams({
+        email: EPRESIS_USER,
+        password: EPRESIS_PASS,
+      });
 
-    const loginRes = await fetch(`${EPRESIS_BASE}/login`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/x-www-form-urlencoded",
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-        "Referer": EPRESIS_BASE,
-        "Origin": EPRESIS_BASE,
-      },
-      body: loginParams.toString(),
-      redirect: "manual",
-    });
-
-    console.log("Login status:", loginRes.status);
-    console.log("Login response headers:", Array.from(loginRes.headers.keys()));
-
-    // Extraer todas las cookies (puede haber múltiples Set-Cookie headers)
-    const cookies: string[] = [];
-    loginRes.headers.forEach((value, name) => {
-      if (name.toLowerCase() === "set-cookie") {
-        const cookieOnly = value.split(";")[0];
-        console.log("Cookie found:", cookieOnly);
-        cookies.push(cookieOnly);
-      }
-    });
-
-    const cookieString = cookies.join("; ");
-    console.log("Cookies for constancia:", cookieString || "NONE");
-
-    // 2. Intentar descargar constancia directamente SIN login (fallback)
-    // Algunos sitios permiten acceso público a PDFs
-    const constanciaRes = await fetch(
-      `${EPRESIS_BASE}/guias/remito/imprimir-guia?url=constancia_electronica&guia_id=${encodeURIComponent(guiaAgente)}`,
-      {
-        method: "GET",
+      const loginRes = await fetch(`${EPRESIS_BASE}/login`, {
+        method: "POST",
         headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
           "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-          "Referer": `${EPRESIS_BASE}/login`,
-          ...(cookieString ? { "Cookie": cookieString } : {}),
+          "Referer": EPRESIS_BASE,
+          "Origin": EPRESIS_BASE,
+          "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
         },
-      }
-    );
+        body: loginParams.toString(),
+        redirect: "follow",
+      });
+
+      console.log("Login status:", loginRes.status);
+      console.log("Login URL after redirect:", loginRes.url);
+
+      // Extraer cookies
+      const cookies: string[] = [];
+      loginRes.headers.forEach((value, name) => {
+        if (name.toLowerCase() === "set-cookie") {
+          const cookieOnly = value.split(";")[0];
+          console.log("Cookie found:", cookieOnly);
+          cookies.push(cookieOnly);
+        }
+      });
+
+      cookieString = cookies.join("; ");
+      console.log("Cookies extracted:", cookieString ? "yes" : "no", `(${cookies.length} cookies)`);
+    }
+
+    // 2. Descargar constancia (con o sin login)
+    console.log("Attempting to download constancia...");
+    const constanciaUrl = `${EPRESIS_BASE}/guias/remito/imprimir-guia?url=constancia_electronica&guia_id=${encodeURIComponent(guiaAgente)}`;
+    console.log("URL:", constanciaUrl);
+
+    const constanciaRes = await fetch(constanciaUrl, {
+      method: "GET",
+      headers: {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        "Referer": `${EPRESIS_BASE}/login`,
+        "Accept": "application/pdf,*/*",
+        ...(cookieString ? { "Cookie": cookieString } : {}),
+      },
+      redirect: "follow",
+    });
 
     console.log("Constancia status:", constanciaRes.status);
-    console.log("Constancia response type:", constanciaRes.headers.get("content-type"));
+    console.log("Constancia final URL:", constanciaRes.url);
+    console.log("Constancia content-type:", constanciaRes.headers.get("content-type"));
 
     if (!constanciaRes.ok) {
       const text = await constanciaRes.text();
