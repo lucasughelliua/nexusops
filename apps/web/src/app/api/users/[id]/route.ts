@@ -80,7 +80,7 @@ export async function PATCH(
 }
 
 /**
- * DELETE /api/users/[id] - Eliminar un usuario (solo para ADMIN)
+ * DELETE /api/users/[id] - Desactivar un usuario (solo para ADMIN)
  */
 export async function DELETE(
   request: NextRequest,
@@ -92,10 +92,14 @@ export async function DELETE(
   }
 
   try {
-    await prisma.user.delete({ where: { id: params.id } });
-    return NextResponse.json({ message: "User deleted" });
+    const user = await prisma.user.update({
+      where: { id: params.id },
+      data: { status: false },
+      select: { id: true, username: true, name: true, role: true, status: true },
+    });
+    return NextResponse.json({ message: "User deactivated", user });
   } catch (error) {
-    console.error("Error deleting user:", error);
+    console.error("Error deactivating user:", error);
     return NextResponse.json({ message: "Internal server error" }, { status: 500 });
   }
 }
