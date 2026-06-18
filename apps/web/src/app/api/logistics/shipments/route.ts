@@ -210,11 +210,14 @@ export async function GET(request: NextRequest) {
     take: 20,
   });
 
-  if (dbResults.length > 0) {
+  // Para VTEX/ML, siempre consultar Epresis aunque haya en BD (para obtener guiaAgente)
+  const shouldConsultEpresis = (type === "vtex" || type === "ml" || type === "dni" || type === "remito") && dbResults.length > 0;
+
+  if (dbResults.length > 0 && !shouldConsultEpresis) {
     const results: ShipmentResult[] = dbResults.map(s => ({
       id: s.id,
       nroGuia: s.nroGuia,
-      guiaAgente: null,
+      guiaAgente: s.guiaAgente ?? (s.nroGuia || null),
       remito: s.remito,
       estado: s.estado,
       servicio: s.servicio,
@@ -234,7 +237,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ results, searchType: type, searchLabel: label, query: q, total: results.length });
   }
 
-  // 2. Fallback: consultar Epresis en tiempo real
+  // 2. Fallback/Required: consultar Epresis en tiempo real
   const cfg = await getChannelConfig("epresis");
   if (cfg) {
     const creds = cfg as any;
@@ -261,8 +264,43 @@ export async function GET(request: NextRequest) {
     }
 
     if (epresisResult) {
+      // Actualizar en BD si hay guiaAgente
+      if (epresisResult.guiaAgente && dbResults.length > 0) {
+        const dbResult = dbResults[0];
+        try {
+          await prisma.shipment.update({
+            where: { id: dbResult.id },
+            data: { guiaAgente: epresisResult.guiaAgente },
+          });
+        } catch {}
+      }
       return NextResponse.json({ results: [epresisResult], searchType: type, searchLabel: label, query: q, total: 1 });
     }
+  }
+
+  // Si tiene resultados en BD pero no pudo consultar Epresis, devolver lo que tiene
+  if (dbResults.length > 0) {
+    const results: ShipmentResult[] = dbResults.map(s => ({
+      id: s.id,
+      nroGuia: s.nroGuia,
+      guiaAgente: s.guiaAgente ?? (s.nroGuia || null),
+      remito: s.remito,
+      estado: s.estado,
+      servicio: s.servicio,
+      destinatario: s.destinatario,
+      dni: s.dni,
+      localidad: s.localidad,
+      provincia: s.provincia,
+      tiendanubeOrderId: s.tiendanubeOrderId,
+      vtexOrderId: s.vtexOrderId,
+      mlOrderId: s.mlOrderId,
+      productos: s.productos,
+      eventos: (s.eventos as unknown as TrackingEvent[]) ?? [],
+      fechaCreacion: s.fechaCreacion?.toISOString() ?? null,
+      fechaEntrega: s.fechaEntrega?.toISOString() ?? null,
+      source: "db",
+    }));
+    return NextResponse.json({ results, searchType: type, searchLabel: label, query: q, total: results.length });
   }
 
   return NextResponse.json({ results: [], searchType: type, searchLabel: label, query: q, total: 0 });

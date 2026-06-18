@@ -156,6 +156,7 @@ model AuditLog {
 model Shipment {
   id                String    @id @default(cuid())
   nroGuia           String?   @unique          // Nro de guía Epresis
+  guiaAgente        String?                    // Nro de seguimiento PAAQ (para constancia)
   remito            String?                    // Remito / referencia cliente
   estado            String    @default("DESCONOCIDO")
   codigoEstado      String?
