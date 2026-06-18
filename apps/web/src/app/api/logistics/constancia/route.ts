@@ -22,8 +22,15 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  const EPRESIS_USER = process.env.EPRESIS_USER || "lucasughelli";
-  const EPRESIS_PASS = process.env.EPRESIS_PASS || "Lughelli01@";
+  const EPRESIS_USER = process.env.EPRESIS_USER;
+  const EPRESIS_PASS = process.env.EPRESIS_PASS;
+
+  if (!EPRESIS_USER || !EPRESIS_PASS) {
+    return NextResponse.json(
+      { error: "Credenciales de Epresis no configuradas en el servidor" },
+      { status: 500 }
+    );
+  }
   const EPRESIS_BASE = "https://epresis.seguimientodeenvios.ar";
 
   try {
