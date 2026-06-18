@@ -54,15 +54,15 @@ export const authOptions: NextAuthOptions = {
             return null;
           }
 
-          // Sincronizar con BD
+          // Sincronizar con BD y verificar status
           let userId: string = email;
+          let isActive = true;
           try {
             const dbUser = await prisma.user.upsert({
               where: { username: email },
               update: {
                 name: testUser.name,
                 role: testUser.role as Role,
-                status: true,
               },
               create: {
                 username: email,
@@ -73,8 +73,13 @@ export const authOptions: NextAuthOptions = {
               },
             });
             userId = dbUser.id;
+            isActive = dbUser.status;
           } catch (error) {
             console.error("Error sincronizando usuario TEST_USER:", error);
+          }
+
+          if (!isActive) {
+            return null;
           }
 
           return {
