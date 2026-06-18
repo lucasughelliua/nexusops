@@ -235,10 +235,6 @@ export async function GET(request: NextRequest) {
   const whereConditions: any[] = [];
   if (type === "guia")   whereConditions.push({ nroGuia: q });
   if (type === "remito") whereConditions.push({ remito: q });
-  if (type === "dni")    whereConditions.push({ dni: q }, { remito: q });
-  if (type === "tn")     whereConditions.push({ tiendanubeOrderId: q }, { remito: q });
-  if (type === "vtex")   whereConditions.push({ vtexOrderId: q }, { remito: q });
-  if (type === "ml")     whereConditions.push({ mlOrderId: q }, { remito: q });
 
   const dbResults = await prisma.shipment.findMany({
     where: { OR: whereConditions },
