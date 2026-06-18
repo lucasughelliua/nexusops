@@ -25,18 +25,15 @@ const ESTADO_DOT: Record<string, string> = {
 const TYPE_CHIP: Record<SearchType, string> = {
   guia:   'text-blue-400 bg-blue-900/30 border-blue-800/40',
   remito: 'text-purple-400 bg-purple-900/30 border-purple-800/40',
-  dni:    'text-amber-400 bg-amber-900/30 border-amber-800/40',
-  tn:     'text-sky-400 bg-sky-900/30 border-sky-800/40',
-  vtex:   'text-red-400 bg-red-900/30 border-red-800/40',
-  ml:     'text-yellow-400 bg-yellow-900/30 border-yellow-800/40',
 }
 
 const TYPE_ICON: Record<SearchType, string> = {
-  guia: '📦', remito: '🧾', dni: '🪪', tn: '🛍️', vtex: '🔴', ml: '🟡',
+  guia: '📦',
+  remito: '🧾',
 }
 
 // Placeholder de texto para el input de búsqueda
-const SEARCH_PLACEHOLDER = 'Ej: 455164805 (tracking) · 31533900 (VTEX) · 20123456789 (CUIT) · MLB123'
+const SEARCH_PLACEHOLDER = 'Ej: 455164805 (seguimiento PAAQ) o 1639990689180 (pedido VTEX/ML)'
 
 function isEntregado(estado: string) {
   const e = estado.toLowerCase()
@@ -55,16 +52,15 @@ function getEstadoColor(estado: string): string {
 
 // ── Detect type from input ────────────────────────────────────────────────────
 
-// Misma lógica que shipments/route.ts detectType (mantener sincronizadas)
+// Solo 2 tipos: número de seguimiento PAAQ o número de venta
 function detectType(q: string): { type: SearchType; label: string } | null {
   const t = q.trim()
   if (t.length < 3) return null
-  if (/^20000\d+$/.test(t))        return { type: 'ml',   label: 'Pedido MercadoLibre' }
-  if (/^\d{8,}-\d{1,4}$/.test(t)) return { type: 'vtex', label: 'Pedido VTEX' }
-  // DNI: exactamente 8 dígitos (PAAQ lo interpreta como DNI/CUIT)
-  if (/^\d{8}$/.test(t))          return { type: 'dni',  label: 'DNI' }
-  // PAAQ tracking: 9 o más dígitos
-  if (/^\d+$/.test(t))            return { type: 'guia', label: 'Nro de Seguimiento' }
+  // Número de seguimiento PAAQ: 9+ dígitos
+  if (/^\d{9,}$/.test(t)) {
+    return { type: 'guia', label: 'Nro de Seguimiento PAAQ' }
+  }
+  // Todo lo demás = número de venta
   return { type: 'remito', label: 'Nro de Venta' }
 }
 
