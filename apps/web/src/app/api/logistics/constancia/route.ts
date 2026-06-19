@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
-import puppeteer from "puppeteer";
+import puppeteer from "puppeteer-core";
 
 /**
  * GET /api/logistics/constancia?guiaAgente=...
