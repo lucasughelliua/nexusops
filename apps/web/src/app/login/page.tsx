@@ -136,22 +136,6 @@ function LoginForm() {
               </button>
             </form>
 
-            {/* Test Credentials */}
-            <div className="mt-8 p-4 bg-[#0c1a0d] border border-[rgba(0,166,81,0.1)] rounded-lg">
-              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
-                📝 Credenciales de prueba
-              </p>
-              <div className="space-y-2 text-xs text-gray-500">
-                <p>
-                  <span className="text-gray-400">Email:</span>{" "}
-                  <code className="text-[#00C65E] font-mono">admin@nexusops.local</code>
-                </p>
-                <p>
-                  <span className="text-gray-400">Contraseña:</span>{" "}
-                  <code className="text-[#00C65E] font-mono">Admin@123</code>
-                </p>
-              </div>
-            </div>
           </div>
         </div>
 
