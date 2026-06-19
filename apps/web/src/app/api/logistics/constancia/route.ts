@@ -48,33 +48,81 @@ export async function GET(request: NextRequest) {
     });
 
     const page = await browser.newPage();
+    page.setDefaultTimeout(30000);
 
     // 1. Navegar a login
     console.log("Navegando a login...");
     await page.goto(`${EPRESIS_BASE}/login`, {
       waitUntil: "networkidle2",
-      timeout: 30000,
     });
 
-    // 2. Completar formulario de login
+    // 2. Completar formulario de login - intentar múltiples selectores
     console.log("Ingresando credenciales...");
-    await page.type('input[type="email"], input[name="email"], input[placeholder*="email" i]', EPRESIS_USER);
-    await page.type('input[type="password"], input[name="password"], input[placeholder*="password" i]', EPRESIS_PASS);
+    try {
+      await page.type('input[type="email"]', EPRESIS_USER);
+    } catch {
+      try {
+        await page.type('input[name="email"]', EPRESIS_USER);
+      } catch {
+        await page.type('input[placeholder*="email" i]', EPRESIS_USER);
+      }
+    }
 
-    // 3. Enviar formulario
+    try {
+      await page.type('input[type="password"]', EPRESIS_PASS);
+    } catch {
+      try {
+        await page.type('input[name="password"]', EPRESIS_PASS);
+      } catch {
+        await page.type('input[placeholder*="password" i]', EPRESIS_PASS);
+      }
+    }
+
+    // 3. Enviar formulario - intentar múltiples selectores
     console.log("Enviando formulario...");
-    await Promise.all([
-      page.waitForNavigation({ waitUntil: "networkidle2", timeout: 30000 }),
-      page.click('button[type="submit"], button:contains("Ingresar"), button:contains("Login")'),
-    ]).catch(() => console.log("Navigation timeout (puede ser normal)"));
+    let submitted = false;
+    const clickAttempts = [
+      'button[type="submit"]',
+      'button:has-text("Ingresar")',
+      'button:has-text("Login")',
+      'button:has-text("Enviar")',
+      'form button',
+    ];
+
+    for (const selector of clickAttempts) {
+      try {
+        await Promise.race([
+          page.waitForNavigation({ waitUntil: "networkidle2", timeout: 10000 }),
+          page.click(selector),
+        ]);
+        submitted = true;
+        console.log("Formulario enviado con selector:", selector);
+        break;
+      } catch (e) {
+        console.log("Selector no funcionó:", selector);
+      }
+    }
+
+    if (!submitted) {
+      console.warn("No se pudo hacer click en botón, intentando presionar Enter...");
+      await page.keyboard.press("Enter");
+      await page.waitForNavigation({ waitUntil: "networkidle2", timeout: 10000 }).catch(() => {});
+    }
+
+    // Esperar a que la página se estabilice después del login
+    await page.waitForTimeout(2000);
 
     // 4. Navegar a constancia
     console.log("Navegando a constancia...");
     const constanciaUrl = `${EPRESIS_BASE}/guias/remito/imprimir-guia?url=constancia_electronica&guia_id=${encodeURIComponent(guiaAgente)}`;
+    console.log("URL:", constanciaUrl);
+
     await page.goto(constanciaUrl, {
       waitUntil: "networkidle2",
-      timeout: 30000,
     });
+
+    // Esperar a que el contenido se cargue
+    await page.waitForTimeout(1000);
 
     // 5. Generar PDF
     console.log("Generando PDF...");
@@ -103,7 +151,11 @@ export async function GET(request: NextRequest) {
     );
   } finally {
     if (browser) {
-      await browser.close();
+      try {
+        await browser.close();
+      } catch (e) {
+        console.error("Error cerrando browser:", e);
+      }
     }
   }
 }
