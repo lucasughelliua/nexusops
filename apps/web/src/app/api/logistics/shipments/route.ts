@@ -189,8 +189,8 @@ async function fetchByRemito(q: string, type: SearchType, creds: any): Promise<S
       }
       return {
         id: `epresis-${q}`,
-        nroGuia: guiaAgente,
-        guiaAgente,
+        nroGuia: guiaAgente || q,
+        guiaAgente: type === "guia" ? q : guiaAgente,
         remito: q,
         estado: ultimo?.estado ?? "DESCONOCIDO",
         servicio: guia.servicio ?? null,
