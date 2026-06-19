@@ -83,21 +83,21 @@ export async function GET(request: NextRequest) {
     let submitted = false;
     const clickAttempts = [
       'button[type="submit"]',
-      'button:has-text("Ingresar")',
-      'button:has-text("Login")',
-      'button:has-text("Enviar")',
       'form button',
     ];
 
     for (const selector of clickAttempts) {
       try {
-        await Promise.race([
-          page.waitForNavigation({ waitUntil: "networkidle2", timeout: 10000 }),
-          page.click(selector),
-        ]);
-        submitted = true;
-        console.log("Formulario enviado con selector:", selector);
-        break;
+        const btn = await page.$(selector);
+        if (btn) {
+          await Promise.race([
+            page.waitForNavigation({ waitUntil: "networkidle2", timeout: 10000 }),
+            page.click(selector),
+          ]);
+          submitted = true;
+          console.log("Formulario enviado con selector:", selector);
+          break;
+        }
       } catch (e) {
         console.log("Selector no funcionó:", selector);
       }
