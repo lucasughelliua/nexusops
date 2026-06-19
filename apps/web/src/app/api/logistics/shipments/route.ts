@@ -137,13 +137,14 @@ async function fetchByRemito(q: string, type: SearchType, creds: any): Promise<S
 
   try {
     const res = await axios.post(`${baseURL}/api/v2/seguimiento.json`, body, { timeout: 12000 });
-    console.log("Epresis response status:", res.data?.status);
-    console.log("Epresis guia fields:", {
-      guia_agente: res.data?.guia?.guia_agente,
-      nro_guia: res.data?.guia?.nro_guia,
-      tracking: res.data?.guia?.tracking,
-      nro: res.data?.guia?.nro,
-    });
+    console.log("=== EPRESIS RESPONSE ===");
+    console.log("Query:", body);
+    console.log("Status:", res.data?.status);
+    console.log("Full guia object:", JSON.stringify(res.data?.guia, null, 2));
+    console.log("All keys in guia:", Object.keys(res.data?.guia || {}));
+    if (res.data?.guia?.fechas) {
+      console.log("First event:", JSON.stringify(res.data.guia.fechas[0], null, 2));
+    }
 
     if (res.data?.status === "ok" && res.data?.guia?.fechas?.length) {
       const guia = res.data.guia;
