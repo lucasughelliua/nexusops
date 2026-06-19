@@ -23,6 +23,15 @@ FROM node:20-alpine
 
 WORKDIR /app
 
+# Install Chromium and dependencies for Puppeteer
+RUN apk add --no-cache \
+  chromium \
+  nss \
+  freetype \
+  harfbuzz \
+  ca-certificates \
+  ttf-freefont
+
 # Copy package files and Prisma schema/config first
 # (required for `prisma generate` to run via the postinstall script)
 COPY apps/web/package*.json ./
