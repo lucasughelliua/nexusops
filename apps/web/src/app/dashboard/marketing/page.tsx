@@ -829,17 +829,36 @@ function SocialChip({ label, value }: { label: string; value: string }) {
   )
 }
 
-function MetaTab({ data, loading }: { data: MetaFullData | null; loading: boolean }) {
+function MetaTab() {
   const [subTab, setSubTab] = useState<MetaSubTab>('campaigns')
   const [selected, setSelected] = useState<any | null>(null)
   const [dateFrom, setDateFrom] = useState<string>(format(new Date(Date.now() - 30 * 24 * 60 * 60 * 1000), 'yyyy-MM-dd'))
   const [dateTo, setDateTo] = useState<string>(format(new Date(), 'yyyy-MM-dd'))
   const [filterStatus, setFilterStatus] = useState<string>('')
+  const [data, setData] = useState<MetaFullData | null>(null)
+  const [loading, setLoading] = useState(false)
 
   const campaigns = data?.campaigns ?? []
   const adsets = data?.adsets ?? []
   const ads = data?.ads ?? []
   const page = data?.page
+
+  // Fetch Meta data con parámetros de fecha
+  const fetchData = useCallback(async (from: string, to: string) => {
+    setLoading(true)
+    try {
+      const r = await fetch(`/api/marketing/meta-full?from=${from}&to=${to}`)
+      if (r.ok) setData(await r.json())
+    } catch (e) {
+      console.error('Meta fetch error:', e)
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    fetchData(dateFrom, dateTo)
+  }, [fetchData, dateFrom, dateTo])
 
   // Charts for campaigns
   const top5SpendCamp = useMemo(() =>
@@ -1569,14 +1588,6 @@ export default function MarketingPage() {
 
   // Lazy-load per tab
   useEffect(() => {
-    if (activeTab === 'meta' && !metaLoaded) {
-      setMetaLoading(true)
-      fetch('/api/marketing/meta-full')
-        .then(r => r.ok ? r.json() : null)
-        .then(d => { if (d) setMetaData(d) })
-        .catch(console.error)
-        .finally(() => { setMetaLoading(false); setMetaLoaded(true) })
-    }
     if (activeTab === 'google' && !googleLoaded) {
       setGoogleLoading(true)
       fetch('/api/marketing/google-sheets')
@@ -1593,20 +1604,18 @@ export default function MarketingPage() {
         .catch(console.error)
         .finally(() => { setKommoLoading(false); setKommoLoaded(true) })
     }
-  }, [activeTab, metaLoaded, googleLoaded, kommoLoaded])
+  }, [activeTab, googleLoaded, kommoLoaded])
 
   const googleCampaigns = useMemo(() => campaigns.filter(c => c.channelKey === 'google'), [campaigns])
 
   const handleRefresh = () => {
     fetchCampaigns()
     // Reset loaded state for active tab
-    if (activeTab === 'meta') { setMetaLoaded(false); setMetaData(null) }
     if (activeTab === 'google') { setGoogleLoaded(false); setGoogleData(null) }
     if (activeTab === 'kommo') { setKommoLoaded(false); setKommoData(null) }
   }
 
   const isLoading = activeTab === 'resumen' ? campLoading
-    : activeTab === 'meta' ? metaLoading
     : activeTab === 'perfit' ? false
     : activeTab === 'google' ? (campLoading || googleLoading)
     : activeTab === 'kommo' ? kommoLoading
@@ -1650,7 +1659,7 @@ export default function MarketingPage() {
           <ResumenTab allCampaigns={campaigns} loading={campLoading} />
         )}
         {activeTab === 'meta' && (
-          <MetaTab data={metaData} loading={metaLoading} />
+          <MetaTab />
         )}
         {activeTab === 'perfit' && (
           <PerfitTab />
