@@ -38,15 +38,27 @@ export async function GET(request: NextRequest) {
 
     // Lanzar navegador
     console.log("Lanzando Chromium...");
-    browser = await puppeteer.launch({
+    console.log("NODE_ENV:", process.env.NODE_ENV);
+    console.log("executablePath será:", process.env.NODE_ENV === "production" ? "/usr/bin/chromium-browser" : "auto");
+
+    const launchConfig: any = {
       headless: true,
-      executablePath: process.env.NODE_ENV === "production" ? "/usr/bin/chromium-browser" : undefined,
       args: [
         "--no-sandbox",
         "--disable-setuid-sandbox",
         "--disable-dev-shm-usage",
+        "--disable-gpu",
       ],
-    });
+    };
+
+    // Forzar ruta de Chromium en producción
+    if (process.env.NODE_ENV === "production") {
+      launchConfig.executablePath = "/usr/bin/chromium-browser";
+    }
+
+    console.log("Launch config:", JSON.stringify(launchConfig));
+
+    browser = await puppeteer.launch(launchConfig);
     console.log("✓ Chromium lanzado");
 
     const page = await browser.newPage();
