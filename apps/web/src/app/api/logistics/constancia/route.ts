@@ -58,56 +58,107 @@ export async function GET(request: NextRequest) {
 
     // 2. Completar formulario de login - intentar múltiples selectores
     console.log("Ingresando credenciales...");
+
+    // Investigar inputs disponibles
+    const inputs = await page.$$('input');
+    console.log(`Encontrados ${inputs.length} inputs`);
+    for (let i = 0; i < inputs.length; i++) {
+      const type = await page.$eval(`input:nth-child(${i+1})`, (el: any) => el.type || el.name || el.placeholder || 'unknown');
+      console.log(`Input ${i}: ${type}`);
+    }
+
     try {
       await page.type('input[type="email"]', EPRESIS_USER);
-    } catch {
+      console.log("Email ingresado con input[type='email']");
+    } catch (e1) {
+      console.log("Email selector email no funcionó:", (e1 as any).message);
       try {
         await page.type('input[name="email"]', EPRESIS_USER);
-      } catch {
-        await page.type('input[placeholder*="email" i]', EPRESIS_USER);
+        console.log("Email ingresado con input[name='email']");
+      } catch (e2) {
+        console.log("Email selector name no funcionó:", (e2 as any).message);
+        try {
+          const inputs = await page.$$('input');
+          if (inputs.length > 0) {
+            await inputs[0].type(EPRESIS_USER);
+            console.log("Email ingresado con primer input");
+          }
+        } catch (e3) {
+          console.log("Error ingresando email:", (e3 as any).message);
+        }
       }
     }
 
     try {
       await page.type('input[type="password"]', EPRESIS_PASS);
-    } catch {
+      console.log("Password ingresado con input[type='password']");
+    } catch (e1) {
+      console.log("Password selector password no funcionó:", (e1 as any).message);
       try {
         await page.type('input[name="password"]', EPRESIS_PASS);
-      } catch {
-        await page.type('input[placeholder*="password" i]', EPRESIS_PASS);
+        console.log("Password ingresado con input[name='password']");
+      } catch (e2) {
+        console.log("Password selector name no funcionó:", (e2 as any).message);
+        try {
+          const inputs = await page.$$('input');
+          if (inputs.length > 1) {
+            await inputs[1].type(EPRESIS_PASS);
+            console.log("Password ingresado con segundo input");
+          }
+        } catch (e3) {
+          console.log("Error ingresando password:", (e3 as any).message);
+        }
       }
     }
 
     // 3. Enviar formulario - intentar múltiples selectores
     console.log("Enviando formulario...");
+
+    // Investigar botones disponibles
+    const buttons = await page.$$('button');
+    console.log(`Encontrados ${buttons.length} botones`);
+    for (let i = 0; i < buttons.length; i++) {
+      const text = await page.$eval(`button:nth-child(${i+1})`, (el: any) => el.textContent || el.innerHTML || 'empty');
+      console.log(`Button ${i}: ${text.substring(0, 50)}`);
+    }
+
     let submitted = false;
     const clickAttempts = [
       'button[type="submit"]',
       'form button',
+      'button',
     ];
 
     for (const selector of clickAttempts) {
       try {
         const btn = await page.$(selector);
         if (btn) {
+          console.log(`Intentando hacer click con selector: ${selector}`);
           await Promise.race([
             page.waitForNavigation({ waitUntil: "networkidle2", timeout: 10000 }),
             page.click(selector),
           ]);
           submitted = true;
-          console.log("Formulario enviado con selector:", selector);
+          console.log("✓ Formulario enviado con selector:", selector);
           break;
         }
       } catch (e) {
-        console.log("Selector no funcionó:", selector);
+        console.log("✗ Selector no funcionó:", selector, (e as any).message);
       }
     }
 
     if (!submitted) {
       console.warn("No se pudo hacer click en botón, intentando presionar Enter...");
       await page.keyboard.press("Enter");
-      await page.waitForNavigation({ waitUntil: "networkidle2", timeout: 10000 }).catch(() => {});
+      await page.waitForNavigation({ waitUntil: "networkidle2", timeout: 10000 }).catch(() => {
+        console.log("Navigation timeout después de Enter (esperado)");
+      });
     }
+
+    // Tomar screenshot después del login para debugging
+    console.log("Tomando screenshot después del login...");
+    const loginScreenshot = await page.screenshot({ encoding: 'base64' });
+    console.log("Screenshot después login (primeros 100 chars):", loginScreenshot.substring(0, 100));
 
     // Esperar a que la página se estabilice después del login
     await page.waitForTimeout(2000);
@@ -117,9 +168,23 @@ export async function GET(request: NextRequest) {
     const constanciaUrl = `${EPRESIS_BASE}/guias/remito/imprimir-guia?url=constancia_electronica&guia_id=${encodeURIComponent(guiaAgente)}`;
     console.log("URL:", constanciaUrl);
 
-    await page.goto(constanciaUrl, {
-      waitUntil: "networkidle2",
-    });
+    try {
+      await page.goto(constanciaUrl, {
+        waitUntil: "networkidle2",
+      });
+      console.log("✓ Página de constancia cargada");
+    } catch (e) {
+      console.log("⚠ Error navegando (continuando):", (e as any).message);
+    }
+
+    // Tomar screenshot de la página de constancia
+    console.log("Tomando screenshot de constancia...");
+    const constanciaScreenshot = await page.screenshot({ encoding: 'base64' });
+    console.log("Screenshot constancia (primeros 100 chars):", constanciaScreenshot.substring(0, 100));
+
+    // Revisar content type
+    const content = await page.content();
+    console.log("Contenido página (primeros 200 chars):", content.substring(0, 200));
 
     // Esperar a que el contenido se cargue
     await page.waitForTimeout(1000);
