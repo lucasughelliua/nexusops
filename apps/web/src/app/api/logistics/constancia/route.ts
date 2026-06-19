@@ -1,13 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
-import axios from "axios";
-import https from "https";
+import puppeteer from "puppeteer";
 
 /**
  * GET /api/logistics/constancia?guiaAgente=...
- * Descarga la constancia electrónica de Epresis.
- * Usa credenciales preconfiguradas para login automático.
+ * Descarga la constancia electrónica de Epresis usando Puppeteer.
  */
 export async function GET(request: NextRequest) {
   const session = await getServerSession(authOptions);
@@ -30,119 +28,81 @@ export async function GET(request: NextRequest) {
       { status: 500 }
     );
   }
+
   const EPRESIS_BASE = "https://epresis.seguimientodeenvios.ar";
+  let browser: any;
 
   try {
-    console.log("=== CONSTANCIA REQUEST ===");
+    console.log("=== CONSTANCIA PUPPETEER ===");
     console.log("guiaAgente:", guiaAgente);
-    console.log("EPRESIS_USER:", EPRESIS_USER);
 
-    // Crear cliente axios con manejo automático de cookies
-    const client = axios.create({
-      baseURL: EPRESIS_BASE,
-      withCredentials: true,
-      httpsAgent: new https.Agent({ rejectUnauthorized: false }),
-      headers: {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-      },
+    // Lanzar navegador
+    browser = await puppeteer.launch({
+      headless: true,
+      args: [
+        "--no-sandbox",
+        "--disable-setuid-sandbox",
+        "--disable-dev-shm-usage",
+      ],
     });
 
-    // 1. Intentar login en Epresis
-    console.log("Attempting login...");
-    try {
-      const loginRes = await client.post(
-        "/login",
-        new URLSearchParams({
-          email: EPRESIS_USER,
-          password: EPRESIS_PASS,
-        }).toString(),
-        {
-          headers: {
-            "Content-Type": "application/x-www-form-urlencoded",
-            "Referer": EPRESIS_BASE,
-            "Origin": EPRESIS_BASE,
-          },
-          maxRedirects: 5,
-        }
-      );
-      console.log("Login status:", loginRes.status);
-      console.log("Login response headers:", Object.keys(loginRes.headers));
-    } catch (loginErr: any) {
-      console.log("Login error (continuing anyway):", loginErr.response?.status, loginErr.message);
-    }
+    const page = await browser.newPage();
 
-    // 2. Descargar constancia (con cookies guardadas del login)
-    console.log("Attempting to download constancia...");
-    const constanciaUrl = `/guias/remito/imprimir-guia?url=constancia_electronica&guia_id=${encodeURIComponent(guiaAgente)}`;
-    console.log("URL:", constanciaUrl);
-
-    const constanciaRes = await client.get(constanciaUrl, {
-      headers: {
-        "Referer": `${EPRESIS_BASE}/login`,
-        "Accept": "application/pdf,*/*",
-      },
-      responseType: "arraybuffer",
-      maxRedirects: 5,
-      validateStatus: () => true, // No lanzar error en ningún status
+    // 1. Navegar a login
+    console.log("Navegando a login...");
+    await page.goto(`${EPRESIS_BASE}/login`, {
+      waitUntil: "networkidle2",
+      timeout: 30000,
     });
 
-    console.log("Constancia status:", constanciaRes.status);
-    console.log("Constancia content-type:", constanciaRes.headers["content-type"]);
+    // 2. Completar formulario de login
+    console.log("Ingresando credenciales...");
+    await page.type('input[type="email"], input[name="email"], input[placeholder*="email" i]', EPRESIS_USER);
+    await page.type('input[type="password"], input[name="password"], input[placeholder*="password" i]', EPRESIS_PASS);
 
-    // Validar respuesta
-    if (!constanciaRes.data || constanciaRes.status >= 400) {
-      const bodyPreview = typeof constanciaRes.data === "string"
-        ? constanciaRes.data.slice(0, 500)
-        : Buffer.from(constanciaRes.data).toString().slice(0, 500);
+    // 3. Enviar formulario
+    console.log("Enviando formulario...");
+    await Promise.all([
+      page.waitForNavigation({ waitUntil: "networkidle2", timeout: 30000 }),
+      page.click('button[type="submit"], button:contains("Ingresar"), button:contains("Login")'),
+    ]).catch(() => console.log("Navigation timeout (puede ser normal)"));
 
-      console.log("Constancia error response body:", bodyPreview);
+    // 4. Navegar a constancia
+    console.log("Navegando a constancia...");
+    const constanciaUrl = `${EPRESIS_BASE}/guias/remito/imprimir-guia?url=constancia_electronica&guia_id=${encodeURIComponent(guiaAgente)}`;
+    await page.goto(constanciaUrl, {
+      waitUntil: "networkidle2",
+      timeout: 30000,
+    });
 
-      if (constanciaRes.status === 401 || constanciaRes.status === 302) {
-        return NextResponse.json(
-          { error: "Constancia requiere autenticación", loginRequired: true, url: `${EPRESIS_BASE}/guias/remito/imprimir-guia?url=constancia_electronica&guia_id=${encodeURIComponent(guiaAgente)}` },
-          { status: 401 }
-        );
-      }
+    // 5. Generar PDF
+    console.log("Generando PDF...");
+    const pdfBuffer = await page.pdf({
+      format: "A4",
+      printBackground: true,
+      margin: { top: 0, right: 0, bottom: 0, left: 0 },
+    });
 
-      return NextResponse.json(
-        { error: "No se pudo descargar la constancia", status: constanciaRes.status },
-        { status: 502 }
-      );
-    }
+    console.log("PDF generado, size:", pdfBuffer.length);
 
-    // Verificar si es PDF
-    const bufferData = Buffer.from(constanciaRes.data);
-    const isPdf = bufferData.slice(0, 4).toString() === "%PDF";
-    console.log("Is PDF:", isPdf, "Size:", bufferData.length);
-
-    if (!isPdf) {
-      console.warn("Response is not PDF. First 200 chars:", bufferData.slice(0, 200).toString());
-      return NextResponse.json(
-        { error: "La respuesta no es un PDF válido" },
-        { status: 502 }
-      );
-    }
-
-    console.log("PDF descargado exitosamente, size:", bufferData.length);
-
-    return new NextResponse(bufferData, {
+    return new NextResponse(pdfBuffer, {
       status: 200,
       headers: {
         "Content-Type": "application/pdf",
-        "Content-Disposition": `inline; filename="constancia_${guiaAgente}.pdf"`,
+        "Content-Disposition": `attachment; filename="constancia_${guiaAgente}.pdf"`,
         "Cache-Control": "no-store",
       },
     });
   } catch (err: any) {
     console.error("Error descargando constancia:", err.message);
-    if (err.response) {
-      console.error("Response status:", err.response.status);
-      console.error("Response body:", typeof err.response.data === "string" ? err.response.data.slice(0, 200) : err.response.data);
-    }
+    console.error("Stack:", err.stack);
     return NextResponse.json(
       { error: "No se pudo descargar la constancia", detail: err?.message },
       { status: 502 }
     );
+  } finally {
+    if (browser) {
+      await browser.close();
+    }
   }
 }
