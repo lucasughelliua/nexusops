@@ -177,11 +177,16 @@ function ConstanciaButton({ nroGuia, guiaAgente }: { nroGuia: string; guiaAgente
     try {
       const res = await fetch(`/api/logistics/constancia?guiaAgente=${encodeURIComponent(guiaAgente)}`)
       if (res.ok) {
-        // PDF descargado: abrir en nueva pestaña via blob URL
+        // PDF descargado: crear link y descargar automáticamente
         const blob = await res.blob()
         const url = URL.createObjectURL(blob)
-        window.open(url, '_blank')
-        setTimeout(() => URL.revokeObjectURL(url), 30000)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = `constancia_${guiaAgente}.pdf`
+        document.body.appendChild(a)
+        a.click()
+        document.body.removeChild(a)
+        setTimeout(() => URL.revokeObjectURL(url), 1000)
       } else {
         // Fallback: abrir URL directamente (usuario deberá loguearse)
         const data = await res.json().catch(() => ({}))
