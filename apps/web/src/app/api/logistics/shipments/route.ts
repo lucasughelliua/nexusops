@@ -150,46 +150,41 @@ async function fetchByRemito(q: string, type: SearchType, creds: any): Promise<S
       const eventos = guia.fechas;
       const ultimo = eventos[eventos.length - 1];
 
-      // Extraer número de seguimiento PAAQ (debe ser 9+ dígitos puros)
-      // Buscar solo números sin guiones ni caracteres especiales
-      let guiaAgente: string | null = null;
+      // Extraer número de seguimiento PAAQ
+      let guiaAgente: string | null = guia.nro_guia ?? guia.guia_agente ?? guia.tracking ?? guia.nro ?? null;
 
-      // Intentar en orden: guia_agente, nro_guia, tracking, nro
-      const candidates = [
-        guia.guia_agente,
-        guia.nro_guia,
-        guia.tracking,
-        guia.nro,
-      ];
+      console.log("guiaAgente inicial:", guiaAgente);
 
-      for (const candidate of candidates) {
-        if (!candidate) continue;
-        const str = String(candidate);
-        // Extraer solo los dígitos (eliminar guiones y otros caracteres)
-        const onlyDigits = str.replace(/\D/g, "");
-        if (onlyDigits.length >= 9 && /^\d{9,}$/.test(onlyDigits)) {
-          guiaAgente = onlyDigits;
-          console.log("guiaAgente encontrado:", onlyDigits, "desde:", candidate);
-          break;
-        }
-      }
+      // Si tiene guión, es número de pedido. Buscar tracking real en eventos
+      if (guiaAgente && guiaAgente.includes("-")) {
+        console.log("Número con guión detectado, buscando tracking en eventos...");
+        guiaAgente = null;
 
-      // Si no encontró en campos principales, buscar en eventos
-      if (!guiaAgente && eventos && eventos.length > 0) {
-        console.log("Buscando en eventos...");
-        for (const evento of eventos) {
-          const codigo = (evento as any).estado_codigo || (evento as any).codigo || "";
-          const onlyDigits = String(codigo).replace(/\D/g, "");
-          if (onlyDigits.length >= 9 && /^\d{9,}$/.test(onlyDigits)) {
-            guiaAgente = onlyDigits;
-            console.log("guiaAgente encontrado en evento:", onlyDigits);
-            break;
+        if (eventos && eventos.length > 0) {
+          // Buscar en eventos cualquier número de 9+ dígitos sin guión
+          for (const evento of eventos) {
+            const estado = String((evento as any).estado_codigo || (evento as any).codigo || "");
+            // Buscar números puros (sin guiones)
+            if (/^\d{9,}$/.test(estado)) {
+              guiaAgente = estado;
+              console.log("Tracking encontrado en eventos:", guiaAgente);
+              break;
+            }
           }
         }
       }
 
-      if (!guiaAgente) {
-        console.warn("No se encontró guiaAgente de 9+ dígitos. Usando fallback...");
+      // Si no tiene guión, validar que sea número puro
+      if (guiaAgente && !/^\d+$/.test(guiaAgente)) {
+        console.log("Limpiando guiaAgente:", guiaAgente);
+        guiaAgente = guiaAgente.replace(/\D/g, "");
+      }
+
+      if (!guiaAgente || guiaAgente.length < 9) {
+        console.warn("No se encontró tracking válido. guiaAgente:", guiaAgente);
+        guiaAgente = null;
+      } else {
+        console.log("✓ guiaAgente final:", guiaAgente);
       }
       return {
         id: `epresis-${q}`,
