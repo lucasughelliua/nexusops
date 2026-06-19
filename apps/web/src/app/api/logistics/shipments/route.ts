@@ -92,7 +92,7 @@ async function fetchByTracking(tracking: string, creds: any): Promise<ShipmentRe
     return {
       id: `epresis-${tracking}`,
       nroGuia: tracking,
-      guiaAgente,
+      guiaAgente: tracking,
       remito: null,
       estado: estadoActual,
       servicio: null,
